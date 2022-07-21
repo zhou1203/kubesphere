@@ -125,12 +125,12 @@ type FederatedRole struct {
 
 // +kubebuilder:object:generate=false
 type FederatedRoleSpec struct {
-	Template  RoleTemplate `json:"template"`
-	Placement Placement    `json:"placement"`
+	Template  FederatedRoleTemplate `json:"template"`
+	Placement Placement             `json:"placement"`
 }
 
 // +kubebuilder:object:generate=false
-type RoleTemplate struct {
+type FederatedRoleTemplate struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// +optional
 	Rules []rbacv1.PolicyRule `json:"rules" protobuf:"bytes,2,rep,name=rules"`
