@@ -604,6 +604,20 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Returns(http.StatusOK, api.StatusOK, errors.None).
 		Metadata(restfulspec.KeyOpenAPITags, []string{constants.GroupTag}))
 
+	// role template
+	ws.Route(ws.GET("/roletemplates/{roletemplate}").
+		To(handler.GetRoleTemplate).
+		Param(ws.PathParameter("roletemplate", "roleTemplate name")).
+		Doc("Get roleTemplate").
+		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.RoleTemplate{}).
+		Metadata(restfulspec.KeyOpenAPITags, []string{constants.RoleTemplateTag}))
+
+	ws.Route(ws.GET("/roletemplates").
+		To(handler.ListRoleTemplates).
+		Doc("List roleTemplates by scope").
+		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []interface{}{iamv1alpha2.RoleTemplate{}}}).
+		Metadata(restfulspec.KeyOpenAPITags, []string{constants.RoleTemplateTag}))
+
 	container.Add(ws)
 	return nil
 }

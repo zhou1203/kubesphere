@@ -65,6 +65,7 @@ const (
 	WorkspaceRoleTag     = "Workspace Role"
 	DevOpsProjectRoleTag = "DevOps Project Role"
 	NamespaceRoleTag     = "Namespace Role"
+	RoleTemplateTag      = "Role Template"
 
 	OpenpitrixTag            = "OpenPitrix Resources"
 	OpenpitrixAppInstanceTag = "App Instance"

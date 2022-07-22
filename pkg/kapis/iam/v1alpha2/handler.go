@@ -1487,3 +1487,26 @@ func (h *iamHandler) DeleteGroupBinding(request *restful.Request, response *rest
 
 	response.WriteEntity(servererr.None)
 }
+
+func (h *iamHandler) GetRoleTemplate(request *restful.Request, response *restful.Response) {
+	roleTemplateName := request.PathParameter("roletemplate")
+
+	roleTemplate, err := h.am.GetRoleTemplate(roleTemplateName)
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+
+	response.WriteEntity(roleTemplate)
+}
+
+func (h *iamHandler) ListRoleTemplates(request *restful.Request, response *restful.Response) {
+	queryParam := query.ParseQueryParameter(request)
+	roleTemplates, err := h.am.ListRoleTemplate(queryParam)
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+
+	response.WriteEntity(roleTemplates)
+}

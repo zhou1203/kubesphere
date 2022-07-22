@@ -5,12 +5,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// +genclient
-// +genclient:nonNamesapced
-// +kubebuidler:object:root=true
-// +kubebuilder:printcolumn:name="TemplateScope",type="string",JSONPath=".templateScope"
-// +kubebuilder:resource:categories="iam",scope="Cluster"
+// +kubebuilder:object:root=true
 // +kubebuilder:object:generate=true
+// +kubebuilder:printcolumn:name="TemplateScope",type="string",JSONPath=".spec.templateScope"
+// +kubebuilder:resource:categories="iam",scope="Cluster"
 type RoleTemplate struct {
 	metav1.TypeMeta `json:",inline"`
 

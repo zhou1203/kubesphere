@@ -19,7 +19,7 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .templateScope
+    - jsonPath: .spec.templateScope
       name: TemplateScope
       type: string
     name: v1alpha2

@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	listersv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
@@ -46,6 +47,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/globalrolebinding"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/role"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/rolebinding"
+	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/roletemplate"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/workspacerole"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/workspacerolebinding"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
@@ -97,6 +99,8 @@ type AccessManagementInterface interface {
 	ListGroupWorkspaceRoleBindings(workspace string, query *query.Query) (*api.ListResult, error)
 	CreateWorkspaceRoleBinding(workspace string, roleBinding *iamv1alpha2.WorkspaceRoleBinding) (*iamv1alpha2.WorkspaceRoleBinding, error)
 	DeleteWorkspaceRoleBinding(workspaceName, name string) error
+	GetRoleTemplate(roleTemplate string) (*iamv1alpha2.RoleTemplate, error)
+	ListRoleTemplate(query *query.Query) ([]*iamv1alpha2.RoleTemplate, error)
 }
 
 type amOperator struct {
@@ -110,11 +114,12 @@ type amOperator struct {
 	roleGetter                 resourcev1alpha3.Interface
 	devopsProjectLister        devopslisters.DevOpsProjectLister
 	namespaceLister            listersv1.NamespaceLister
+	roleTemplateLister         resourcev1alpha3.Interface
 	ksclient                   kubesphere.Interface
 	k8sclient                  kubernetes.Interface
 }
 
-func NewReadOnlyOperator(factory informers.InformerFactory, devopsClient devops.Interface) AccessManagementInterface {
+func NewReadOnlyOperator(factory informers.InformerFactory, devopsClient devops.Interface, rtClient runtimeclient.Client) AccessManagementInterface {
 	operator := &amOperator{
 		globalRoleBindingGetter:    globalrolebinding.New(factory.KubeSphereSharedInformerFactory()),
 		workspaceRoleBindingGetter: workspacerolebinding.New(factory.KubeSphereSharedInformerFactory()),
@@ -124,6 +129,7 @@ func NewReadOnlyOperator(factory informers.InformerFactory, devopsClient devops.
 		workspaceRoleGetter:        workspacerole.New(factory.KubeSphereSharedInformerFactory()),
 		clusterRoleGetter:          clusterrole.New(factory.KubernetesSharedInformerFactory()),
 		roleGetter:                 role.New(factory.KubernetesSharedInformerFactory()),
+		roleTemplateLister:         roletemplate.New(rtClient),
 		namespaceLister:            factory.KubernetesSharedInformerFactory().Core().V1().Namespaces().Lister(),
 	}
 	// no more CRDs of devopsprojects if the DevOps module was disabled
@@ -133,8 +139,8 @@ func NewReadOnlyOperator(factory informers.InformerFactory, devopsClient devops.
 	return operator
 }
 
-func NewOperator(ksClient kubesphere.Interface, k8sClient kubernetes.Interface, factory informers.InformerFactory, devopsClient devops.Interface) AccessManagementInterface {
-	amOperator := NewReadOnlyOperator(factory, devopsClient).(*amOperator)
+func NewOperator(ksClient kubesphere.Interface, k8sClient kubernetes.Interface, factory informers.InformerFactory, devopsClient devops.Interface, rtClient runtimeclient.Client) AccessManagementInterface {
+	amOperator := NewReadOnlyOperator(factory, devopsClient, rtClient).(*amOperator)
 	amOperator.ksclient = ksClient
 	amOperator.k8sclient = k8sClient
 	return amOperator
@@ -1141,4 +1147,27 @@ func (am *amOperator) CreateRoleBinding(namespace string, roleBinding *rbacv1.Ro
 
 func (am *amOperator) DeleteRoleBinding(namespace, name string) error {
 	return am.k8sclient.RbacV1().RoleBindings(namespace).Delete(context.Background(), name, *metav1.NewDeleteOptions(0))
+}
+
+func (am *amOperator) GetRoleTemplate(roleTemplate string) (*iamv1alpha2.RoleTemplate, error) {
+	result, err := am.roleTemplateLister.Get("", roleTemplate)
+	if err != nil {
+		return nil, err
+	}
+	return result.(*iamv1alpha2.RoleTemplate), nil
+}
+
+func (am *amOperator) ListRoleTemplate(query *query.Query) ([]*iamv1alpha2.RoleTemplate, error) {
+	var result []*iamv1alpha2.RoleTemplate
+	list, err := am.roleTemplateLister.List("", query)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, obj := range list.Items {
+		roleTemplate := obj.(*iamv1alpha2.RoleTemplate)
+		result = append(result, roleTemplate)
+	}
+
+	return result, nil
 }
