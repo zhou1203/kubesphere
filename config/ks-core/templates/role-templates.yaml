@@ -23,7 +23,18 @@ apiVersion: iam.kubesphere.io/v1alpha2
 kind: GlobalRole
 metadata:
   name: anonymous
-rules: []
+rules:
+  - apiGroups:
+      - extensions.kubesphere.io
+    resources:
+      - jsbundles
+    verbs:
+      - 'get'
+      - 'list'
+  - nonResourceURLs:
+      - '/dist/*'
+    verbs:
+      - 'GET'
 
 ---
 apiVersion: iam.kubesphere.io/v1alpha2
