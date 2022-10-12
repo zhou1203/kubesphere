@@ -1,20 +1,22 @@
 /*
-Copyright 2020 The KubeSphere Authors.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+ Copyright 2021 The KubeSphere Authors.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+
 */
 
-package dispatch
+package proxies
 
 import (
 	"fmt"
@@ -25,39 +27,30 @@ import (
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/apimachinery/pkg/util/proxy"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
-	"k8s.io/klog"
 
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/filters"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
+	clusterinformer "kubesphere.io/kubesphere/pkg/client/informers/externalversions/cluster/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 const proxyURLFormat = "/api/v1/namespaces/kubesphere-system/services/:ks-apiserver:/proxy%s"
 
-// Dispatcher defines how to forward request to designated cluster based on cluster name
-// This should only be used in host cluster when multicluster mode enabled, use in any other cases may cause
-// unexpected behavior
-type Dispatcher interface {
-	Dispatch(w http.ResponseWriter, req *http.Request, handler http.Handler)
-}
-
-type clusterDispatch struct {
+type cluster struct {
 	clusterclient.ClusterClients
 }
 
-func NewClusterDispatch(cc clusterclient.ClusterClients) Dispatcher {
-	return &clusterDispatch{cc}
+func NewMultiClusterProxy(clusterInformer clusterinformer.ClusterInformer) filters.Middleware {
+	return &cluster{clusterclient.NewClusterClient(clusterInformer)}
 }
 
-// Dispatch dispatch requests to designated cluster
-func (c *clusterDispatch) Dispatch(w http.ResponseWriter, req *http.Request, handler http.Handler) {
+// Handle requests to designated cluster
+func (c *cluster) Handle(w http.ResponseWriter, req *http.Request) bool {
 	info, _ := request.RequestInfoFrom(req.Context())
-
-	if len(info.Cluster) == 0 {
-		klog.Warningf("Request with empty cluster, %v", req.URL)
-		http.Error(w, "Bad request, empty cluster", http.StatusBadRequest)
-		return
+	if info.Cluster == "" {
+		return false
 	}
 
 	cluster, err := c.Get(info.Cluster)
@@ -67,25 +60,24 @@ func (c *clusterDispatch) Dispatch(w http.ResponseWriter, req *http.Request, han
 		} else {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		return
+		return true
 	}
 
 	// request cluster is host cluster, no need go through agent
 	if c.IsHostCluster(cluster) {
 		req.URL.Path = strings.Replace(req.URL.Path, fmt.Sprintf("/clusters/%s", info.Cluster), "", 1)
-		handler.ServeHTTP(w, req)
-		return
+		return false
 	}
 
 	if !c.IsClusterReady(cluster) {
 		http.Error(w, fmt.Sprintf("cluster %s is not ready", cluster.Name), http.StatusBadRequest)
-		return
+		return true
 	}
 
 	innCluster := c.GetInnerCluster(cluster.Name)
 	if innCluster == nil {
 		http.Error(w, fmt.Sprintf("cluster %s is not ready", cluster.Name), http.StatusBadRequest)
-		return
+		return true
 	}
 
 	transport := http.DefaultTransport
@@ -139,12 +131,13 @@ func (c *clusterDispatch) Dispatch(w http.ResponseWriter, req *http.Request, han
 		u.Host = innCluster.KubesphereURL.Host
 		u.Scheme = innCluster.KubesphereURL.Scheme
 	}
+	handler := proxy.NewUpgradeAwareHandler(&u, transport, false, false, c)
+	handler.UpgradeTransport = proxy.NewUpgradeRequestRoundTripper(transport, transport)
+	handler.ServeHTTP(w, req)
 
-	httpProxy := proxy.NewUpgradeAwareHandler(&u, transport, false, false, c)
-	httpProxy.UpgradeTransport = proxy.NewUpgradeRequestRoundTripper(transport, transport)
-	httpProxy.ServeHTTP(w, req)
+	return true
 }
 
-func (c *clusterDispatch) Error(w http.ResponseWriter, req *http.Request, err error) {
+func (c *cluster) Error(w http.ResponseWriter, req *http.Request, err error) {
 	responsewriters.InternalError(w, req, err)
 }

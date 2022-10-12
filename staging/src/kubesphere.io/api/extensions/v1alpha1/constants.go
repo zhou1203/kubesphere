@@ -5,4 +5,6 @@ const (
 	StateDisabled    = "Disabled"
 	StateAvailable   = "Available"
 	StateUnavailable = "Unavailable"
+	DistPrefix       = "/dist"
+	ProxyPrefix      = "/proxy"
 )

@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/extensions"
+
 	"github.com/emicklei/go-restful"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -34,18 +36,18 @@ import (
 	urlruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	unionauth "k8s.io/apiserver/pkg/authentication/request/union"
-	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog"
+	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	notificationv2beta1 "kubesphere.io/api/notification/v2beta1"
 	notificationv2beta2 "kubesphere.io/api/notification/v2beta2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	typesv1beta1 "kubesphere.io/api/types/v1beta1"
-	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/basic"
@@ -61,8 +63,8 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/rbac"
 	unionauthorizer "kubesphere.io/kubesphere/pkg/apiserver/authorization/union"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
-	"kubesphere.io/kubesphere/pkg/apiserver/dispatch"
 	"kubesphere.io/kubesphere/pkg/apiserver/filters"
+	"kubesphere.io/kubesphere/pkg/apiserver/proxies"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/informers"
 	alertingv1 "kubesphere.io/kubesphere/pkg/kapis/alerting/v1"
@@ -174,15 +176,14 @@ type APIServer struct {
 func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
 	s.container = restful.NewContainer()
 	s.container.Filter(logRequestAndResponse)
+	s.container.Filter(monitorRequest)
 	s.container.Router(restful.CurlyRouter{})
 	s.container.RecoverHandler(func(panicReason interface{}, httpWriter http.ResponseWriter) {
 		logStackOnRecover(panicReason, httpWriter)
 	})
-
 	s.installKubeSphereAPIs(stopCh)
 	s.installCRDAPIs()
 	s.installMetricsAPI()
-	s.container.Filter(monitorRequest)
 
 	for _, ws := range s.container.RegisteredWebServices() {
 		klog.V(2).Infof("%s", ws.RootPath())
@@ -190,7 +191,9 @@ func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
 
 	s.Server.Handler = s.container
 
-	s.buildHandlerChain(stopCh)
+	if err := s.buildHandlerChain(stopCh); err != nil {
+		return fmt.Errorf("failed to build handler chain: %v", err)
+	}
 
 	return nil
 }
@@ -309,7 +312,7 @@ func (s *APIServer) Run(ctx context.Context) (err error) {
 	return err
 }
 
-func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) {
+func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	requestInfoResolver := &request.RequestInfoFactory{
 		APIPrefixes:          sets.NewString("api", "apis", "kapis", "kapi"),
 		GrouplessAPIPrefixes: sets.NewString("api", "kapi"),
@@ -333,7 +336,15 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) {
 	}
 
 	handler := s.Server.Handler
-	handler = filters.WithKubeAPIServer(handler, s.KubernetesClient.Config(), &errorResponder{})
+	reverseProxy := extensions.NewReverseProxy(s.RuntimeCache)
+	jsBundle := extensions.NewJSBundle(s.RuntimeCache)
+	apiService := extensions.NewAPIService(s.RuntimeCache)
+	kubeAPI, err := proxies.NewKubeAPIProxy(s.KubernetesClient.Config())
+	if err != nil {
+		return fmt.Errorf("failed to create kubernetes API proxy: %v", err)
+	}
+
+	handler = filters.WithMiddleware(handler, kubeAPI, apiService, jsBundle, reverseProxy)
 
 	if s.Config.AuditingOptions.Enable {
 		handler = filters.WithAuditing(handler,
@@ -341,7 +352,6 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) {
 	}
 
 	var authorizers authorizer.Authorizer
-
 	switch s.Config.AuthorizationOptions.Mode {
 	case authorization.AlwaysAllow:
 		authorizers = authorizerfactory.NewAlwaysAllowAuthorizer()
@@ -358,8 +368,8 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) {
 
 	handler = filters.WithAuthorization(handler, authorizers)
 	if s.Config.MultiClusterOptions.Enable {
-		clusterDispatcher := dispatch.NewClusterDispatch(s.ClusterClient)
-		handler = filters.WithMultipleClusterDispatcher(handler, clusterDispatcher)
+		multiClusterProxy := proxies.NewMultiClusterProxy(s.InformerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
+		handler = filters.WithMiddleware(handler, multiClusterProxy)
 	}
 
 	userLister := s.InformerFactory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users().Lister()
@@ -379,6 +389,7 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) {
 	handler = filters.WithRequestInfo(handler, requestInfoResolver)
 
 	s.Server.Handler = handler
+	return nil
 }
 
 func isResourceExists(apiResources []v1.APIResource, resource schema.GroupVersionResource) bool {
@@ -405,7 +416,7 @@ func waitForCacheSync(discoveryClient discovery.DiscoveryInterface, sharedInform
 		if err != nil {
 			if errors.IsNotFound(err) {
 				klog.Warningf("group version %s not exists in the cluster", groupVersion)
-				return nil
+				continue
 			}
 			return fmt.Errorf("failed to fetch group version %s: %s", groupVersion, err)
 		}
@@ -663,11 +674,4 @@ func logRequestAndResponse(req *restful.Request, resp *restful.Response, chain *
 		resp.ContentLength(),
 		time.Since(start)/time.Millisecond,
 	)
-}
-
-type errorResponder struct{}
-
-func (e *errorResponder) Error(w http.ResponseWriter, req *http.Request, err error) {
-	klog.Error(err)
-	responsewriters.InternalError(w, req, err)
 }
