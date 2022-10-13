@@ -17,8 +17,12 @@ limitations under the License.
 package v1alpha1
 
 const (
-	StateEnabled     = "Enabled"
-	StateDisabled    = "Disabled"
-	StateAvailable   = "Installing"
-	StateUnavailable = "Uninstalling"
+	StateEnabled             = "Enabled"
+	StateDisabled            = "Disabled"
+	StateAvailable           = "Available"
+	StateUnavailable         = "Unavailable"
+	StateUninstalling        = "Uninstalling"
+	StateInstalling          = "Installing"
+	ExtensionReferenceLabel  = "kubesphere.io/extension-ref"
+	RepositoryReferenceLabel = "kubesphere.io/repository-ref"
 )

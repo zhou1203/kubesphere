@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/controller/core"
+
 	"github.com/kubesphere/pvc-autoresizer/runners"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -186,6 +188,31 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 			AuthenticationOptions:   cmOptions.AuthenticationOptions,
 		}
 		addControllerWithSetup(mgr, "user", userController)
+	}
+
+	var k8sVersion string
+	if cmOptions.IsControllerEnabled("extension") {
+		info, err := client.Kubernetes().Discovery().ServerVersion()
+		if err == nil {
+			k8sVersion = info.GitVersion
+		} else {
+			return err
+		}
+		extensionReconciler := &core.ExtensionReconciler{K8sVersion: k8sVersion}
+		addControllerWithSetup(mgr, "extension", extensionReconciler)
+
+		extensionVersionReconciler := &core.ExtensionVersionReconciler{K8sVersion: k8sVersion}
+		addControllerWithSetup(mgr, "extensionversion", extensionVersionReconciler)
+	}
+
+	if cmOptions.IsControllerEnabled("repository") {
+		repoReconciler := &core.RepositoryReconciler{}
+		addControllerWithSetup(mgr, "repository", repoReconciler)
+	}
+
+	if cmOptions.IsControllerEnabled("subscription") {
+		subscriptionReconciler := &core.SubscriptionReconciler{}
+		addControllerWithSetup(mgr, "subscription", subscriptionReconciler)
 	}
 
 	// "workspacetemplate" controller
