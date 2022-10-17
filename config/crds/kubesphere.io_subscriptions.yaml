@@ -127,6 +127,8 @@ spec:
                   - type
                   type: object
                 type: array
+              jobName:
+                type: string
               releaseName:
                 type: string
               state:

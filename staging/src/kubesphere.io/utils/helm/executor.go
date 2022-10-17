@@ -320,7 +320,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 			Namespace: e.namespace,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: pointer.Int32(1),
+			BackoffLimit: pointer.Int32Ptr(1),
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -342,7 +342,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 								},
 							},
 							Lifecycle: &corev1.Lifecycle{
-								PostStart: &corev1.LifecycleHandler{
+								PostStart: &corev1.Handler{
 									Exec: &corev1.ExecAction{
 										Command: []string{"/bin/sh", "-c", fmt.Sprintf("cp -r %s/. %s", workspaceBaseSource, workspaceBase)},
 									},
@@ -358,7 +358,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 									LocalObjectReference: corev1.LocalObjectReference{
 										Name: name,
 									},
-									DefaultMode: pointer.Int32(0755),
+									DefaultMode: pointer.Int32Ptr(0755),
 								},
 							},
 						},
@@ -423,7 +423,7 @@ func (e *executor) Uninstall(ctx context.Context) (string, error) {
 			Namespace: e.namespace,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: pointer.Int32(1),
+			BackoffLimit: pointer.Int32Ptr(1),
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -451,7 +451,7 @@ func (e *executor) Uninstall(ctx context.Context) (string, error) {
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: name,
 						},
-						DefaultMode: pointer.Int32(0755),
+						DefaultMode: pointer.Int32Ptr(0755),
 					},
 				},
 			},

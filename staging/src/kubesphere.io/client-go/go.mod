@@ -53,6 +53,7 @@ replace (
 	github.com/creack/pty => github.com/creack/pty v1.1.7
 	github.com/evanphx/json-patch => github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/fatih/color => github.com/fatih/color v1.9.0
+	github.com/go-openapi/spec => github.com/go-openapi/spec v0.19.7
 	github.com/golang/protobuf => github.com/golang/protobuf v1.4.2
 	github.com/google/go-cmp => github.com/google/go-cmp v0.4.0
 	github.com/google/pprof => github.com/google/pprof v0.0.0-20200417002340-c6e0a841f49a

@@ -1,3 +1,5 @@
+// This is a generated file. Do not edit directly.
+
 module kubesphere.io/api
 
 go 1.18
@@ -11,7 +13,7 @@ require (
 	github.com/prometheus/prometheus v1.8.2-0.20200907175821-8219b442c864
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/net v0.0.0-20210525063256-abc453219eb5
-	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	istio.io/api v0.0.0-20201113182140-d4b7e3fc2b44
 	k8s.io/api v0.22.1
 	k8s.io/apiextensions-apiserver v0.21.4
@@ -23,6 +25,7 @@ require (
 )
 
 require (
+	github.com/OneOfOne/xxhash v1.2.7 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -68,11 +71,9 @@ require (
 	github.com/uber/jaeger-client-go v2.25.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	go.uber.org/atomic v1.6.0 // indirect
-	go.uber.org/goleak v1.1.10 // indirect
 	go.uber.org/multierr v1.4.0 // indirect
-	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
 	golang.org/x/oauth2 v0.0.0-20210514164344-f6687ab2804c // indirect
-	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9 // indirect
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 	golang.org/x/sys v0.0.0-20220708085239-5a0f0661e09d // indirect
 	golang.org/x/term v0.0.0-20210220032956-6a3ed077a48d // indirect
 	golang.org/x/text v0.3.7 // indirect
@@ -93,32 +94,36 @@ require (
 )
 
 replace (
-	cloud.google.com/go => cloud.google.com/go v0.56.0
 	github.com/Azure/go-autorest/autorest => github.com/Azure/go-autorest/autorest v0.10.0
 	github.com/Azure/go-autorest/autorest/adal => github.com/Azure/go-autorest/autorest/adal v0.8.3
-	github.com/asaskevich/govalidator => github.com/asaskevich/govalidator v0.0.0-20200108200545-475eaeb16496
 	github.com/blang/semver => github.com/blang/semver v3.5.0+incompatible
 	github.com/creack/pty => github.com/creack/pty v1.1.7
 	github.com/evanphx/json-patch => github.com/evanphx/json-patch v4.9.0+incompatible
-	github.com/fatih/color => github.com/fatih/color v1.9.0
+	github.com/go-openapi/spec => github.com/go-openapi/spec v0.19.7
 	github.com/golang/protobuf => github.com/golang/protobuf v1.4.2
 	github.com/google/go-cmp => github.com/google/go-cmp v0.4.0
-	github.com/google/pprof => github.com/google/pprof v0.0.0-20200417002340-c6e0a841f49a
 	github.com/google/uuid => github.com/google/uuid v1.1.1
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.4.1
 	github.com/imdario/mergo => github.com/imdario/mergo v0.3.9
 	github.com/kisielk/errcheck => github.com/kisielk/errcheck v1.2.0
 	github.com/kr/text => github.com/kr/text v0.1.0
+	github.com/lib/pq => github.com/lib/pq v1.2.0
 	github.com/matttproud/golang_protobuf_extensions => github.com/matttproud/golang_protobuf_extensions v1.0.1
 	github.com/olekukonko/tablewriter => github.com/olekukonko/tablewriter v0.0.1
 	github.com/onsi/ginkgo => github.com/onsi/ginkgo v1.14.0
 	github.com/onsi/gomega => github.com/onsi/gomega v1.10.1
+	github.com/opentracing/opentracing-go => github.com/opentracing/opentracing-go v1.1.0
 	github.com/prometheus/common => github.com/prometheus/common v0.10.0
 	github.com/prometheus/procfs => github.com/prometheus/procfs v0.1.3
+	github.com/prometheus/prometheus => github.com/prometheus/prometheus v1.8.2-0.20200507164740-ecee9c8abfd1
+	github.com/rogpeppe/fastuuid => github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af
+	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus => github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/viper => github.com/spf13/viper v1.4.0
 	github.com/stretchr/testify => github.com/stretchr/testify v1.4.0
+	github.com/uber/jaeger-client-go => github.com/uber/jaeger-client-go v2.23.0+incompatible
+	github.com/urfave/cli => github.com/urfave/cli v1.20.0
 	go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.3
 	go.uber.org/goleak => go.uber.org/goleak v1.1.0
 	go.uber.org/multierr => go.uber.org/multierr v1.3.0
@@ -134,7 +139,6 @@ replace (
 	golang.org/x/xerrors => golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7
 	gomodules.xyz/jsonpatch/v2 => gomodules.xyz/jsonpatch/v2 v2.0.1
 	gonum.org/v1/netlib => gonum.org/v1/netlib v0.0.0-20190313105609-8cb42192e0e0
-	google.golang.org/api => google.golang.org/api v0.22.0
 	google.golang.org/appengine => google.golang.org/appengine v1.6.6
 	google.golang.org/genproto => google.golang.org/genproto v0.0.0-20200420144010-e5e8543f8aeb
 	google.golang.org/grpc => google.golang.org/grpc v1.27.1

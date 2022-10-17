@@ -35,6 +35,7 @@ type SubscriptionStatus struct {
 	State           string             `json:"state,omitempty"`
 	ReleaseName     string             `json:"releaseName,omitempty"`
 	TargetNamespace string             `json:"targetNamespace,omitempty"`
+	JobName         string             `json:"jobName,omitempty"`
 	Conditions      []metav1.Condition `json:"conditions,omitempty"`
 }
 

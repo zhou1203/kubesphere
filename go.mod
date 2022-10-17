@@ -102,6 +102,7 @@ require (
 	kubesphere.io/api v0.0.0
 	kubesphere.io/client-go v0.0.0
 	kubesphere.io/monitoring-dashboard v0.2.2
+	kubesphere.io/utils v0.0.0
 	sigs.k8s.io/application v0.8.4-0.20201016185654-c8e2959e57a0
 	sigs.k8s.io/controller-runtime v0.10.0
 	sigs.k8s.io/controller-tools v0.6.2
@@ -130,8 +131,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/bshuster-repo/logrus-logstash-hook v0.4.1 // indirect
-	github.com/bugsnag/bugsnag-go v1.5.0 // indirect
-	github.com/bugsnag/panicwrap v1.2.0 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/containerd/containerd v1.5.2 // indirect
@@ -146,13 +145,10 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-metrics v0.0.0-20181218153428-b84716841b82 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
-	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/edsrzf/mmap-go v1.0.0 // indirect
-	github.com/elazarl/goproxy v0.0.0-20200315184450-1f3cb6622dad // indirect
 	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/fatih/color v1.12.0 // indirect
-	github.com/garyburd/redigo v1.6.0 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
 	github.com/go-kit/kit v0.10.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.0 // indirect
@@ -166,7 +162,6 @@ require (
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/gobuffalo/flect v0.2.3 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
@@ -177,7 +172,6 @@ require (
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
-	github.com/gorilla/handlers v1.4.0 // indirect
 	github.com/gorilla/mux v1.7.3 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
 	github.com/gosuri/uitable v0.0.4 // indirect
@@ -247,11 +241,8 @@ require (
 	github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
-	github.com/xenolf/lego v0.3.2-0.20160613233155-a9d8cec0e656 // indirect
 	github.com/xlab/treeprint v1.1.0 // indirect
 	github.com/yashtewari/glob-intersection v0.0.0-20180916065949-5c77d914dd0b // indirect
-	github.com/yvasiyarov/go-metrics v0.0.0-20150112132944-c25f46c4b940 // indirect
-	github.com/yvasiyarov/gorelic v0.0.6 // indirect
 	github.com/yvasiyarov/newrelic_platform_go v0.0.0-20140908184405-b21fdbd4370f // indirect
 	go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489 // indirect
 	go.mongodb.org/mongo-driver v1.3.2 // indirect
@@ -278,14 +269,12 @@ require (
 	gopkg.in/gorp.v1 v1.7.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
-	gopkg.in/square/go-jose.v1 v1.1.2 // indirect
 	gopkg.in/src-d/go-billy.v4 v4.3.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	honnef.co/go/tools v0.0.1-2020.1.3 // indirect
 	istio.io/gogo-genproto v0.0.0-20201113182723-5b8563d8a012 // indirect
 	k8s.io/gengo v0.0.0-20201214224949-b6c5ce23f027 // indirect
-	rsc.io/letsencrypt v0.0.1 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.19 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.10.21 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.1.0 // indirect
@@ -748,6 +737,7 @@ replace (
 	github.com/opencontainers/go-digest => github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec => github.com/opencontainers/image-spec v1.0.1
 	github.com/opencontainers/runc => github.com/opencontainers/runc v0.1.1
+	github.com/opensearch-project/opensearch-go => github.com/opensearch-project/opensearch-go v1.1.0
 	github.com/opensearch-project/opensearch-go/v2 => github.com/opensearch-project/opensearch-go/v2 v2.0.0
 	github.com/opentracing-contrib/go-grpc => github.com/opentracing-contrib/go-grpc v0.0.0-20180928155321-4b5a12d3ff02
 	github.com/opentracing-contrib/go-observer => github.com/opentracing-contrib/go-observer v0.0.0-20170622124052-a52f23424492
@@ -975,6 +965,7 @@ replace (
 	kubesphere.io/api => ./staging/src/kubesphere.io/api
 	kubesphere.io/client-go => ./staging/src/kubesphere.io/client-go
 	kubesphere.io/monitoring-dashboard => kubesphere.io/monitoring-dashboard v0.2.2
+	kubesphere.io/utils => ./staging/src/kubesphere.io/utils
 	rsc.io/binaryregexp => rsc.io/binaryregexp v0.2.0
 	rsc.io/goversion => rsc.io/goversion v1.2.0
 	rsc.io/letsencrypt => rsc.io/letsencrypt v0.0.1
