@@ -54,7 +54,7 @@ func (s *kubernetesAPIDispatcher) Handle(w http.ResponseWriter, req *http.Reques
 		handler := proxy.NewUpgradeAwareHandler(location, s.transport, false, upgrade, s)
 		handler.UseLocationHost = true
 		handler.UpgradeTransport = proxy.NewUpgradeRequestRoundTripper(s.transport, s.transport)
-		handler.ServeHTTP(w, req)
+		handler.ServeHTTP(w, newReq)
 		return true
 	}
 	return false
