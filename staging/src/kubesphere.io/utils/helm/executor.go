@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
 	"k8s.io/utils/pointer"
@@ -152,9 +153,20 @@ func NewExecutor(namespace, releaseName string, options ...Option) (Executor, er
 		option(e)
 	}
 
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig([]byte(e.kubeConfig))
-	if err != nil {
-		return nil, err
+	var (
+		restConfig *rest.Config
+		err        error
+	)
+	if e.kubeConfig == "" {
+		restConfig, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		restConfig, err = clientcmd.RESTConfigFromKubeConfig([]byte(e.kubeConfig))
+		if err != nil {
+			return nil, err
+		}
 	}
 	clusterClient, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
