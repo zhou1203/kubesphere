@@ -192,6 +192,7 @@ func (r *RepositoryReconciler) updateOrCreateExtension(ctx context.Context, repo
 		if latestExtensionVersion != nil {
 			extensionCopy.Spec = corev1alpha1.ExtensionSpec{
 				ExtensionInfo: &corev1alpha1.ExtensionInfo{
+					DisplayName: latestExtensionVersion.Spec.DisplayName,
 					Description: latestExtensionVersion.Spec.Description,
 					Icon:        latestExtensionVersion.Spec.Icon,
 					Vendor:      latestExtensionVersion.Spec.Vendor,
@@ -215,6 +216,7 @@ func (r *RepositoryReconciler) updateOrCreateExtension(ctx context.Context, repo
 		if latestExtensionVersion != nil {
 			extension.Spec = corev1alpha1.ExtensionSpec{
 				ExtensionInfo: &corev1alpha1.ExtensionInfo{
+					DisplayName: latestExtensionVersion.Spec.DisplayName,
 					Description: latestExtensionVersion.Spec.Description,
 					Icon:        latestExtensionVersion.Spec.Icon,
 					Vendor:      latestExtensionVersion.Spec.Vendor,
@@ -286,10 +288,23 @@ func (r *RepositoryReconciler) createExtensions(ctx context.Context, index *helm
 			if len(version.URLs) > 0 {
 				chartURL = version.URLs[0]
 			}
-			description := make(corev1alpha1.Locales, 0)
-			if err := json.Unmarshal([]byte(version.Description), &description); err != nil {
-				klog.Warningf("unable to decode locales")
-				description["en"] = corev1alpha1.LocaleString(version.Description)
+
+			var description corev1alpha1.Locales
+			if version.Description != "" {
+				if err := json.Unmarshal([]byte(version.Description), &description); err != nil {
+					description = corev1alpha1.Locales{
+						corev1alpha1.DefaultLanguageCode: corev1alpha1.LocaleString(version.Description),
+					}
+				}
+			}
+
+			var displayName corev1alpha1.Locales
+			if displayNameAnnotation := version.Annotations[corev1alpha1.DisplayNameAnnotation]; displayNameAnnotation != "" {
+				if err := json.Unmarshal([]byte(displayNameAnnotation), &displayName); err != nil {
+					displayName = corev1alpha1.Locales{
+						corev1alpha1.DefaultLanguageCode: corev1alpha1.LocaleString(displayNameAnnotation),
+					}
+				}
 			}
 
 			extensionVersions = append(extensionVersions, corev1alpha1.ExtensionVersion{
@@ -307,6 +322,7 @@ func (r *RepositoryReconciler) createExtensions(ctx context.Context, index *helm
 					Home:        version.Home,
 					Sources:     version.Sources,
 					ExtensionInfo: &corev1alpha1.ExtensionInfo{
+						DisplayName: displayName,
 						Description: description,
 						Icon:        version.Icon,
 						Vendor:      vendor,

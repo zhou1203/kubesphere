@@ -25,4 +25,5 @@ const (
 	StateInstalling          = "Installing"
 	ExtensionReferenceLabel  = "kubesphere.io/extension-ref"
 	RepositoryReferenceLabel = "kubesphere.io/repository-ref"
+	DisplayNameAnnotation    = "kubesphere.io/display-name"
 )
