@@ -46,6 +46,16 @@ var _ reconcile.Reconciler = &SubscriptionReconciler{}
 
 type SubscriptionReconciler struct {
 	client.Client
+
+	helmGetter getter.Getter
+}
+
+func NewSubscriptionReconciler() *SubscriptionReconciler {
+	helmGetter, _ := getter.NewHTTPGetter()
+
+	return &SubscriptionReconciler{
+		helmGetter: helmGetter,
+	}
 }
 
 // reconcileDelete delete the helm release involved and remove finalizer from subscription.
@@ -124,8 +134,7 @@ func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1a
 
 	// TODO: Fetch load data from repo service.
 	if po.Status.Phase == corev1.PodRunning {
-		g, _ := getter.NewHTTPGetter()
-		buf, err := g.Get(fmt.Sprintf("http://%s:8080/%s", po.Status.PodIP, url),
+		buf, err := r.helmGetter.Get(fmt.Sprintf("http://%s:8080/%s", po.Status.PodIP, url),
 			getter.WithTimeout(5*time.Minute),
 		)
 		if err != nil {
