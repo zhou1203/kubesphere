@@ -22,6 +22,7 @@ const (
 	StateAvailable           = "Available"
 	StateUnavailable         = "Unavailable"
 	StateUninstalling        = "Uninstalling"
+	StateUninstallFailed     = "UninstallFailed"
 	StateInstalling          = "Installing"
 	ExtensionReferenceLabel  = "kubesphere.io/extension-ref"
 	RepositoryReferenceLabel = "kubesphere.io/repository-ref"

@@ -58,143 +58,6 @@ func NewSubscriptionReconciler() *SubscriptionReconciler {
 	}
 }
 
-// reconcileDelete delete the helm release involved and remove finalizer from subscription.
-func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
-	helmExecutor, err := helm.NewExecutor(sub.Status.TargetNamespace, sub.Status.ReleaseName)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if sub.Status.JobName != "" {
-		job := &batchv1.Job{}
-		if err = r.Get(ctx, client.ObjectKey{Namespace: sub.Status.TargetNamespace, Name: sub.Status.JobName}, job); err != nil {
-			return ctrl.Result{}, err
-		}
-		if job.Status.Succeeded > 0 {
-			klog.V(4).Infof("remove the finalizer for subscription %s", sub.Name)
-			return r.removeFinalizer(ctx, sub)
-		}
-		return ctrl.Result{
-			RequeueAfter: time.Second * 3,
-		}, nil
-	}
-
-	if _, err = helmExecutor.Manifest(); err != nil {
-		if !strings.Contains(err.Error(), "release: not found") {
-			return ctrl.Result{}, err
-		}
-		// The involved release does not exist, just move on.
-		return r.removeFinalizer(ctx, sub)
-	}
-
-	jobName, err := helmExecutor.Uninstall(ctx)
-	if err != nil {
-		klog.Errorf("delete helm release %s/%s failed, error: %s", sub.Status.TargetNamespace, sub.Status.ReleaseName, err)
-		return ctrl.Result{}, err
-	}
-
-	klog.Infof("delete helm release %s/%s", sub.Status.TargetNamespace, sub.Status.ReleaseName)
-	sub.Status.JobName = jobName
-	if err = r.Update(ctx, sub); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
-}
-
-func (r *SubscriptionReconciler) removeFinalizer(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
-	// Remove the finalizer from the subscription and update it.
-	controllerutil.RemoveFinalizer(sub, SubscriptionFinalizer)
-	if err := r.Update(ctx, sub); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
-}
-
-func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1alpha1.ExtensionRef) ([]byte, error) {
-	extensionVersion := &corev1alpha1.ExtensionVersion{}
-	err := r.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("%s-%s", ref.Name, ref.Version)}, extensionVersion)
-	if err != nil {
-		return nil, err
-	}
-	repo := &corev1alpha1.Repository{}
-	err = r.Get(ctx, types.NamespacedName{Name: extensionVersion.Spec.Repository}, repo)
-	if err != nil {
-		return nil, err
-	}
-	po := &corev1.Pod{}
-	podName := generatePodName(repo.Name)
-	if err := r.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: podName}, po); err != nil {
-		return nil, err
-	}
-
-	url := strings.TrimPrefix(extensionVersion.Spec.ChartURL, "/")
-	if len(url) == 0 {
-		return nil, fmt.Errorf("empty url")
-	}
-
-	// TODO: Fetch load data from repo service.
-	if po.Status.Phase == corev1.PodRunning {
-		buf, err := r.helmGetter.Get(fmt.Sprintf("http://%s:8080/%s", po.Status.PodIP, url),
-			getter.WithTimeout(5*time.Minute),
-		)
-		if err != nil {
-			return nil, err
-		} else {
-			return buf.Bytes(), nil
-		}
-	} else {
-		return nil, fmt.Errorf("repo not ready")
-	}
-}
-
-func (r *SubscriptionReconciler) doReconcile(ctx context.Context, sub *corev1alpha1.Subscription) (*corev1alpha1.Subscription, ctrl.Result, error) {
-
-	// TODO: reconsider how to define the target namespace
-	targetNamespace := fmt.Sprintf("extension-%s", sub.Spec.Extension.Name)
-	releaseName := sub.Spec.Extension.Name
-
-	helmExecutor, err := helm.NewExecutor(targetNamespace, releaseName)
-	if err != nil {
-		return nil, ctrl.Result{}, err
-	}
-
-	var jobName string
-	if _, err = helmExecutor.Manifest(); err != nil {
-		if !strings.Contains(err.Error(), "release: not found") {
-			return sub, ctrl.Result{}, err
-		} else {
-			charData, err := r.loadChartData(ctx, &sub.Spec.Extension)
-			if err == nil {
-				jobName, err = helmExecutor.Install(ctx, sub.Spec.Extension.Name, charData, []byte(sub.Spec.Config))
-				if err != nil {
-					klog.Errorf("install helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
-					return sub, ctrl.Result{}, err
-				} else {
-					klog.Infof("install helm release %s/%s", targetNamespace, releaseName)
-				}
-			} else {
-				klog.Errorf("fail to load chart data for subscription: %s, error: %s", sub.Name, err)
-				return nil, ctrl.Result{}, err
-			}
-		}
-	} else { //nolint:staticcheck
-		// TODO: Upgrade the release.
-	}
-
-	// TODO: Add more conditions
-	sub.Status = corev1alpha1.SubscriptionStatus{
-		State:           corev1alpha1.StateInstalling,
-		ReleaseName:     releaseName,
-		TargetNamespace: targetNamespace,
-		JobName:         jobName,
-	}
-	if err := r.Update(ctx, sub); err != nil {
-		return sub, ctrl.Result{}, err
-	}
-
-	return sub, ctrl.Result{}, nil
-}
-
 func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	klog.V(4).Infof("sync subscription: %s ", req.String())
 
@@ -216,8 +79,14 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.reconcileDelete(ctx, sub)
 	}
 
-	if _, res, err := r.doReconcile(ctx, sub); err != nil {
-		return res, err
+	switch sub.Status.State {
+	case "":
+		return r.installOrUpdate(ctx, sub)
+	case corev1alpha1.StateInstalling:
+		return r.syncJobStatus(ctx, sub)
+	case corev1alpha1.StateUnavailable, corev1alpha1.StateUninstallFailed:
+		// The installation/uninstallation has failed, so do nothing
+		break
 	}
 
 	return ctrl.Result{}, nil
@@ -228,4 +97,187 @@ func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("subscription-controller").
 		For(&corev1alpha1.Subscription{}).Complete(r)
+}
+
+// reconcileDelete delete the helm release involved and remove finalizer from subscription.
+func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	helmExecutor, err := helm.NewExecutor(sub.Status.TargetNamespace, sub.Status.ReleaseName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if sub.Status.JobName != "" {
+		jobCondition, err := r.jobCondition(ctx, sub.Status.TargetNamespace, sub.Status.JobName)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if jobCondition == batchv1.JobComplete {
+			klog.V(4).Infof("remove the finalizer for subscription %s", sub.Name)
+			return r.removeFinalizer(ctx, sub)
+		}
+		if jobCondition == batchv1.JobFailed {
+			sub.Status.State = corev1alpha1.StateUninstallFailed
+			return r.updateSubscription(ctx, sub)
+		}
+		// Job is still running, check it later
+		return ctrl.Result{
+			RequeueAfter: time.Second * 3,
+		}, nil
+	}
+
+	if _, err = helmExecutor.Manifest(); err != nil {
+		if !strings.Contains(err.Error(), "release: not found") {
+			return ctrl.Result{}, err
+		}
+		// The involved release does not exist, just move on.
+		return r.removeFinalizer(ctx, sub)
+	}
+
+	jobName, err := helmExecutor.Uninstall(ctx)
+	if err != nil {
+		klog.Errorf("delete helm release %s/%s failed, error: %s", sub.Status.TargetNamespace, sub.Status.ReleaseName, err)
+		return ctrl.Result{}, err
+	}
+
+	klog.Infof("delete helm release %s/%s", sub.Status.TargetNamespace, sub.Status.ReleaseName)
+	sub.Status.JobName = jobName
+	sub.Status.State = corev1alpha1.StateUninstalling
+	return r.updateSubscription(ctx, sub)
+}
+
+func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1alpha1.ExtensionRef) ([]byte, error) {
+	extensionVersion := &corev1alpha1.ExtensionVersion{}
+	if err := r.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("%s-%s", ref.Name, ref.Version)}, extensionVersion); err != nil {
+		return nil, err
+	}
+
+	repo := &corev1alpha1.Repository{}
+	if err := r.Get(ctx, types.NamespacedName{Name: extensionVersion.Spec.Repository}, repo); err != nil {
+		return nil, err
+	}
+
+	pod := &corev1.Pod{}
+	podName := generatePodName(repo.Name)
+	if err := r.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: podName}, pod); err != nil {
+		return nil, err
+	}
+
+	url := strings.TrimPrefix(extensionVersion.Spec.ChartURL, "/")
+	if len(url) == 0 {
+		return nil, fmt.Errorf("empty url")
+	}
+
+	if pod.Status.Phase != corev1.PodRunning {
+		return nil, fmt.Errorf("repo not ready")
+	}
+
+	buf, err := r.helmGetter.Get(fmt.Sprintf("http://%s:8080/%s", pod.Status.PodIP, url),
+		getter.WithTimeout(5*time.Minute),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	// TODO: reconsider how to define the target namespace
+	targetNamespace := fmt.Sprintf("extension-%s", sub.Spec.Extension.Name)
+	releaseName := sub.Spec.Extension.Name
+
+	helmExecutor, err := helm.NewExecutor(targetNamespace, releaseName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	charData, err := r.loadChartData(ctx, &sub.Spec.Extension)
+	if err != nil {
+		klog.Errorf("fail to load chart data for subscription: %s, error: %s", sub.Name, err)
+		return ctrl.Result{}, err
+	}
+
+	var jobName string
+	if _, err = helmExecutor.Manifest(); err != nil {
+		// release not exists or there is something wrong with the Manifest API
+		if !strings.Contains(err.Error(), "release: not found") {
+			return ctrl.Result{}, err
+		}
+
+		klog.Infof("install helm release %s/%s", targetNamespace, releaseName)
+		jobName, err = helmExecutor.Install(ctx, sub.Spec.Extension.Name, charData, []byte(sub.Spec.Config))
+		if err != nil {
+			klog.Errorf("install helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
+			return ctrl.Result{}, err
+		}
+	} else {
+		// release exists, we need to upgrade it
+		klog.Infof("upgrade helm release %s/%s", targetNamespace, releaseName)
+		jobName, err = helmExecutor.Upgrade(ctx, sub.Spec.Extension.Name, charData, []byte(sub.Spec.Config))
+		if err != nil {
+			klog.Errorf("upgrade helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
+			return ctrl.Result{}, err
+		}
+	}
+
+	// TODO: Add more conditions
+	sub.Status = corev1alpha1.SubscriptionStatus{
+		State:           corev1alpha1.StateInstalling,
+		ReleaseName:     releaseName,
+		TargetNamespace: targetNamespace,
+		JobName:         jobName,
+	}
+	return r.updateSubscription(ctx, sub)
+}
+
+func (r *SubscriptionReconciler) syncJobStatus(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	if sub.Status.JobName == "" {
+		// This is unlikely to happen in normal processes, and this is just to avoid subsequent exceptions
+		return ctrl.Result{}, nil
+	}
+	jobCondition, err := r.jobCondition(ctx, sub.Status.TargetNamespace, sub.Status.JobName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if jobCondition == "" {
+		// Job is still running, check it later
+		return ctrl.Result{
+			RequeueAfter: time.Second * 3,
+		}, nil
+	}
+
+	if jobCondition == batchv1.JobComplete {
+		sub.Status.State = corev1alpha1.StateAvailable
+	}
+	if jobCondition == batchv1.JobFailed {
+		sub.Status.State = corev1alpha1.StateUnavailable
+	}
+	return r.updateSubscription(ctx, sub)
+}
+
+func (r *SubscriptionReconciler) jobCondition(ctx context.Context, namespace, name string) (batchv1.JobConditionType, error) {
+	job := &batchv1.Job{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, job); err != nil {
+		return "", err
+	}
+	if job.Status.Succeeded > 0 {
+		return batchv1.JobComplete, nil
+	}
+	if job.Status.Failed > 0 {
+		return batchv1.JobFailed, nil
+	}
+	return "", nil
+}
+
+func (r *SubscriptionReconciler) removeFinalizer(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	// Remove the finalizer from the subscription and update it.
+	controllerutil.RemoveFinalizer(sub, SubscriptionFinalizer)
+	return r.updateSubscription(ctx, sub)
+}
+
+func (r *SubscriptionReconciler) updateSubscription(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	if err := r.Update(ctx, sub); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
 }
