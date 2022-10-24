@@ -49,6 +49,10 @@ import (
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	typesv1beta1 "kubesphere.io/api/types/v1beta1"
 
+	notificationv1 "kubesphere.io/kubesphere/pkg/kapis/notification/v1"
+	notificationkapisv2beta1 "kubesphere.io/kubesphere/pkg/kapis/notification/v2beta1"
+	notificationkapisv2beta2 "kubesphere.io/kubesphere/pkg/kapis/notification/v2beta2"
+
 	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/basic"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/jwt"
@@ -81,9 +85,6 @@ import (
 	meteringv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/metering/v1alpha1"
 	monitoringv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/monitoring/v1alpha3"
 	networkv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/network/v1alpha2"
-	notificationv1 "kubesphere.io/kubesphere/pkg/kapis/notification/v1"
-	notificationkapisv2beta1 "kubesphere.io/kubesphere/pkg/kapis/notification/v2beta1"
-	notificationkapisv2beta2 "kubesphere.io/kubesphere/pkg/kapis/notification/v2beta2"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	openpitrixv1 "kubesphere.io/kubesphere/pkg/kapis/openpitrix/v1"
 	openpitrixv2alpha1 "kubesphere.io/kubesphere/pkg/kapis/openpitrix/v2alpha1"
@@ -265,7 +266,6 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 	urlruntime.Must(servicemeshv1alpha2.AddToContainer(s.Config.ServiceMeshOptions, s.container, s.KubernetesClient.Kubernetes(), s.CacheClient))
 	urlruntime.Must(networkv1alpha2.AddToContainer(s.container, s.Config.NetworkOptions.WeaveScopeHost))
 	urlruntime.Must(kapisdevops.AddToContainer(s.container, s.Config.DevopsOptions.Endpoint))
-	urlruntime.Must(notificationv1.AddToContainer(s.container, s.Config.NotificationOptions.Endpoint))
 	urlruntime.Must(alertingv1.AddToContainer(s.container, s.Config.AlertingOptions.Endpoint))
 	urlruntime.Must(alertingv2alpha1.AddToContainer(s.container, s.InformerFactory,
 		s.KubernetesClient.Prometheus(), s.AlertingClient, s.Config.AlertingOptions))
@@ -273,10 +273,13 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 	urlruntime.Must(version.AddToContainer(s.container, s.KubernetesClient.Kubernetes().Discovery()))
 	urlruntime.Must(kubeedgev1alpha1.AddToContainer(s.container, s.Config.KubeEdgeOptions.Endpoint))
 	urlruntime.Must(edgeruntimev1alpha1.AddToContainer(s.container, s.Config.EdgeRuntimeOptions.Endpoint))
-	urlruntime.Must(notificationkapisv2beta1.AddToContainer(s.container, s.InformerFactory, s.KubernetesClient.Kubernetes(),
-		s.KubernetesClient.KubeSphere()))
-	urlruntime.Must(notificationkapisv2beta2.AddToContainer(s.container, s.InformerFactory, s.KubernetesClient.Kubernetes(),
-		s.KubernetesClient.KubeSphere(), s.Config.NotificationOptions))
+	if s.Config.NotificationOptions.IsEnabled() {
+		urlruntime.Must(notificationv1.AddToContainer(s.container, s.Config.NotificationOptions.Endpoint))
+		urlruntime.Must(notificationkapisv2beta1.AddToContainer(s.container, s.InformerFactory, s.KubernetesClient.Kubernetes(),
+			s.KubernetesClient.KubeSphere()))
+		urlruntime.Must(notificationkapisv2beta2.AddToContainer(s.container, s.InformerFactory, s.KubernetesClient.Kubernetes(),
+			s.KubernetesClient.KubeSphere(), s.Config.NotificationOptions))
+	}
 	urlruntime.Must(gatewayv1alpha1.AddToContainer(s.container, s.Config.GatewayOptions, s.RuntimeCache, s.RuntimeClient, s.InformerFactory, s.KubernetesClient.Kubernetes(), s.LoggingClient))
 	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
 }
@@ -327,6 +330,11 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 			tenantv1alpha2.Resource(clusterv1alpha1.ResourcesPluralCluster),
 			clusterv1alpha1.Resource(clusterv1alpha1.ResourcesPluralCluster),
 			resourcev1alpha3.Resource(clusterv1alpha1.ResourcesPluralCluster),
+		},
+	}
+
+	if s.Config.NotificationOptions.IsEnabled() {
+		requestInfoResolver.GlobalResources = append(requestInfoResolver.GlobalResources,
 			notificationv2beta1.Resource(notificationv2beta1.ResourcesPluralConfig),
 			notificationv2beta1.Resource(notificationv2beta1.ResourcesPluralReceiver),
 			notificationv2beta2.Resource(notificationv2beta2.ResourcesPluralNotificationManager),
@@ -334,9 +342,8 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 			notificationv2beta2.Resource(notificationv2beta2.ResourcesPluralReceiver),
 			notificationv2beta2.Resource(notificationv2beta2.ResourcesPluralRouter),
 			notificationv2beta2.Resource(notificationv2beta2.ResourcesPluralSilence),
-		},
+		)
 	}
-
 	handler := s.Server.Handler
 	reverseProxy := extensions.NewReverseProxy(s.RuntimeCache)
 	jsBundle := extensions.NewJSBundle(s.RuntimeCache)
@@ -520,17 +527,19 @@ func (s *APIServer) waitForResourceSync(ctx context.Context) error {
 		{Group: "network.kubesphere.io", Version: "v1alpha1"}: {
 			"ippools",
 		},
-		{Group: "notification.kubesphere.io", Version: "v2beta1"}: {
+	}
+	if s.Config.NotificationOptions.IsEnabled() {
+		ksGVRs[schema.GroupVersion{Group: "notification.kubesphere.io", Version: "v2beta1"}] = []string{
 			notificationv2beta1.ResourcesPluralConfig,
 			notificationv2beta1.ResourcesPluralReceiver,
-		},
-		{Group: "notification.kubesphere.io", Version: "v2beta2"}: {
+		}
+		ksGVRs[schema.GroupVersion{Group: "notification.kubesphere.io", Version: "v2beta2"}] = []string{
 			notificationv2beta2.ResourcesPluralNotificationManager,
 			notificationv2beta2.ResourcesPluralConfig,
 			notificationv2beta2.ResourcesPluralReceiver,
 			notificationv2beta2.ResourcesPluralRouter,
 			notificationv2beta2.ResourcesPluralSilence,
-		},
+		}
 	}
 
 	// skip caching devops resources if devops not enabled
