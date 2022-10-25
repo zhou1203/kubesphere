@@ -95,7 +95,7 @@ func NewKubernetesClientOrDie(options *KubernetesOptions) Client {
 }
 
 // NewKubernetesClient creates a KubernetesClient
-func NewKubernetesClient(options *KubernetesOptions) (Client, error) {
+func NewKubernetesClient(options *KubernetesOptions, promEnable bool) (Client, error) {
 	config, err := clientcmd.BuildConfigFromFlags("", options.KubeConfig)
 	if err != nil {
 		return nil, err
@@ -131,9 +131,11 @@ func NewKubernetesClient(options *KubernetesOptions) (Client, error) {
 		return nil, err
 	}
 
-	k.prometheus, err = promresourcesclient.NewForConfig(config)
-	if err != nil {
-		return nil, err
+	if promEnable {
+		k.prometheus, err = promresourcesclient.NewForConfig(config)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	k.master = options.Master

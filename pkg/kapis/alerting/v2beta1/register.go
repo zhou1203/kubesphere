@@ -19,6 +19,8 @@ package v2beta1
 import (
 	"net/http"
 
+	"github.com/pkg/errors"
+
 	"github.com/emicklei/go-restful"
 	restfulspec "github.com/emicklei/go-restful-openapi"
 
@@ -36,6 +38,19 @@ import (
 func AddToContainer(container *restful.Container, informers informers.InformerFactory, ruleClient alerting.RuleClient) error {
 
 	ws := runtime.NewWebService(alertingv2beta1.SchemeGroupVersion)
+
+	if informers == nil || ruleClient == nil {
+		h := func(req *restful.Request, resp *restful.Response) {
+			kapi.HandleBadRequest(resp, nil, errors.New("The alerting v2beta1 APIs are not enabled"))
+		}
+		ws.Route(ws.GET("/{path:*}").To(h).Returns(http.StatusOK, kapi.StatusOK, nil))
+		ws.Route(ws.PUT("/{path:*}").To(h).Returns(http.StatusOK, kapi.StatusOK, nil))
+		ws.Route(ws.POST("/{path:*}").To(h).Returns(http.StatusOK, kapi.StatusOK, nil))
+		ws.Route(ws.DELETE("/{path:*}").To(h).Returns(http.StatusOK, kapi.StatusOK, nil))
+		ws.Route(ws.PATCH("/{path:*}").To(h).Returns(http.StatusOK, kapi.StatusOK, nil))
+		container.Add(ws)
+		return nil
+	}
 
 	handler := newHandler(informers, ruleClient)
 

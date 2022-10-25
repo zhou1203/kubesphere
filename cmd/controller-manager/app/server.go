@@ -44,6 +44,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/user"
 	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"kubesphere.io/kubesphere/pkg/simple/client/monitoring/prometheus"
 	"kubesphere.io/kubesphere/pkg/simple/client/s3"
 	"kubesphere.io/kubesphere/pkg/utils/metrics"
 	"kubesphere.io/kubesphere/pkg/utils/term"
@@ -164,7 +165,7 @@ func Run(s *options.KubeSphereControllerManagerOptions, configCh <-chan controll
 
 func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) error {
 
-	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions)
+	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions, prometheus.MonitorModuleEnable(s.MonitoringOptions))
 	if err != nil {
 		klog.Errorf("Failed to create kubernetes clientset %v", err)
 		return err

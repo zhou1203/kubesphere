@@ -117,7 +117,7 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		Config: s.Config,
 	}
 
-	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions)
+	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions, prometheus.MonitorModuleEnable(s.MonitoringOptions))
 	if err != nil {
 		return nil, err
 	}
@@ -127,8 +127,8 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		kubernetesClient.Istio(), kubernetesClient.Snapshot(), kubernetesClient.ApiExtensions(), kubernetesClient.Prometheus())
 	apiServer.InformerFactory = informerFactory
 
-	if s.MonitoringOptions == nil || len(s.MonitoringOptions.Endpoint) == 0 {
-		return nil, fmt.Errorf("moinitoring service address in configuration MUST not be empty, please check configmap/kubesphere-config in kubesphere-system namespace")
+	if !prometheus.MonitorModuleEnable(s.MonitoringOptions) {
+		klog.Warning("monitoring configuration is empty, disable monitor component")
 	} else {
 		monitoringClient, err := prometheus.NewPrometheus(s.MonitoringOptions)
 		if err != nil {

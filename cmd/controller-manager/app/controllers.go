@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/simple/client/monitoring/prometheus"
+
 	"kubesphere.io/kubesphere/pkg/controller/core"
 
 	"github.com/kubesphere/pvc-autoresizer/runners"
@@ -371,8 +373,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	}
 
 	// "pvc-autoresizer"
-	monitoringOptionsEnable := cmOptions.MonitoringOptions != nil && len(cmOptions.MonitoringOptions.Endpoint) != 0
-	if monitoringOptionsEnable {
+	if prometheus.MonitorModuleEnable(cmOptions.MonitoringOptions) {
 		if cmOptions.IsControllerEnabled("pvc-autoresizer") {
 			if err := runners.SetupIndexer(mgr, false); err != nil {
 				return err
@@ -560,7 +561,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// controllers for alerting
 	alertingOptionsEnable := cmOptions.AlertingOptions != nil && (cmOptions.AlertingOptions.PrometheusEndpoint != "" || cmOptions.AlertingOptions.ThanosRulerEndpoint != "")
-	if alertingOptionsEnable {
+	if alertingOptionsEnable && prometheus.MonitorModuleEnable(cmOptions.MonitoringOptions) {
 		// "rulegroup" controller
 		if cmOptions.IsControllerEnabled("rulegroup") {
 			rulegroupReconciler := &alerting.RuleGroupReconciler{}

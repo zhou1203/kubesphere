@@ -30,6 +30,14 @@ func NewPrometheusOptions() *Options {
 	}
 }
 
+func MonitorModuleEnable(option *Options) bool {
+	if option == nil || len(option.Endpoint) == 0 {
+		return false
+	}
+
+	return true
+}
+
 func (s *Options) Validate() []error {
 	var errs []error
 	return errs
