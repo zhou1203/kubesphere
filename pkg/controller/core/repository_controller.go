@@ -29,12 +29,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
-	"kubesphere.io/api/application/v1alpha1"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"kubesphere.io/api/application/v1alpha1"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/simple/client/openpitrix/helmrepoindex"

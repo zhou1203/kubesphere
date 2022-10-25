@@ -19,6 +19,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"strings"
 	"time"
 
@@ -34,8 +35,6 @@ import (
 
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	"kubesphere.io/utils/helm"
-
-	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 const (
@@ -46,16 +45,24 @@ var _ reconcile.Reconciler = &SubscriptionReconciler{}
 
 type SubscriptionReconciler struct {
 	client.Client
-
+	kubeconfig string
 	helmGetter getter.Getter
 }
 
-func NewSubscriptionReconciler() *SubscriptionReconciler {
+func NewSubscriptionReconciler(kubeconfigPath string) (*SubscriptionReconciler, error) {
+	// TODO support more options (e.g. skipTLSVerify or basic auth etc.) for the specified repository
 	helmGetter, _ := getter.NewHTTPGetter()
 
-	return &SubscriptionReconciler{
-		helmGetter: helmGetter,
+	var kubeconfig string
+	if kubeconfigPath != "" {
+		data, err := ioutil.ReadFile(kubeconfigPath)
+		if err != nil {
+			return nil, err
+		}
+		kubeconfig = string(data)
 	}
+
+	return &SubscriptionReconciler{kubeconfig: kubeconfig, helmGetter: helmGetter}, nil
 }
 
 func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -99,9 +106,19 @@ func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&corev1alpha1.Subscription{}).Complete(r)
 }
 
+func (r *SubscriptionReconciler) defaultHelmOptions() []helm.Option {
+	options := make([]helm.Option, 0)
+	if r.kubeconfig != "" {
+		options = append(options, helm.SetKubeConfig(r.kubeconfig))
+	}
+	// TODO support helm image option
+	return options
+}
+
 // reconcileDelete delete the helm release involved and remove finalizer from subscription.
 func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
-	helmExecutor, err := helm.NewExecutor(sub.Status.TargetNamespace, sub.Status.ReleaseName)
+	options := r.defaultHelmOptions()
+	helmExecutor, err := helm.NewExecutor(sub.Status.TargetNamespace, sub.Status.ReleaseName, options...)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -151,41 +168,41 @@ func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1a
 		return nil, err
 	}
 
-	repo := &corev1alpha1.Repository{}
-	if err := r.Get(ctx, types.NamespacedName{Name: extensionVersion.Spec.Repository}, repo); err != nil {
-		return nil, err
+	// load chart data from
+	if extensionVersion.Spec.ChartDataRef != nil {
+		configMap := &corev1.ConfigMap{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: extensionVersion.Spec.ChartDataRef.Namespace, Name: extensionVersion.Spec.ChartDataRef.Name}, configMap); err != nil {
+			return nil, err
+		}
+		data := configMap.BinaryData[extensionVersion.Spec.ChartDataRef.Key]
+		if data != nil {
+			return data, nil
+		}
+		return nil, fmt.Errorf("binary data not found")
 	}
 
-	pod := &corev1.Pod{}
-	podName := generatePodName(repo.Name)
-	if err := r.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: podName}, pod); err != nil {
-		return nil, err
+	// load chart data from url
+	if extensionVersion.Spec.ChartURL != "" {
+		buf, err := r.helmGetter.Get(extensionVersion.Spec.ChartURL,
+			getter.WithTimeout(5*time.Minute),
+		)
+		if err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
 	}
 
-	url := strings.TrimPrefix(extensionVersion.Spec.ChartURL, "/")
-	if len(url) == 0 {
-		return nil, fmt.Errorf("empty url")
-	}
-
-	if pod.Status.Phase != corev1.PodRunning {
-		return nil, fmt.Errorf("repo not ready")
-	}
-
-	buf, err := r.helmGetter.Get(fmt.Sprintf("http://%s:8080/%s", pod.Status.PodIP, url),
-		getter.WithTimeout(5*time.Minute),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return nil, fmt.Errorf("unable to load chart data")
 }
 
 func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
 	// TODO: reconsider how to define the target namespace
 	targetNamespace := fmt.Sprintf("extension-%s", sub.Spec.Extension.Name)
 	releaseName := sub.Spec.Extension.Name
-
-	helmExecutor, err := helm.NewExecutor(targetNamespace, releaseName)
+	options := r.defaultHelmOptions()
+	options = append(options, helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}))
+	options = append(options, helm.SetCreateNamespace(true))
+	helmExecutor, err := helm.NewExecutor(targetNamespace, releaseName, options...)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

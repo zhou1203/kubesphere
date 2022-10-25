@@ -203,7 +203,10 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	}
 
 	if cmOptions.IsControllerEnabled("subscription") {
-		subscriptionReconciler := core.NewSubscriptionReconciler()
+		subscriptionReconciler, err := core.NewSubscriptionReconciler(cmOptions.KubernetesOptions.KubeConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create subscription controller: %v", err)
+		}
 		addControllerWithSetup(mgr, "subscription", subscriptionReconciler)
 	}
 

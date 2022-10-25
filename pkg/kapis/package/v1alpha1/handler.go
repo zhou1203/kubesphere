@@ -17,13 +17,16 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"bytes"
 	"net/http"
 
 	"github.com/emicklei/go-restful"
 	"helm.sh/helm/v3/pkg/chart/loader"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/api"
 )
@@ -44,9 +47,23 @@ func (h *handler) handleFiles(request *restful.Request, response *restful.Respon
 		api.HandleError(response, request, err)
 		return
 	}
-	// TODO load files from chart data
-	if extensionVersion.Spec.ChartURL == "" {
-		response.WriteEntity([]interface{}{})
+	if extensionVersion.Spec.ChartDataRef != nil {
+		configMap := &corev1.ConfigMap{}
+		if err := h.cache.Get(request.Request.Context(), types.NamespacedName{Namespace: extensionVersion.Spec.ChartDataRef.Namespace, Name: extensionVersion.Spec.ChartDataRef.Name}, configMap); err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		data := configMap.BinaryData[extensionVersion.Spec.ChartDataRef.Key]
+		if data == nil {
+			response.WriteEntity([]interface{}{})
+			return
+		}
+		files, err := loader.LoadArchiveFiles(bytes.NewReader(data))
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		response.WriteEntity(files)
 		return
 	}
 	resp, err := http.Get(extensionVersion.Spec.ChartURL)

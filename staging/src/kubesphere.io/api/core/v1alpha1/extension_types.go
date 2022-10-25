@@ -16,7 +16,10 @@ limitations under the License.
 
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // Vendor describes an extension vendor.
 type Vendor struct {
@@ -53,7 +56,14 @@ type ExtensionVersionSpec struct {
 	// KSVersion is a SemVer constraint specifying the version of KubeSphere required.
 	KSVersion string `json:"ksVersion,omitempty"`
 	Home      string `json:"home,omitempty"`
-	ChartURL  string `json:"chartURL,omitempty"`
+	// ChartDataRef refers to a configMap which contains raw chart data.
+	ChartDataRef *ConfigMapKeyRef `json:"chartDataRef,omitempty"`
+	ChartURL     string           `json:"chartURL,omitempty"`
+}
+
+type ConfigMapKeyRef struct {
+	corev1.ConfigMapKeySelector `json:",inline"`
+	Namespace                   string `json:"namespace"`
 }
 
 // +kubebuilder:object:root=true

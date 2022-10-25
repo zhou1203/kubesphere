@@ -38,6 +38,27 @@ spec:
             description: ExtensionVersionSpec contains the details of a specific version
               extension.
             properties:
+              chartDataRef:
+                description: ChartDataRef refers to a configMap which contains raw
+                  chart data.
+                properties:
+                  key:
+                    description: The key to select.
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                  namespace:
+                    type: string
+                  optional:
+                    description: Specify whether the ConfigMap or its key must be
+                      defined
+                    type: boolean
+                required:
+                - key
+                - namespace
+                type: object
               chartURL:
                 type: string
               description:

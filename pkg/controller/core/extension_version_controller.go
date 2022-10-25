@@ -21,15 +21,16 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
 const (
-	ExtensionVersionFinalizer = "extensionversionss.kubesphere.io"
+	ExtensionVersionFinalizer = "extensionversions.kubesphere.io"
 )
 
 var _ reconcile.Reconciler = &ExtensionVersionReconciler{}
@@ -56,7 +57,8 @@ func (r *ExtensionVersionReconciler) reconcile(ctx context.Context, extensionVer
 	extension := &corev1alpha1.Extension{}
 	name := extensionVersion.Labels[corev1alpha1.ExtensionReferenceLabel]
 	if err := r.Get(ctx, types.NamespacedName{Name: name}, extension); err != nil {
-		return ctrl.Result{}, err
+		// skip extension status sync if not found
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if _, err := reconcileExtensionStatus(ctx, r.Client, extension, r.K8sVersion); err != nil {

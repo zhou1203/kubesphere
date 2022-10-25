@@ -22,11 +22,12 @@ import (
 	"sort"
 
 	"k8s.io/klog"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
 const (
