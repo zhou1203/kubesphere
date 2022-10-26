@@ -45,15 +45,15 @@ import (
 // or get the status and manifest data of the release, etc.
 type Executor interface {
 	// Install installs the specified chart and returns the name of the Job that executed the task.
-	Install(ctx context.Context, chartName string, chartData, values []byte) (string, error)
+	Install(ctx context.Context, chartName string, chartData, values []byte, options ...HelmOption) (string, error)
 	// Upgrade upgrades the specified chart and returns the name of the Job that executed the task.
-	Upgrade(ctx context.Context, chartName string, chartData, values []byte) (string, error)
+	Upgrade(ctx context.Context, chartName string, chartData, values []byte, options ...HelmOption) (string, error)
 	// Uninstall is used to uninstall the specified chart and returns the name of the Job that executed the task.
-	Uninstall(ctx context.Context) (string, error)
+	Uninstall(ctx context.Context, options ...HelmOption) (string, error)
 	// Manifest returns the manifest data for this release.
-	Manifest() (string, error)
+	Manifest(options ...HelmOption) (string, error)
 	// IsReleaseReady checks if the helm release is ready.
-	IsReleaseReady(timeout time.Duration) (bool, error)
+	IsReleaseReady(timeout time.Duration, options ...HelmOption) (bool, error)
 }
 
 const (
@@ -71,6 +71,7 @@ const (
 cat > ./.local-helm-output.yaml
 kustomize build
 `
+	kubeConfigPath = "kube.config"
 )
 
 var (
@@ -79,13 +80,11 @@ var (
 
 type executor struct {
 	// target cluster client
-	client     kubernetes.Interface
-	kubeConfig string
-	namespace  string
+	client    kubernetes.Interface
+	namespace string
 	// helm release name
 	releaseName string
-	// helm action Config
-	helmConf  *action.Configuration
+
 	helmImage string
 	// add labels to helm chart
 	labels map[string]string
@@ -125,13 +124,6 @@ func SetHelmImage(helmImage string) Option {
 	}
 }
 
-// SetKubeConfig sets the kube config data of the target cluster.
-func SetKubeConfig(kubeConfig string) Option {
-	return func(e *executor) {
-		e.kubeConfig = kubeConfig
-	}
-}
-
 // SetCreateNamespace sets the createNamespace option.
 func SetCreateNamespace(createNamespace bool) Option {
 	return func(e *executor) {
@@ -140,10 +132,13 @@ func SetCreateNamespace(createNamespace bool) Option {
 }
 
 // NewExecutor generates a new Executor instance with the following parameters:
+//   - kubeConfig: this kube config is used to create the necessary Namespace, ConfigMap and Job to perform
+//     the installation tasks during the installation. You only need to give the kube config the necessary permissions,
+//     if the kube config is not set, we will use the in-cluster config, this may not work.
 //   - namespace: the namespace of the helm release
 //   - releaseName: the helm release name
 //   - options: functions to set optional parameters
-func NewExecutor(namespace, releaseName string, options ...Option) (Executor, error) {
+func NewExecutor(kubeConfig, namespace, releaseName string, options ...Option) (Executor, error) {
 	e := &executor{
 		namespace:   namespace,
 		releaseName: releaseName,
@@ -157,13 +152,13 @@ func NewExecutor(namespace, releaseName string, options ...Option) (Executor, er
 		restConfig *rest.Config
 		err        error
 	)
-	if e.kubeConfig == "" {
+	if kubeConfig == "" {
 		restConfig, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		restConfig, err = clientcmd.RESTConfigFromKubeConfig([]byte(e.kubeConfig))
+		restConfig, err = clientcmd.RESTConfigFromKubeConfig([]byte(kubeConfig))
 		if err != nil {
 			return nil, err
 		}
@@ -174,13 +169,7 @@ func NewExecutor(namespace, releaseName string, options ...Option) (Executor, er
 	}
 	e.client = clusterClient
 
-	klog.V(8).Infof("namespace: %s, release name: %s, kube config:%s", e.namespace, e.releaseName, e.kubeConfig)
-
-	getter := NewClusterRESTClientGetter(e.kubeConfig, e.namespace)
-	e.helmConf = new(action.Configuration)
-	if err = e.helmConf.Init(getter, e.namespace, "", klog.Infof); err != nil {
-		return nil, err
-	}
+	klog.V(8).Infof("namespace: %s, release name: %s, kube config:%s", e.namespace, e.releaseName, kubeConfig)
 
 	if e.createNamespace {
 		ns := &corev1.Namespace{
@@ -195,9 +184,44 @@ func NewExecutor(namespace, releaseName string, options ...Option) (Executor, er
 	return e, nil
 }
 
+type helmOption struct {
+	kubeConfig string
+}
+
+type HelmOption func(*helmOption)
+
+// SetHelmKubeConfig sets the kube config data of the target cluster used by helm installation.
+// NOTE: this kube config is used by the helm command to create specific chart resources.
+// You only need to give the kube config the permissions it needs in the target namespace,
+// if the kube config is not set, we will use the in-cluster config, this may not work.
+func SetHelmKubeConfig(kubeConfig string) HelmOption {
+	return func(o *helmOption) {
+		o.kubeConfig = kubeConfig
+	}
+}
+
+func initHelmConf(kubeConfig, namespace string) (*action.Configuration, error) {
+	getter := NewClusterRESTClientGetter(kubeConfig, namespace)
+	helmConf := new(action.Configuration)
+	if err := helmConf.Init(getter, namespace, "", klog.Infof); err != nil {
+		return nil, err
+	}
+	return helmConf, nil
+}
+
 // Install installs the specified chart, returns the name of the Job that executed the task.
-func (e *executor) Install(ctx context.Context, chartName string, chartData, values []byte) (string, error) {
-	sts, err := e.status()
+func (e *executor) Install(ctx context.Context, chartName string, chartData, values []byte, options ...HelmOption) (string, error) {
+	helmOptions := &helmOption{}
+	for _, f := range options {
+		f(helmOptions)
+	}
+
+	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	if err != nil {
+		return "", err
+	}
+
+	sts, err := e.status(helmConf)
 	if err == nil {
 		// helm release has been installed
 		if sts.Info != nil && sts.Info.Status == "deployed" {
@@ -207,37 +231,40 @@ func (e *executor) Install(ctx context.Context, chartName string, chartData, val
 	} else {
 		if err.Error() == statusNotFoundFormat {
 			// continue to install
-			return e.createInstallJob(ctx, chartName, chartData, values, false)
+			return e.createInstallJob(ctx, helmOptions.kubeConfig, chartName, chartData, values, false)
 		}
 		return "", err
 	}
 }
 
 // Upgrade upgrades the specified chart, returns the name of the Job that executed the task.
-func (e *executor) Upgrade(ctx context.Context, chartName string, chartData, values []byte) (string, error) {
-	sts, err := e.status()
+func (e *executor) Upgrade(ctx context.Context, chartName string, chartData, values []byte, options ...HelmOption) (string, error) {
+	helmOptions := &helmOption{}
+	for _, f := range options {
+		f(helmOptions)
+	}
+
+	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	if err != nil {
+		return "", err
+	}
+
+	sts, err := e.status(helmConf)
 	if err != nil {
 		return "", err
 	}
 
 	if sts.Info.Status == "deployed" {
-		return e.createInstallJob(ctx, chartName, chartData, values, true)
+		return e.createInstallJob(ctx, helmOptions.kubeConfig, chartName, chartData, values, true)
 	}
 	return "", fmt.Errorf("cannot upgrade release %s/%s, current state is %s", e.namespace, e.releaseName, sts.Info.Status)
-}
-
-func (e *executor) kubeConfigPath() string {
-	if len(e.kubeConfig) == 0 {
-		return ""
-	}
-	return "kube.config"
 }
 
 func (e *executor) chartPath(chartName string) string {
 	return fmt.Sprintf("%s.tgz", chartName)
 }
 
-func (e *executor) setupChartData(chartName string, chartData, values []byte) (map[string][]byte, error) {
+func (e *executor) setupChartData(kubeConfig, chartName string, chartData, values []byte) (map[string][]byte, error) {
 	if len(e.labels) == 0 && len(e.annotations) == 0 {
 		return nil, nil
 	}
@@ -258,8 +285,8 @@ func (e *executor) setupChartData(chartName string, chartData, values []byte) (m
 		e.chartPath(chartName): chartData,
 		"values.yaml":          values,
 	}
-	if e.kubeConfigPath() != "" {
-		data[e.kubeConfigPath()] = []byte(e.kubeConfig)
+	if kubeConfig != "" {
+		data[kubeConfigPath] = []byte(kubeConfig)
 	}
 	return data, nil
 }
@@ -268,8 +295,8 @@ func generateName(name string) string {
 	return fmt.Sprintf("helm-executor-%s-%s", name, rand.String(6))
 }
 
-func (e *executor) createConfigMap(ctx context.Context, chartName string, chartData, values []byte) (string, error) {
-	data, err := e.setupChartData(chartName, chartData, values)
+func (e *executor) createConfigMap(ctx context.Context, kubeConfig, chartName string, chartData, values []byte) (string, error) {
+	data, err := e.setupChartData(kubeConfig, chartName, chartData, values)
 	if err != nil {
 		return "", err
 	}
@@ -290,7 +317,7 @@ func (e *executor) createConfigMap(ctx context.Context, chartName string, chartD
 	return name, nil
 }
 
-func (e *executor) createInstallJob(ctx context.Context, chartName string, chartData, values []byte, upgrade bool) (string, error) {
+func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName string, chartData, values []byte, upgrade bool) (string, error) {
 	args := make([]string, 0, 10)
 	if upgrade {
 		args = append(args, "upgrade")
@@ -308,8 +335,8 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 		args = append(args, "--dry-run")
 	}
 
-	if e.kubeConfigPath() != "" {
-		args = append(args, "--kubeconfig", e.kubeConfigPath())
+	if kubeConfig != "" {
+		args = append(args, "--kubeconfig", kubeConfigPath)
 	}
 
 	// Post render, add annotations or labels to resources
@@ -322,7 +349,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 		args = append(args, "--debug")
 	}
 
-	name, err := e.createConfigMap(ctx, chartName, chartData, values)
+	name, err := e.createConfigMap(ctx, kubeConfig, chartName, chartData, values)
 	if err != nil {
 		return "", err
 	}
@@ -395,8 +422,18 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 }
 
 // Uninstall uninstalls the specified chart, returns the name of the Job that executed the task.
-func (e *executor) Uninstall(ctx context.Context) (string, error) {
-	if _, err := e.status(); err != nil && err.Error() == statusNotFoundFormat {
+func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string, error) {
+	helmOptions := &helmOption{}
+	for _, f := range options {
+		f(helmOptions)
+	}
+
+	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err = e.status(helmConf); err != nil && err.Error() == statusNotFoundFormat {
 		// already uninstalled
 		return "", nil
 	}
@@ -412,8 +449,8 @@ func (e *executor) Uninstall(ctx context.Context) (string, error) {
 	}
 
 	name := generateName(e.releaseName)
-	if e.kubeConfigPath() != "" {
-		args = append(args, "--kubeconfig", e.kubeConfigPath())
+	if helmOptions.kubeConfig != "" {
+		args = append(args, "--kubeconfig", kubeConfigPath)
 
 		configMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -421,10 +458,10 @@ func (e *executor) Uninstall(ctx context.Context) (string, error) {
 				Namespace: e.namespace,
 			},
 			Data: map[string]string{
-				e.kubeConfigPath(): e.kubeConfig,
+				kubeConfigPath: helmOptions.kubeConfig,
 			},
 		}
-		if _, err := e.client.CoreV1().ConfigMaps(e.namespace).Create(ctx, configMap, metav1.CreateOptions{}); err != nil {
+		if _, err = e.client.CoreV1().ConfigMaps(e.namespace).Create(ctx, configMap, metav1.CreateOptions{}); err != nil {
 			return "", err
 		}
 	}
@@ -454,7 +491,7 @@ func (e *executor) Uninstall(ctx context.Context) (string, error) {
 			},
 		},
 	}
-	if e.kubeConfigPath() != "" {
+	if helmOptions.kubeConfig != "" {
 		job.Spec.Template.Spec.Volumes = []corev1.Volume{
 			{
 				Name: "data",
@@ -476,15 +513,24 @@ func (e *executor) Uninstall(ctx context.Context) (string, error) {
 		}
 	}
 
-	if _, err := e.client.BatchV1().Jobs(e.namespace).Create(ctx, job, metav1.CreateOptions{}); err != nil {
+	if _, err = e.client.BatchV1().Jobs(e.namespace).Create(ctx, job, metav1.CreateOptions{}); err != nil {
 		return "", err
 	}
 	return name, nil
 }
 
 // Manifest returns the manifest data for this release.
-func (e *executor) Manifest() (string, error) {
-	get := action.NewGet(e.helmConf)
+func (e *executor) Manifest(options ...HelmOption) (string, error) {
+	helmOptions := &helmOption{}
+	for _, f := range options {
+		f(helmOptions)
+	}
+
+	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	if err != nil {
+		return "", err
+	}
+	get := action.NewGet(helmConf)
 	rel, err := get.Run(e.releaseName)
 	if err != nil {
 		klog.Errorf("namespace: %s, name: %s, run command failed, error: %v", e.namespace, e.releaseName, err)
@@ -496,14 +542,26 @@ func (e *executor) Manifest() (string, error) {
 }
 
 // IsReleaseReady checks if the helm release is ready.
-func (e *executor) IsReleaseReady(timeout time.Duration) (bool, error) {
-	// Get the manifest to build resources
-	manifest, err := e.Manifest()
+func (e *executor) IsReleaseReady(timeout time.Duration, options ...HelmOption) (bool, error) {
+	helmOptions := &helmOption{}
+	for _, f := range options {
+		f(helmOptions)
+	}
+
+	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
 		return false, err
 	}
-	kubeClient := e.helmConf.KubeClient
-	resources, _ := kubeClient.Build(bytes.NewBufferString(manifest), true)
+
+	// Get the manifest to build resources
+	get := action.NewGet(helmConf)
+	rel, err := get.Run(e.releaseName)
+	if err != nil {
+		return false, err
+	}
+
+	kubeClient := helmConf.KubeClient
+	resources, _ := kubeClient.Build(bytes.NewBufferString(rel.Manifest), true)
 
 	err = kubeClient.Wait(resources, timeout)
 	if err == nil {
@@ -515,8 +573,8 @@ func (e *executor) IsReleaseReady(timeout time.Duration) (bool, error) {
 	return false, err
 }
 
-func (e *executor) status() (*helmrelease.Release, error) {
-	helmStatus := action.NewStatus(e.helmConf)
+func (e *executor) status(helmConf *action.Configuration) (*helmrelease.Release, error) {
+	helmStatus := action.NewStatus(helmConf)
 	rel, err := helmStatus.Run(e.releaseName)
 	if err != nil {
 		if err.Error() == statusNotFoundFormat {

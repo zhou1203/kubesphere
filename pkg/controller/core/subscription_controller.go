@@ -108,9 +108,6 @@ func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *SubscriptionReconciler) defaultHelmOptions() []helm.Option {
 	options := make([]helm.Option, 0)
-	if r.kubeconfig != "" {
-		options = append(options, helm.SetKubeConfig(r.kubeconfig))
-	}
 	// TODO support helm image option
 	return options
 }
@@ -118,7 +115,7 @@ func (r *SubscriptionReconciler) defaultHelmOptions() []helm.Option {
 // reconcileDelete delete the helm release involved and remove finalizer from subscription.
 func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
 	options := r.defaultHelmOptions()
-	helmExecutor, err := helm.NewExecutor(sub.Status.TargetNamespace, sub.Status.ReleaseName, options...)
+	helmExecutor, err := helm.NewExecutor(r.kubeconfig, sub.Status.TargetNamespace, sub.Status.ReleaseName, options...)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -202,7 +199,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 	options := r.defaultHelmOptions()
 	options = append(options, helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}))
 	options = append(options, helm.SetCreateNamespace(true))
-	helmExecutor, err := helm.NewExecutor(targetNamespace, releaseName, options...)
+	helmExecutor, err := helm.NewExecutor(r.kubeconfig, targetNamespace, releaseName, options...)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
