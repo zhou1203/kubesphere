@@ -23,6 +23,9 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/client-go/util/retry"
+	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
+
 	"helm.sh/helm/v3/pkg/getter"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -89,15 +92,22 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if sub.ObjectMeta.DeletionTimestamp != nil {
+		// enabled/disabled -> uninstalling -> uninstall failed/uninstalled
 		return r.reconcileDelete(ctx, sub)
 	}
 
 	switch sub.Status.State {
 	case "":
+		// -> installing
 		return r.installOrUpdate(ctx, sub)
 	case corev1alpha1.StateInstalling:
+		// installing -> installed or install failed
 		return r.syncJobStatus(ctx, sub)
-	case corev1alpha1.StateUnavailable, corev1alpha1.StateUninstallFailed:
+	case corev1alpha1.StateInstalled, corev1alpha1.StateDisabled, corev1alpha1.StateEnabled:
+		// installed -> enabled/disabled
+		// enabled <-> disabled
+		return r.syncExtendedAPIStatus(ctx, sub)
+	case corev1alpha1.StateInstallFailed, corev1alpha1.StateUninstallFailed:
 		// The installation/uninstallation has failed, so do nothing
 		break
 	}
@@ -131,8 +141,10 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+		sub = sub.DeepCopy()
 		if jobCondition == batchv1.JobComplete {
 			klog.V(4).Infof("remove the finalizer for subscription %s", sub.Name)
+			sub.Status.State = corev1alpha1.StateUninstalled
 			return r.removeFinalizer(ctx, sub)
 		}
 		if jobCondition == batchv1.JobFailed {
@@ -241,6 +253,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 		}
 	}
 
+	sub = sub.DeepCopy()
 	// TODO: Add more conditions
 	sub.Status = corev1alpha1.SubscriptionStatus{
 		State:           corev1alpha1.StateInstalling,
@@ -268,11 +281,13 @@ func (r *SubscriptionReconciler) syncJobStatus(ctx context.Context, sub *corev1a
 		}, nil
 	}
 
+	sub = sub.DeepCopy()
 	if jobCondition == batchv1.JobComplete {
-		sub.Status.State = corev1alpha1.StateAvailable
+		sub.Status.JobName = ""
+		sub.Status.State = corev1alpha1.StateInstalled
 	}
 	if jobCondition == batchv1.JobFailed {
-		sub.Status.State = corev1alpha1.StateUnavailable
+		sub.Status.State = corev1alpha1.StateInstallFailed
 	}
 	return r.updateSubscription(ctx, sub)
 }
@@ -299,6 +314,10 @@ func (r *SubscriptionReconciler) removeFinalizer(ctx context.Context, sub *corev
 
 func (r *SubscriptionReconciler) updateSubscription(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
 	if err := r.Update(ctx, sub); err != nil {
+		return ctrl.Result{}, err
+	}
+	// sync extension state
+	if err := r.syncExtensionState(ctx, sub); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
@@ -371,4 +390,153 @@ func (r *SubscriptionReconciler) initTargetNamespace(ctx context.Context, namesp
 		}
 	}
 	return nil
+}
+
+func (r *SubscriptionReconciler) syncExtendedAPIStatus(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	jsbundles := &extensionsv1alpha1.JSBundleList{}
+	if err := r.List(ctx, jsbundles, client.MatchingLabels{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}); err != nil {
+		return ctrl.Result{}, err
+	}
+	for _, item := range jsbundles.Items {
+		if err := r.syncJSBundle(ctx, sub, item); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	apiServices := &extensionsv1alpha1.APIServiceList{}
+	if err := r.List(ctx, apiServices, client.MatchingLabels{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}); err != nil {
+		return ctrl.Result{}, err
+	}
+	for _, item := range apiServices.Items {
+		if err := r.syncAPIService(ctx, sub, item); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	reverseProxies := &extensionsv1alpha1.ReverseProxyList{}
+	if err := r.List(ctx, reverseProxies, client.MatchingLabels{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}); err != nil {
+		return ctrl.Result{}, err
+	}
+	for _, item := range reverseProxies.Items {
+		if err := r.syncReverseProxy(ctx, sub, item); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	return r.syncEnabledStatus(ctx, sub)
+}
+
+func (r *SubscriptionReconciler) syncJSBundle(ctx context.Context, sub *corev1alpha1.Subscription, jsbundle extensionsv1alpha1.JSBundle) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &extensionsv1alpha1.JSBundle{}
+		err := r.Get(ctx, types.NamespacedName{Name: jsbundle.Name}, latest)
+		if err != nil {
+			return err
+		}
+		// TODO unavailable state should be considered
+		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateEnabled) ||
+			(!sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateDisabled)
+
+		if inconsistent {
+			update := latest.DeepCopy()
+			if sub.Spec.Enabled {
+				update.Status.State = extensionsv1alpha1.StateEnabled
+			} else {
+				update.Status.State = extensionsv1alpha1.StateDisabled
+			}
+			if err := r.Update(ctx, update); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *SubscriptionReconciler) syncAPIService(ctx context.Context, sub *corev1alpha1.Subscription, apiService extensionsv1alpha1.APIService) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &extensionsv1alpha1.APIService{}
+		err := r.Get(ctx, types.NamespacedName{Name: apiService.Name}, latest)
+		if err != nil {
+			return err
+		}
+		// TODO unavailable state should be considered
+		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateEnabled) ||
+			(!sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateDisabled)
+
+		if inconsistent {
+			update := latest.DeepCopy()
+			if sub.Spec.Enabled {
+				update.Status.State = extensionsv1alpha1.StateEnabled
+			} else {
+				update.Status.State = extensionsv1alpha1.StateDisabled
+			}
+			if err := r.Update(ctx, update); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *SubscriptionReconciler) syncReverseProxy(ctx context.Context, sub *corev1alpha1.Subscription, reverseProxy extensionsv1alpha1.ReverseProxy) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &extensionsv1alpha1.ReverseProxy{}
+		err := r.Get(ctx, types.NamespacedName{Name: reverseProxy.Name}, latest)
+		if err != nil {
+			return err
+		}
+		// TODO unavailable state should be considered
+		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateEnabled) ||
+			(!sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateDisabled)
+
+		if inconsistent {
+			update := latest.DeepCopy()
+			if sub.Spec.Enabled {
+				update.Status.State = extensionsv1alpha1.StateEnabled
+			} else {
+				update.Status.State = extensionsv1alpha1.StateDisabled
+			}
+			if err := r.Update(ctx, update); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *SubscriptionReconciler) syncEnabledStatus(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	inconsistent := (sub.Spec.Enabled && sub.Status.State != extensionsv1alpha1.StateEnabled) ||
+		(!sub.Spec.Enabled && sub.Status.State != extensionsv1alpha1.StateDisabled)
+	if inconsistent {
+		sub := sub.DeepCopy()
+		if sub.Spec.Enabled {
+			sub.Status.State = corev1alpha1.StateEnabled
+		} else {
+			sub.Status.State = corev1alpha1.StateDisabled
+		}
+		return r.updateSubscription(ctx, sub)
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *SubscriptionReconciler) syncExtensionState(ctx context.Context, sub *corev1alpha1.Subscription) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &corev1alpha1.Extension{}
+		err := r.Get(ctx, types.NamespacedName{Name: sub.Spec.Extension.Name}, latest)
+		if err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		if latest.Status.State != sub.Status.State {
+			update := latest.DeepCopy()
+			if sub.Status.State == corev1alpha1.StateUninstalled {
+				update.Status.State = ""
+			} else {
+				update.Status.State = sub.Status.State
+			}
+			if err := r.Update(ctx, update); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
