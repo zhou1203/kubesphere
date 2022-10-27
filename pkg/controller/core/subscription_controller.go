@@ -26,6 +26,9 @@ import (
 	"helm.sh/helm/v3/pkg/getter"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,11 +37,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	"kubesphere.io/utils/helm"
 )
 
 const (
 	SubscriptionFinalizer = "subscriptions.kubesphere.io"
+	SystemWorkspace       = "system-workspace"
+	HelmExecutor          = "kubesphere:helm-executor"
 )
 
 var _ reconcile.Reconciler = &SubscriptionReconciler{}
@@ -196,9 +202,11 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 	// TODO: reconsider how to define the target namespace
 	targetNamespace := fmt.Sprintf("extension-%s", sub.Spec.Extension.Name)
 	releaseName := sub.Spec.Extension.Name
+	if err := r.initTargetNamespace(ctx, targetNamespace); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to init target namespace: %s", err)
+	}
 	options := r.defaultHelmOptions()
 	options = append(options, helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}))
-	options = append(options, helm.SetCreateNamespace(true))
 	helmExecutor, err := helm.NewExecutor(r.kubeconfig, targetNamespace, releaseName, options...)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -294,4 +302,73 @@ func (r *SubscriptionReconciler) updateSubscription(ctx context.Context, sub *co
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *SubscriptionReconciler) initTargetNamespace(ctx context.Context, namespace string) error {
+	ns := &corev1.Namespace{}
+	if err := r.Get(ctx, types.NamespacedName{Name: namespace}, ns); err != nil {
+		if errors.IsNotFound(err) {
+			ns.ObjectMeta = metav1.ObjectMeta{
+				Name:   namespace,
+				Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: SystemWorkspace},
+			}
+			if err := r.Create(ctx, ns); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	// TODO support custom rules for each extension
+	role := &rbacv1.Role{}
+	if err := r.Get(ctx, types.NamespacedName{Name: HelmExecutor, Namespace: namespace}, role); err != nil {
+		if errors.IsNotFound(err) {
+			role.ObjectMeta = metav1.ObjectMeta{
+				Name:      HelmExecutor,
+				Namespace: namespace,
+			}
+			role.Rules = []rbacv1.PolicyRule{
+				{
+					Verbs:     []string{rbacv1.VerbAll},
+					APIGroups: []string{"", "apps", "batch", "extensions"},
+					Resources: []string{rbacv1.ResourceAll},
+				},
+			}
+			if err := r.Create(ctx, role); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	// TODO support custom serviceaccount name
+	roleBinding := &rbacv1.RoleBinding{}
+	if err := r.Get(ctx, types.NamespacedName{Name: HelmExecutor, Namespace: namespace}, roleBinding); err != nil {
+		if errors.IsNotFound(err) {
+			roleBinding.ObjectMeta = metav1.ObjectMeta{
+				Name:      HelmExecutor,
+				Namespace: namespace,
+			}
+			roleBinding.RoleRef = rbacv1.RoleRef{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "Role",
+				Name:     HelmExecutor,
+			}
+			roleBinding.Subjects = []rbacv1.Subject{
+				{
+					Kind:      rbacv1.ServiceAccountKind,
+					Name:      "default",
+					Namespace: namespace,
+				},
+			}
+			if err := r.Create(ctx, roleBinding); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	return nil
 }
