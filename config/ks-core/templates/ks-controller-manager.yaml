@@ -35,7 +35,7 @@ spec:
         - controller-manager
         - --logtostderr=true
         - --leader-elect=true
-        - --controllers=user,workspacetemplate,workspace,workspacerole,workspacerolebinding,namespace
+        - --controllers=*,-volumesnapshot,-helmrepo,-helmcategory,-helmapplication,-helmapplicationversion,-helmrelease,-helm,-job,-application
         image: {{ .Values.image.ks_controller_manager_repo }}:{{ .Values.image.ks_controller_manager_tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         name: ks-controller-manager

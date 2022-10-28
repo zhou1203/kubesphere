@@ -23,9 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/client-go/util/retry"
-	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
-
 	"helm.sh/helm/v3/pkg/getter"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	"kubesphere.io/utils/helm"
 )
@@ -339,29 +338,6 @@ func (r *SubscriptionReconciler) initTargetNamespace(ctx context.Context, namesp
 		}
 	}
 
-	// TODO support custom rules for each extension
-	role := &rbacv1.Role{}
-	if err := r.Get(ctx, types.NamespacedName{Name: HelmExecutor, Namespace: namespace}, role); err != nil {
-		if errors.IsNotFound(err) {
-			role.ObjectMeta = metav1.ObjectMeta{
-				Name:      HelmExecutor,
-				Namespace: namespace,
-			}
-			role.Rules = []rbacv1.PolicyRule{
-				{
-					Verbs:     []string{rbacv1.VerbAll},
-					APIGroups: []string{"", "apps", "batch", "extensions"},
-					Resources: []string{rbacv1.ResourceAll},
-				},
-			}
-			if err := r.Create(ctx, role); err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
-	}
-
 	// TODO support custom serviceaccount name
 	roleBinding := &rbacv1.RoleBinding{}
 	if err := r.Get(ctx, types.NamespacedName{Name: HelmExecutor, Namespace: namespace}, roleBinding); err != nil {
@@ -372,7 +348,7 @@ func (r *SubscriptionReconciler) initTargetNamespace(ctx context.Context, namesp
 			}
 			roleBinding.RoleRef = rbacv1.RoleRef{
 				APIGroup: rbacv1.GroupName,
-				Kind:     "Role",
+				Kind:     "ClusterRole",
 				Name:     HelmExecutor,
 			}
 			roleBinding.Subjects = []rbacv1.Subject{
