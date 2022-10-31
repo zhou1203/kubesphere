@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -265,10 +266,6 @@ func (e *executor) chartPath(chartName string) string {
 }
 
 func (e *executor) setupChartData(kubeConfig, chartName string, chartData, values []byte) (map[string][]byte, error) {
-	if len(e.labels) == 0 && len(e.annotations) == 0 {
-		return nil, nil
-	}
-
 	kustomizationConfig := types.Kustomization{
 		Resources:         []string{"./.local-helm-output.yaml"},
 		CommonAnnotations: e.annotations,                    // add extra annotations to output
@@ -367,9 +364,11 @@ func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName s
 							Name:            "helm",
 							Image:           e.helmImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
-							Command:         []string{"helm"},
-							Args:            args,
-							WorkingDir:      workspaceBase,
+							Command: []string{
+								"/bin/sh", "-c",
+								fmt.Sprintf("cp -r %s/. %s && helm %s", workspaceBaseSource, workspaceBase, strings.Join(args, " ")),
+							},
+							WorkingDir: workspaceBase,
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "source",
@@ -378,13 +377,6 @@ func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName s
 								{
 									Name:      "data",
 									MountPath: workspaceBase,
-								},
-							},
-							Lifecycle: &corev1.Lifecycle{
-								PostStart: &corev1.Handler{
-									Exec: &corev1.ExecAction{
-										Command: []string{"/bin/sh", "-c", fmt.Sprintf("cp -r %s/. %s", workspaceBaseSource, workspaceBase)},
-									},
 								},
 							},
 						},
