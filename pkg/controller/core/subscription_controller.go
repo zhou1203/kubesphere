@@ -253,7 +253,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 	}
 
 	sub = sub.DeepCopy()
-	// TODO: Add more conditions
+	// TODO: Add more conditions, prepare to wait a long time
 	sub.Status = corev1alpha1.SubscriptionStatus{
 		State:           corev1alpha1.StateInstalling,
 		ReleaseName:     releaseName,
@@ -323,49 +323,95 @@ func (r *SubscriptionReconciler) updateSubscription(ctx context.Context, sub *co
 }
 
 func (r *SubscriptionReconciler) initTargetNamespace(ctx context.Context, namespace string) error {
-	ns := &corev1.Namespace{}
-	if err := r.Get(ctx, types.NamespacedName{Name: namespace}, ns); err != nil {
-		if errors.IsNotFound(err) {
-			ns.ObjectMeta = metav1.ObjectMeta{
+	var ns corev1.Namespace
+	err := r.Get(ctx, types.NamespacedName{Name: namespace}, &ns)
+	if errors.IsNotFound(err) {
+		ns = corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:   namespace,
 				Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: SystemWorkspace},
-			}
-			if err := r.Create(ctx, ns); err != nil {
-				return err
-			}
-		} else {
+			},
+		}
+		if err := r.Create(ctx, &ns); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	// TODO support custom serviceaccount name
+	subject := rbacv1.Subject{
+		Kind:      rbacv1.ServiceAccountKind,
+		Name:      "default",
+		Namespace: namespace,
+	}
+
+	var roleBinding rbacv1.RoleBinding
+	err = r.Get(ctx, types.NamespacedName{Name: HelmExecutor, Namespace: namespace}, &roleBinding)
+	if errors.IsNotFound(err) {
+		roleBinding = rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      HelmExecutor,
+				Namespace: namespace,
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "ClusterRole",
+				Name:     "kubesphere:namespaced:helm-executor",
+			},
+			Subjects: []rbacv1.Subject{
+				subject,
+			},
+		}
+		if err := r.Create(ctx, &roleBinding); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	var clusterRoleBinding rbacv1.ClusterRoleBinding
+	err = r.Get(ctx, types.NamespacedName{Name: HelmExecutor, Namespace: namespace}, &clusterRoleBinding)
+
+	if errors.IsNotFound(err) {
+		clusterRoleBinding = rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: HelmExecutor,
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "ClusterRole",
+				Name:     "kubesphere:cluster:helm-executor",
+			},
+			Subjects: []rbacv1.Subject{
+				subject,
+			},
+		}
+		if err := r.Create(ctx, &clusterRoleBinding); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	if !containsSubject(clusterRoleBinding.Subjects, subject) {
+		update := clusterRoleBinding.DeepCopy()
+		update.Subjects = append(update.Subjects, subject)
+		if err := r.Update(ctx, update); err != nil {
 			return err
 		}
 	}
 
-	// TODO support custom serviceaccount name
-	roleBinding := &rbacv1.RoleBinding{}
-	if err := r.Get(ctx, types.NamespacedName{Name: HelmExecutor, Namespace: namespace}, roleBinding); err != nil {
-		if errors.IsNotFound(err) {
-			roleBinding.ObjectMeta = metav1.ObjectMeta{
-				Name:      HelmExecutor,
-				Namespace: namespace,
-			}
-			roleBinding.RoleRef = rbacv1.RoleRef{
-				APIGroup: rbacv1.GroupName,
-				Kind:     "ClusterRole",
-				Name:     HelmExecutor,
-			}
-			roleBinding.Subjects = []rbacv1.Subject{
-				{
-					Kind:      rbacv1.ServiceAccountKind,
-					Name:      "default",
-					Namespace: namespace,
-				},
-			}
-			if err := r.Create(ctx, roleBinding); err != nil {
-				return err
-			}
-		} else {
-			return err
+	return nil
+}
+
+func containsSubject(subjects []rbacv1.Subject, subject rbacv1.Subject) bool {
+	for _, item := range subjects {
+		if subject.Kind == item.Kind && subject.Namespace == item.Namespace && subject.Name == item.Name {
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 func (r *SubscriptionReconciler) syncExtendedAPIStatus(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
@@ -410,13 +456,13 @@ func (r *SubscriptionReconciler) syncJSBundle(ctx context.Context, sub *corev1al
 			return err
 		}
 		// TODO unavailable state should be considered
-		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateEnabled) ||
+		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateAvailable) ||
 			(!sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateDisabled)
 
 		if inconsistent {
 			update := latest.DeepCopy()
 			if sub.Spec.Enabled {
-				update.Status.State = extensionsv1alpha1.StateEnabled
+				update.Status.State = extensionsv1alpha1.StateAvailable
 			} else {
 				update.Status.State = extensionsv1alpha1.StateDisabled
 			}
@@ -436,13 +482,13 @@ func (r *SubscriptionReconciler) syncAPIService(ctx context.Context, sub *corev1
 			return err
 		}
 		// TODO unavailable state should be considered
-		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateEnabled) ||
+		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateAvailable) ||
 			(!sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateDisabled)
 
 		if inconsistent {
 			update := latest.DeepCopy()
 			if sub.Spec.Enabled {
-				update.Status.State = extensionsv1alpha1.StateEnabled
+				update.Status.State = extensionsv1alpha1.StateAvailable
 			} else {
 				update.Status.State = extensionsv1alpha1.StateDisabled
 			}
@@ -462,13 +508,13 @@ func (r *SubscriptionReconciler) syncReverseProxy(ctx context.Context, sub *core
 			return err
 		}
 		// TODO unavailable state should be considered
-		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateEnabled) ||
+		inconsistent := (sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateAvailable) ||
 			(!sub.Spec.Enabled && latest.Status.State != extensionsv1alpha1.StateDisabled)
 
 		if inconsistent {
 			update := latest.DeepCopy()
 			if sub.Spec.Enabled {
-				update.Status.State = extensionsv1alpha1.StateEnabled
+				update.Status.State = extensionsv1alpha1.StateAvailable
 			} else {
 				update.Status.State = extensionsv1alpha1.StateDisabled
 			}
