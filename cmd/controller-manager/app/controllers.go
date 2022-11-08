@@ -508,16 +508,15 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	// "cluster" controller
 	if cmOptions.IsControllerEnabled("cluster") {
 		if cmOptions.MultiClusterOptions.Enable {
-			clusterController := cluster.NewClusterController(
-				client.Kubernetes(),
-				client.KubeSphere(),
-				client.Config(),
-				kubesphereInformer.Cluster().V1alpha1().Clusters(),
-				kubesphereInformer.Iam().V1alpha2().Users().Lister(),
-				cmOptions.MultiClusterOptions.ClusterControllerResyncPeriod,
-				cmOptions.MultiClusterOptions.HostClusterName,
-			)
-			addController(mgr, "cluster", clusterController)
+			clusterReconciler := &cluster.Reconciler{
+				HostConfig:      client.Config(),
+				HostClusterName: cmOptions.MultiClusterOptions.HostClusterName,
+				ResyncPeriod:    cmOptions.MultiClusterOptions.ClusterControllerResyncPeriod,
+			}
+			// Register reconciler
+			addControllerWithSetup(mgr, "cluster", clusterReconciler)
+			// Register timed tasker
+			addController(mgr, "cluster", clusterReconciler)
 		}
 	}
 
