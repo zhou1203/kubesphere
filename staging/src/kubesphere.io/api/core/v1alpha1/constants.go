@@ -17,15 +17,22 @@ limitations under the License.
 package v1alpha1
 
 const (
-	StateEnabled             = "Enabled"
-	StateDisabled            = "Disabled"
-	StateInstalled           = "Installed"
-	StateUninstalled         = "Uninstalled"
-	StateUninstalling        = "Uninstalling"
-	StateUninstallFailed     = "UninstallFailed"
-	StateInstalling          = "Installing"
-	StateInstallFailed       = "InstallFailed"
+	StateEnabled         = "Enabled"
+	StateDisabled        = "Disabled"
+	StateInstalling      = "Installing"
+	StateUpgrading       = "Upgrading"
+	StateInstalled       = "Installed"
+	StateInstallFailed   = "InstallFailed"
+	StateUninstalling    = "Uninstalling"
+	StateUninstalled     = "Uninstalled"
+	StateUninstallFailed = "UninstallFailed"
+	// StatePreparing indicates that the Extension is in the Preparing state.
+	// This value is only used for Extension objects and is triggered when the state of its Subscription is empty
+	// and is changing to the Installing/Upgrading state.
+	StatePreparing = "Preparing"
+
 	ExtensionReferenceLabel  = "kubesphere.io/extension-ref"
 	RepositoryReferenceLabel = "kubesphere.io/repository-ref"
 	DisplayNameAnnotation    = "kubesphere.io/display-name"
+	ForceDeleteAnnotation    = "kubesphere.io/force-delete"
 )
