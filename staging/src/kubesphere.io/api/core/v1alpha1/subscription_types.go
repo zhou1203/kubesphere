@@ -20,6 +20,38 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type Placement struct {
+	Clusters        []Cluster             `json:"clusters,omitempty"`
+	ClusterSelector *metav1.LabelSelector `json:"clusterSelector,omitempty"`
+}
+
+type Cluster struct {
+	Name string `json:"name"`
+}
+
+type Override struct {
+	ClusterName    string `json:"clusterName"`
+	ConfigOverride string `json:"configOverride"`
+}
+
+type Distribute struct {
+	Placement *Placement `json:"placement,omitempty"`
+	Overrides []Override `json:"overrides,omitempty"`
+}
+
+type Delivery struct {
+	Placement *Placement `json:"placement,omitempty"`
+	Overrides []Override `json:"overrides,omitempty"`
+}
+
+type DeliveryStatus struct {
+	State           string `json:"state,omitempty"`
+	ClusterName     string `json:"clusterName,omitempty"`
+	ReleaseName     string `json:"releaseName,omitempty"`
+	TargetNamespace string `json:"targetNamespace,omitempty"`
+	JobName         string `json:"jobName,omitempty"`
+}
+
 type ExtensionRef struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
@@ -29,14 +61,18 @@ type SubscriptionSpec struct {
 	Extension ExtensionRef `json:"extension"`
 	Enabled   bool         `json:"enabled"`
 	Config    string       `json:"config,omitempty"`
+	Delivery  *Delivery    `json:"delivery"`
 }
 
 type SubscriptionStatus struct {
-	State           string             `json:"state,omitempty"`
-	ReleaseName     string             `json:"releaseName,omitempty"`
-	TargetNamespace string             `json:"targetNamespace,omitempty"`
-	JobName         string             `json:"jobName,omitempty"`
-	Conditions      []metav1.Condition `json:"conditions,omitempty"`
+	// Describe the installation status of the extension
+	State           string `json:"state,omitempty"`
+	ReleaseName     string `json:"releaseName,omitempty"`
+	TargetNamespace string `json:"targetNamespace,omitempty"`
+	JobName         string `json:"jobName,omitempty"`
+	// Describe the subchart installation status of the extension
+	DeliveryStatuses []DeliveryStatus   `json:"deliveryStatuses"`
+	Conditions       []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -73,6 +73,8 @@ spec:
                 type: string
               icon:
                 type: string
+              installationMode:
+                type: string
               keywords:
                 items:
                   type: string

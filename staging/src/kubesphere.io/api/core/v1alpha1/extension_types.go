@@ -21,6 +21,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type InstallationMode string
+
+const (
+	InstallationModeHostOnly = "HostOnly"
+	InstallationMulticluster = "Multicluster"
+)
+
 // Vendor describes an extension vendor.
 type Vendor struct {
 	// Name is a username or organization name
@@ -57,8 +64,9 @@ type ExtensionVersionSpec struct {
 	KSVersion string `json:"ksVersion,omitempty"`
 	Home      string `json:"home,omitempty"`
 	// ChartDataRef refers to a configMap which contains raw chart data.
-	ChartDataRef *ConfigMapKeyRef `json:"chartDataRef,omitempty"`
-	ChartURL     string           `json:"chartURL,omitempty"`
+	ChartDataRef     *ConfigMapKeyRef `json:"chartDataRef,omitempty"`
+	ChartURL         string           `json:"chartURL,omitempty"`
+	InstallationMode InstallationMode `json:"installationMode,omitempty"`
 }
 
 type ConfigMapKeyRef struct {
