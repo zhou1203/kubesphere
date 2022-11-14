@@ -187,6 +187,7 @@ func NewExecutor(kubeConfig, namespace, releaseName string, options ...Option) (
 
 type helmOption struct {
 	kubeConfig string
+	debug      bool
 }
 
 type HelmOption func(*helmOption)
@@ -198,6 +199,13 @@ type HelmOption func(*helmOption)
 func SetHelmKubeConfig(kubeConfig string) HelmOption {
 	return func(o *helmOption) {
 		o.kubeConfig = kubeConfig
+	}
+}
+
+// SetHelmDebug adds `--debug` argument to helm command.
+func SetHelmDebug(debug bool) HelmOption {
+	return func(o *helmOption) {
+		o.debug = debug
 	}
 }
 
@@ -232,7 +240,7 @@ func (e *executor) Install(ctx context.Context, chartName string, chartData, val
 	} else {
 		if err.Error() == statusNotFoundFormat {
 			// continue to install
-			return e.createInstallJob(ctx, helmOptions.kubeConfig, chartName, chartData, values, false)
+			return e.createInstallJob(ctx, helmOptions.kubeConfig, chartName, chartData, values, false, helmOptions.debug)
 		}
 		return "", err
 	}
@@ -256,7 +264,7 @@ func (e *executor) Upgrade(ctx context.Context, chartName string, chartData, val
 	}
 
 	if sts.Info.Status == "deployed" {
-		return e.createInstallJob(ctx, helmOptions.kubeConfig, chartName, chartData, values, true)
+		return e.createInstallJob(ctx, helmOptions.kubeConfig, chartName, chartData, values, true, helmOptions.debug)
 	}
 	return "", fmt.Errorf("cannot upgrade release %s/%s, current state is %s", e.namespace, e.releaseName, sts.Info.Status)
 }
@@ -314,7 +322,7 @@ func (e *executor) createConfigMap(ctx context.Context, kubeConfig, chartName st
 	return name, nil
 }
 
-func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName string, chartData, values []byte, upgrade bool) (string, error) {
+func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName string, chartData, values []byte, upgrade, debug bool) (string, error) {
 	args := make([]string, 0, 10)
 	if upgrade {
 		args = append(args, "upgrade")
@@ -341,7 +349,7 @@ func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName s
 		args = append(args, "--post-renderer", filepath.Join(workspaceBase, postRenderExecFile))
 	}
 
-	if klog.V(8) {
+	if debug {
 		// output debug info
 		args = append(args, "--debug")
 	}
@@ -438,6 +446,10 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 	}
 	if e.dryRun {
 		args = append(args, "--dry-run")
+	}
+
+	if helmOptions.debug {
+		args = append(args, "--debug")
 	}
 
 	name := generateName(e.releaseName)
