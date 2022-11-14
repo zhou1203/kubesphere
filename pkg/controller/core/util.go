@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Masterminds/semver/v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
 
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
@@ -73,3 +74,14 @@ type VersionList []corev1alpha1.ExtensionVersionInfo
 func (pvl VersionList) Len() int           { return len(pvl) }
 func (pvl VersionList) Less(i, j int) bool { return pvl[i].Version < pvl[j].Version }
 func (pvl VersionList) Swap(i, j int)      { pvl[i], pvl[j] = pvl[j], pvl[i] }
+
+func ContainsAnnotation(obj metav1.Object, key string) bool {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		return false
+	}
+	if _, ok := annotations[key]; ok {
+		return true
+	}
+	return false
+}

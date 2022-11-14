@@ -91,6 +91,11 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	if ContainsAnnotation(sub, corev1alpha1.ForceDeleteAnnotation) &&
+		(sub.Status.State == corev1alpha1.StateInstallFailed || sub.Status.State == corev1alpha1.StateUninstallFailed) {
+		return r.forceDelete(ctx, sub)
+	}
+
 	if sub.ObjectMeta.DeletionTimestamp != nil {
 		// enabled/disabled -> uninstalling -> uninstall failed/uninstalled
 		return r.reconcileDelete(ctx, sub)
@@ -175,6 +180,25 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 	sub.Status.JobName = jobName
 	setStateAndCondition(sub, corev1alpha1.StateUninstalling)
 	return r.updateSubscription(ctx, sub)
+}
+
+func (r *SubscriptionReconciler) forceDelete(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	if sub.DeletionTimestamp == nil {
+		// We need delete it first
+		return ctrl.Result{}, r.Delete(ctx, sub)
+	}
+
+	options := r.defaultHelmOptions()
+	helmExecutor, err := helm.NewExecutor(r.kubeconfig, sub.Status.TargetNamespace, sub.Status.ReleaseName, options...)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if err = helmExecutor.ForceDelete(ctx); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	sub.Status.State = corev1alpha1.StateUninstalled
+	return r.removeFinalizer(ctx, sub)
 }
 
 func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1alpha1.ExtensionRef) ([]byte, error) {

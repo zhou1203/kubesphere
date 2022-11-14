@@ -51,6 +51,8 @@ type Executor interface {
 	Upgrade(ctx context.Context, chartName string, chartData, values []byte, options ...HelmOption) (string, error)
 	// Uninstall is used to uninstall the specified chart and returns the name of the Job that executed the task.
 	Uninstall(ctx context.Context, options ...HelmOption) (string, error)
+	// ForceDelete forcibly deletes all resources of the chart.
+	ForceDelete(ctx context.Context, options ...HelmOption) error
 	// Manifest returns the manifest data for this release.
 	Manifest(options ...HelmOption) (string, error)
 	// IsReleaseReady checks if the helm release is ready.
@@ -521,6 +523,32 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 		return "", err
 	}
 	return name, nil
+}
+
+// ForceDelete forcibly deletes all resources of the chart.
+// The current implementation still uses the helm command to force deletion.
+func (e *executor) ForceDelete(ctx context.Context, options ...HelmOption) error {
+	helmOptions := &helmOption{}
+	for _, f := range options {
+		f(helmOptions)
+	}
+
+	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	if err != nil {
+		return err
+	}
+
+	if _, err = e.status(helmConf); err != nil && err.Error() == statusNotFoundFormat {
+		// already uninstalled
+		return nil
+	}
+
+	uninstall := action.NewUninstall(helmConf)
+	uninstall.DisableHooks = true
+	if _, err = uninstall.Run(e.releaseName); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Manifest returns the manifest data for this release.
