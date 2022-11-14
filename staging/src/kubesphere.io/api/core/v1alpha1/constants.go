@@ -31,6 +31,11 @@ const (
 	// and is changing to the Installing/Upgrading state.
 	StatePreparing = "Preparing"
 
+	MaxStateConditionNum = 10
+
+	// ConditionTypeState indicates that this condition is recording Subscription state changes.
+	ConditionTypeState = "State"
+
 	ExtensionReferenceLabel  = "kubesphere.io/extension-ref"
 	RepositoryReferenceLabel = "kubesphere.io/repository-ref"
 	DisplayNameAnnotation    = "kubesphere.io/display-name"

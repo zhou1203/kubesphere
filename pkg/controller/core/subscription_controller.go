@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"sort"
 	"strings"
 	"time"
 
@@ -143,11 +144,11 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 		sub = sub.DeepCopy()
 		if jobCondition == batchv1.JobComplete {
 			klog.V(4).Infof("remove the finalizer for subscription %s", sub.Name)
-			sub.Status.State = corev1alpha1.StateUninstalled
+			setStateAndCondition(sub, corev1alpha1.StateUninstalled)
 			return r.removeFinalizer(ctx, sub)
 		}
 		if jobCondition == batchv1.JobFailed {
-			sub.Status.State = corev1alpha1.StateUninstallFailed
+			setStateAndCondition(sub, corev1alpha1.StateUninstallFailed)
 			return r.updateSubscription(ctx, sub)
 		}
 		// Job is still running, check it later
@@ -172,7 +173,7 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 
 	klog.Infof("delete helm release %s/%s", sub.Status.TargetNamespace, sub.Status.ReleaseName)
 	sub.Status.JobName = jobName
-	sub.Status.State = corev1alpha1.StateUninstalling
+	setStateAndCondition(sub, corev1alpha1.StateUninstalling)
 	return r.updateSubscription(ctx, sub)
 }
 
@@ -210,6 +211,19 @@ func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1a
 }
 
 func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	// Set Extension state to Preparing
+	extension := &corev1alpha1.Extension{}
+	err := r.Get(ctx, types.NamespacedName{Name: sub.Spec.Extension.Name}, extension)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if extension.Status.State != corev1alpha1.StatePreparing {
+		extension.Status.State = corev1alpha1.StatePreparing
+		if err = r.Update(ctx, extension); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// TODO: reconsider how to define the target namespace
 	targetNamespace := fmt.Sprintf("extension-%s", sub.Spec.Extension.Name)
 	releaseName := sub.Spec.Extension.Name
@@ -242,6 +256,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 			klog.Errorf("install helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
 			return ctrl.Result{}, err
 		}
+		setStateAndCondition(sub, corev1alpha1.StateInstalling)
 	} else {
 		// release exists, we need to upgrade it
 		klog.Infof("upgrade helm release %s/%s", targetNamespace, releaseName)
@@ -250,17 +265,53 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 			klog.Errorf("upgrade helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
 			return ctrl.Result{}, err
 		}
+		setStateAndCondition(sub, corev1alpha1.StateUpgrading)
 	}
 
-	sub = sub.DeepCopy()
-	// TODO: Add more conditions, prepare to wait a long time
-	sub.Status = corev1alpha1.SubscriptionStatus{
-		State:           corev1alpha1.StateInstalling,
-		ReleaseName:     releaseName,
-		TargetNamespace: targetNamespace,
-		JobName:         jobName,
-	}
+	sub.Status.ReleaseName = releaseName
+	sub.Status.TargetNamespace = targetNamespace
+	sub.Status.JobName = jobName
 	return r.updateSubscription(ctx, sub)
+}
+
+func setStateAndCondition(sub *corev1alpha1.Subscription, state string) {
+	sub.Status.State = state
+
+	newCondition := metav1.Condition{
+		Type:               corev1alpha1.ConditionTypeState,
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             state,
+	}
+
+	if sub.Status.Conditions == nil {
+		sub.Status.Conditions = []metav1.Condition{newCondition}
+		return
+	}
+
+	// We need to limit the number of Condition with type State, and if the limit is exceeded, delete the oldest one.
+	stateConditions := make([]metav1.Condition, 0, 1)
+	otherConditions := make([]metav1.Condition, 0, 1)
+	for _, condition := range sub.Status.Conditions {
+		if condition.Type == corev1alpha1.ConditionTypeState {
+			stateConditions = append(stateConditions, condition)
+		} else {
+			otherConditions = append(otherConditions, condition)
+		}
+	}
+
+	// Not exceeding the limit, we can just append it to original Conditions.
+	if len(stateConditions) < corev1alpha1.MaxStateConditionNum {
+		sub.Status.Conditions = append(sub.Status.Conditions, newCondition)
+		return
+	}
+
+	sort.Slice(stateConditions, func(i, j int) bool {
+		return stateConditions[i].LastTransitionTime.After(stateConditions[j].LastTransitionTime.Time)
+	})
+	stateConditions = stateConditions[:corev1alpha1.MaxStateConditionNum-1]
+	stateConditions = append(stateConditions, newCondition)
+	sub.Status.Conditions = append(otherConditions, stateConditions...)
 }
 
 func (r *SubscriptionReconciler) syncJobStatus(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
@@ -283,10 +334,10 @@ func (r *SubscriptionReconciler) syncJobStatus(ctx context.Context, sub *corev1a
 	sub = sub.DeepCopy()
 	if jobCondition == batchv1.JobComplete {
 		sub.Status.JobName = ""
-		sub.Status.State = corev1alpha1.StateInstalled
+		setStateAndCondition(sub, corev1alpha1.StateInstalled)
 	}
 	if jobCondition == batchv1.JobFailed {
-		sub.Status.State = corev1alpha1.StateInstallFailed
+		setStateAndCondition(sub, corev1alpha1.StateInstallFailed)
 	}
 	return r.updateSubscription(ctx, sub)
 }
@@ -532,9 +583,9 @@ func (r *SubscriptionReconciler) syncEnabledStatus(ctx context.Context, sub *cor
 	if inconsistent {
 		sub := sub.DeepCopy()
 		if sub.Spec.Enabled {
-			sub.Status.State = corev1alpha1.StateEnabled
+			setStateAndCondition(sub, corev1alpha1.StateEnabled)
 		} else {
-			sub.Status.State = corev1alpha1.StateDisabled
+			setStateAndCondition(sub, corev1alpha1.StateDisabled)
 		}
 		return r.updateSubscription(ctx, sub)
 	}
