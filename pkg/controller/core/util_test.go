@@ -38,29 +38,29 @@ func TestGetRecommendedExtensionVersion(t *testing.T) {
 				{
 					Spec: corev1alpha1.ExtensionVersionSpec{ // match
 						Version:     "1.0.0",
-						KubeVersion: "1.19.0",
-						KSVersion:   "4.0.0",
+						KubeVersion: ">=1.19.0",
+						KSVersion:   ">=4.0.0",
 					},
 				},
 				{
 					Spec: corev1alpha1.ExtensionVersionSpec{ // match
 						Version:     "1.1.0",
-						KubeVersion: "1.20.0",
-						KSVersion:   "4.0.0",
+						KubeVersion: ">=1.20.0",
+						KSVersion:   ">=4.0.0",
 					},
 				},
 				{
 					Spec: corev1alpha1.ExtensionVersionSpec{ // KubeVersion not match
 						Version:     "1.2.0",
-						KubeVersion: "1.21.0",
-						KSVersion:   "4.0.0",
+						KubeVersion: ">=1.21.0",
+						KSVersion:   ">=4.0.0",
 					},
 				},
 				{
 					Spec: corev1alpha1.ExtensionVersionSpec{ // KSVersion not match
 						Version:     "1.3.0",
-						KubeVersion: "1.20.0",
-						KSVersion:   "4.1.0",
+						KubeVersion: ">=1.20.0",
+						KSVersion:   ">=4.1.0",
 					},
 				},
 			},
@@ -74,15 +74,15 @@ func TestGetRecommendedExtensionVersion(t *testing.T) {
 				{
 					Spec: corev1alpha1.ExtensionVersionSpec{ // KubeVersion not match
 						Version:     "1.2.0",
-						KubeVersion: "1.21.0",
-						KSVersion:   "4.0.0",
+						KubeVersion: ">=1.21.0",
+						KSVersion:   ">=4.0.0",
 					},
 				},
 				{
 					Spec: corev1alpha1.ExtensionVersionSpec{ // KSVersion not match
 						Version:     "1.3.0",
-						KubeVersion: "1.20.0",
-						KSVersion:   "4.1.0",
+						KubeVersion: ">=1.20.0",
+						KSVersion:   ">=4.1.0",
 					},
 				},
 			},

@@ -59,8 +59,10 @@ type ExtensionVersionSpec struct {
 	Sources        []string `json:"sources,omitempty"`
 	Repository     string   `json:"repository,omitempty"`
 	// KubeVersion is a SemVer constraint specifying the version of Kubernetes required.
+	// eg: >= 1.2.0, see https://github.com/Masterminds/semver for more info.
 	KubeVersion string `json:"kubeVersion,omitempty"`
 	// KSVersion is a SemVer constraint specifying the version of KubeSphere required.
+	// eg: >= 1.2.0, see https://github.com/Masterminds/semver for more info.
 	KSVersion string `json:"ksVersion,omitempty"`
 	Home      string `json:"home,omitempty"`
 	// ChartDataRef refers to a configMap which contains raw chart data.
@@ -105,11 +107,11 @@ type ExtensionVersionInfo struct {
 }
 
 type ExtensionStatus struct {
-	State             string                 `json:"state,omitempty"`
-	SubscribedVersion string                 `json:"subscribedVersion,omitempty"`
-	RecommendVersion  string                 `json:"recommendVersion,omitempty"`
-	Versions          []ExtensionVersionInfo `json:"versions,omitempty"`
-	Conditions        []metav1.Condition     `json:"conditions,omitempty"`
+	State              string                 `json:"state,omitempty"`
+	SubscribedVersion  string                 `json:"subscribedVersion,omitempty"`
+	RecommendedVersion string                 `json:"recommendedVersion,omitempty"`
+	Versions           []ExtensionVersionInfo `json:"versions,omitempty"`
+	Conditions         []metav1.Condition     `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

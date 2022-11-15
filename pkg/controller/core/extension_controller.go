@@ -77,7 +77,7 @@ func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *c
 	extensionCopy := extension.DeepCopy()
 
 	if recommended, err := getRecommendedExtensionVersion(versionList.Items, k8sVersion); err == nil {
-		extensionCopy.Status.RecommendVersion = recommended
+		extensionCopy.Status.RecommendedVersion = recommended
 	} else {
 		klog.V(2).Info(err)
 	}
