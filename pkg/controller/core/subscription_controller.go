@@ -237,13 +237,12 @@ func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1a
 func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
 	// Set Extension state to Preparing
 	extension := &corev1alpha1.Extension{}
-	err := r.Get(ctx, types.NamespacedName{Name: sub.Spec.Extension.Name}, extension)
-	if err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: sub.Spec.Extension.Name}, extension); err != nil {
 		return ctrl.Result{}, err
 	}
 	if extension.Status.State != corev1alpha1.StatePreparing {
 		extension.Status.State = corev1alpha1.StatePreparing
-		if err = r.Update(ctx, extension); err != nil {
+		if err := r.Update(ctx, extension); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -357,6 +356,18 @@ func (r *SubscriptionReconciler) syncJobStatus(ctx context.Context, sub *corev1a
 
 	sub = sub.DeepCopy()
 	if jobCondition == batchv1.JobComplete {
+		// sync Subscription version to Extension's SubscribedVersion
+		extension := &corev1alpha1.Extension{}
+		if err = r.Get(ctx, types.NamespacedName{Name: sub.Spec.Extension.Name}, extension); err != nil {
+			return ctrl.Result{}, err
+		}
+		if extension.Status.SubscribedVersion != sub.Spec.Extension.Version {
+			extension.Status.SubscribedVersion = sub.Spec.Extension.Version
+			if err = r.Update(ctx, extension); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
 		sub.Status.JobName = ""
 		setStateAndCondition(sub, corev1alpha1.StateInstalled)
 	}

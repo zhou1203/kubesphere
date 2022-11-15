@@ -61,11 +61,7 @@ func (r *ExtensionVersionReconciler) reconcile(ctx context.Context, extensionVer
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if _, err := reconcileExtensionStatus(ctx, r.Client, extension, r.K8sVersion); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{}, nil
+	return reconcileExtensionStatus(ctx, r.Client, extension, r.K8sVersion)
 }
 
 func (r *ExtensionVersionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

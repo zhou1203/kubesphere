@@ -53,14 +53,14 @@ func (r *ExtensionReconciler) reconcileDelete(ctx context.Context, extension *co
 	return ctrl.Result{}, nil
 }
 
-func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *corev1alpha1.Extension, k8sVersion string) (*corev1alpha1.Extension, error) {
+func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *corev1alpha1.Extension, k8sVersion string) (ctrl.Result, error) {
 	versionList := corev1alpha1.ExtensionVersionList{}
-
 	if err := c.List(ctx, &versionList, client.MatchingLabels{
 		corev1alpha1.ExtensionReferenceLabel: extension.Name,
 	}); err != nil {
-		return extension, err
+		return ctrl.Result{}, err
 	}
+
 	versionInfo := make([]corev1alpha1.ExtensionVersionInfo, 0, len(versionList.Items))
 	for i := range versionList.Items {
 		if versionList.Items[i].DeletionTimestamp == nil {
@@ -70,22 +70,25 @@ func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *c
 			})
 		}
 	}
-	sort.Sort(VersionList(versionInfo))
+	sort.Slice(versionInfo, func(i, j int) bool {
+		return versionInfo[i].Version < versionInfo[j].Version
+	})
 
 	extensionCopy := extension.DeepCopy()
 
-	if recommended := getRecommendedExtensionVersion(versionList.Items, k8sVersion); recommended != nil {
-		extensionCopy.Status.RecommendVersion = recommended.Spec.Version
+	if recommended, err := getRecommendedExtensionVersion(versionList.Items, k8sVersion); err == nil {
+		extensionCopy.Status.RecommendVersion = recommended
+	} else {
+		klog.V(2).Info(err)
 	}
 	extensionCopy.Status.Versions = versionInfo
 
 	if !reflect.DeepEqual(extensionCopy, extension) {
 		if err := c.Update(ctx, extensionCopy); err != nil {
-			return extensionCopy, err
+			return ctrl.Result{}, err
 		}
 	}
-
-	return extension, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *ExtensionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -109,10 +112,7 @@ func (r *ExtensionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.reconcileDelete(ctx, extension)
 	}
 
-	if _, err := reconcileExtensionStatus(ctx, r.Client, extension, r.K8sVersion); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
+	return reconcileExtensionStatus(ctx, r.Client, extension, r.K8sVersion)
 }
 
 func (r *ExtensionReconciler) SetupWithManager(mgr ctrl.Manager) error {
