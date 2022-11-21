@@ -190,6 +190,7 @@ func NewExecutor(kubeConfig, namespace, releaseName string, options ...Option) (
 type helmOption struct {
 	kubeConfig string
 	debug      bool
+	jobLabels  map[string]string
 }
 
 type HelmOption func(*helmOption)
@@ -208,6 +209,12 @@ func SetHelmKubeConfig(kubeConfig string) HelmOption {
 func SetHelmDebug(debug bool) HelmOption {
 	return func(o *helmOption) {
 		o.debug = debug
+	}
+}
+
+func SetHelmJobLabels(jobLabels map[string]string) HelmOption {
+	return func(o *helmOption) {
+		o.jobLabels = jobLabels
 	}
 }
 
@@ -242,7 +249,7 @@ func (e *executor) Install(ctx context.Context, chartName string, chartData, val
 	} else {
 		if err.Error() == statusNotFoundFormat {
 			// continue to install
-			return e.createInstallJob(ctx, helmOptions.kubeConfig, chartName, chartData, values, false, helmOptions.debug)
+			return e.createInstallJob(ctx, chartName, chartData, values, false, helmOptions)
 		}
 		return "", err
 	}
@@ -266,7 +273,7 @@ func (e *executor) Upgrade(ctx context.Context, chartName string, chartData, val
 	}
 
 	if sts.Info.Status == "deployed" {
-		return e.createInstallJob(ctx, helmOptions.kubeConfig, chartName, chartData, values, true, helmOptions.debug)
+		return e.createInstallJob(ctx, chartName, chartData, values, true, helmOptions)
 	}
 	return "", fmt.Errorf("cannot upgrade release %s/%s, current state is %s", e.namespace, e.releaseName, sts.Info.Status)
 }
@@ -324,7 +331,7 @@ func (e *executor) createConfigMap(ctx context.Context, kubeConfig, chartName st
 	return name, nil
 }
 
-func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName string, chartData, values []byte, upgrade, debug bool) (string, error) {
+func (e *executor) createInstallJob(ctx context.Context, chartName string, chartData, values []byte, upgrade bool, helmOptions *helmOption) (string, error) {
 	args := make([]string, 0, 10)
 	if upgrade {
 		args = append(args, "upgrade")
@@ -342,7 +349,7 @@ func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName s
 		args = append(args, "--dry-run")
 	}
 
-	if kubeConfig != "" {
+	if helmOptions.kubeConfig != "" {
 		args = append(args, "--kubeconfig", kubeConfigPath)
 	}
 
@@ -351,12 +358,12 @@ func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName s
 		args = append(args, "--post-renderer", filepath.Join(workspaceBase, postRenderExecFile))
 	}
 
-	if debug {
+	if helmOptions.debug {
 		// output debug info
 		args = append(args, "--debug")
 	}
 
-	name, err := e.createConfigMap(ctx, kubeConfig, chartName, chartData, values)
+	name, err := e.createConfigMap(ctx, helmOptions.kubeConfig, chartName, chartData, values)
 	if err != nil {
 		return "", err
 	}
@@ -364,6 +371,7 @@ func (e *executor) createInstallJob(ctx context.Context, kubeConfig, chartName s
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: e.namespace,
+			Labels:    helmOptions.jobLabels,
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: pointer.Int32Ptr(1),
@@ -476,6 +484,7 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: e.namespace,
+			Labels:    helmOptions.jobLabels,
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: pointer.Int32Ptr(1),

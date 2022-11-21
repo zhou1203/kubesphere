@@ -170,7 +170,9 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 		return r.removeFinalizer(ctx, sub)
 	}
 
-	jobName, err := helmExecutor.Uninstall(ctx)
+	jobName, err := helmExecutor.Uninstall(ctx, helm.SetHelmJobLabels(map[string]string{
+		corev1alpha1.SubscriptionReferenceLabel: sub.Name,
+	}))
 	if err != nil {
 		klog.Errorf("delete helm release %s/%s failed, error: %s", sub.Status.TargetNamespace, sub.Status.ReleaseName, err)
 		return ctrl.Result{}, err
@@ -199,6 +201,19 @@ func (r *SubscriptionReconciler) forceDelete(ctx context.Context, sub *corev1alp
 
 	sub.Status.State = corev1alpha1.StateUninstalled
 	return r.removeFinalizer(ctx, sub)
+}
+
+func (r *SubscriptionReconciler) cleanupJobs(ctx context.Context, subName string) error {
+	jobs := &batchv1.JobList{}
+	if err := r.List(ctx, jobs, client.MatchingLabels{corev1alpha1.SubscriptionReferenceLabel: subName}); err != nil {
+		return err
+	}
+	for i := range jobs.Items {
+		if err := r.Delete(ctx, &jobs.Items[i]); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1alpha1.ExtensionRef) ([]byte, error) {
@@ -266,6 +281,10 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 		return ctrl.Result{}, err
 	}
 
+	jobLabels := map[string]string{
+		corev1alpha1.SubscriptionReferenceLabel: sub.Name,
+	}
+
 	var jobName string
 	if _, err = helmExecutor.Manifest(); err != nil {
 		// release not exists or there is something wrong with the Manifest API
@@ -274,7 +293,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 		}
 
 		klog.Infof("install helm release %s/%s", targetNamespace, releaseName)
-		jobName, err = helmExecutor.Install(ctx, sub.Spec.Extension.Name, charData, []byte(sub.Spec.Config))
+		jobName, err = helmExecutor.Install(ctx, sub.Spec.Extension.Name, charData, []byte(sub.Spec.Config), helm.SetHelmJobLabels(jobLabels))
 		if err != nil {
 			klog.Errorf("install helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
 			return ctrl.Result{}, err
@@ -283,7 +302,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 	} else {
 		// release exists, we need to upgrade it
 		klog.Infof("upgrade helm release %s/%s", targetNamespace, releaseName)
-		jobName, err = helmExecutor.Upgrade(ctx, sub.Spec.Extension.Name, charData, []byte(sub.Spec.Config))
+		jobName, err = helmExecutor.Upgrade(ctx, sub.Spec.Extension.Name, charData, []byte(sub.Spec.Config), helm.SetHelmJobLabels(jobLabels))
 		if err != nil {
 			klog.Errorf("upgrade helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
 			return ctrl.Result{}, err
@@ -392,6 +411,9 @@ func (r *SubscriptionReconciler) jobCondition(ctx context.Context, namespace, na
 }
 
 func (r *SubscriptionReconciler) removeFinalizer(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
+	if err := r.cleanupJobs(ctx, sub.Name); err != nil {
+		return ctrl.Result{}, err
+	}
 	// Remove the finalizer from the subscription and update it.
 	controllerutil.RemoveFinalizer(sub, SubscriptionFinalizer)
 	return r.updateSubscription(ctx, sub)
