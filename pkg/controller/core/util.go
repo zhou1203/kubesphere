@@ -23,15 +23,10 @@ import (
 	"github.com/Masterminds/semver/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
-
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/version"
 )
-
-func generatePodName(repoName string) string {
-	return fmt.Sprintf("%s-%s", "catalog", repoName)
-}
 
 func getRecommendedExtensionVersion(versions []corev1alpha1.ExtensionVersion, k8sVersion string) (string, error) {
 	if len(versions) == 0 {
@@ -50,18 +45,32 @@ func getRecommendedExtensionVersion(versions []corev1alpha1.ExtensionVersion, k8
 	var matchedVersions []*semver.Version
 
 	for _, v := range versions {
-		targetKubeVersion, err := semver.NewConstraint(v.Spec.KubeVersion)
-		if err != nil {
-			// If the semver is invalid, just ignore it.
-			klog.V(2).Infof("parse version failed, extension version: %s, err: %s", v.Spec.KubeVersion, err)
-			continue
+		var kubeVersionMatched, ksVersionMatched bool
+
+		if v.Spec.KubeVersion == "" {
+			kubeVersionMatched = true
+		} else {
+			targetKubeVersion, err := semver.NewConstraint(v.Spec.KubeVersion)
+			if err != nil {
+				// If the semver is invalid, just ignore it.
+				klog.Warningf("failed to parse Kubernetes version constraints: kubeVersion: %s, err: %s", v.Spec.KubeVersion, err)
+				continue
+			}
+			kubeVersionMatched = targetKubeVersion.Check(kubeVersion)
 		}
-		targetKSVersion, err := semver.NewConstraint(v.Spec.KSVersion)
-		if err != nil {
-			klog.V(2).Infof("parse version failed, extension version: %s, err: %s", v.Spec.KSVersion, err)
-			continue
+
+		if v.Spec.KSVersion == "" {
+			ksVersionMatched = true
+		} else {
+			targetKSVersion, err := semver.NewConstraint(v.Spec.KSVersion)
+			if err != nil {
+				klog.Warningf("failed to parse KubeSphere version constraints: ksVersion: %s, err: %s", v.Spec.KSVersion, err)
+				continue
+			}
+			ksVersionMatched = targetKSVersion.Check(ksVersion)
 		}
-		if targetKubeVersion.Check(kubeVersion) && targetKSVersion.Check(ksVersion) {
+
+		if kubeVersionMatched && ksVersionMatched {
 			targetVersion, err := semver.NewVersion(v.Spec.Version)
 			if err != nil {
 				klog.V(2).Infof("parse version failed, extension version: %s, err: %s", v.Spec.Version, err)
@@ -78,6 +87,7 @@ func getRecommendedExtensionVersion(versions []corev1alpha1.ExtensionVersion, k8
 	sort.Slice(matchedVersions, func(i, j int) bool {
 		return matchedVersions[i].Compare(matchedVersions[j]) >= 0
 	})
+
 	return matchedVersions[0].Original(), nil
 }
 
@@ -103,7 +113,7 @@ func getLatestExtensionVersion(versions []corev1alpha1.ExtensionVersion) *corev1
 			}
 		} else {
 			// If the semver is invalid, just ignore it.
-			klog.V(2).Infof("parse version failed, extension version: %s, err: %s", versions[i].Name, err)
+			klog.Warningf("parse version failed, extension version: %s, err: %s", versions[i].Name, err)
 		}
 	}
 	return latestVersion

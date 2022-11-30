@@ -19,23 +19,22 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 type UpdateStrategy struct {
-	*RegistryPoll `json:"registryPoll,omitempty"`
+	RegistryPoll `json:"registryPoll,omitempty"`
 }
 
 type RegistryPoll struct {
-	Interval *metav1.Duration `json:"interval,omitempty"`
+	Interval metav1.Duration `json:"interval"`
 }
 
 type RepositorySpec struct {
-	Image          string         `json:"image,omitempty"`
-	URL            string         `json:"url,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	UpdateStrategy UpdateStrategy `json:"updateStrategy,omitempty"`
+	Image          string          `json:"image,omitempty"`
+	URL            string          `json:"url,omitempty"`
+	Description    string          `json:"description,omitempty"`
+	UpdateStrategy *UpdateStrategy `json:"updateStrategy,omitempty"`
 }
 
 type RepositoryStatus struct {
-	State      string             `json:"state,omitempty"`
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	LastSyncTime metav1.Time `json:"lastSyncTime"`
 }
 
 // +kubebuilder:object:root=true

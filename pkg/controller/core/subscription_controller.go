@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -56,6 +57,7 @@ type SubscriptionReconciler struct {
 	client.Client
 	kubeconfig string
 	helmGetter getter.Getter
+	Recorder   record.EventRecorder
 }
 
 func NewSubscriptionReconciler(kubeconfigPath string) (*SubscriptionReconciler, error) {
@@ -96,7 +98,7 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.forceDelete(ctx, sub)
 	}
 
-	if sub.ObjectMeta.DeletionTimestamp != nil {
+	if !sub.ObjectMeta.DeletionTimestamp.IsZero() {
 		// enabled/disabled -> uninstalling -> uninstall failed/uninstalled
 		return r.reconcileDelete(ctx, sub)
 	}
@@ -142,20 +144,20 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 	}
 
 	if sub.Status.JobName != "" {
-		jobCondition, err := r.jobCondition(ctx, sub.Status.TargetNamespace, sub.Status.JobName)
+		latestJobCondition, err := r.latestJobCondition(ctx, sub.Status.TargetNamespace, sub.Status.JobName)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		sub = sub.DeepCopy()
-		if jobCondition == batchv1.JobComplete {
+		if latestJobCondition.Type == batchv1.JobComplete && latestJobCondition.Status == corev1.ConditionTrue {
 			klog.V(4).Infof("remove the finalizer for subscription %s", sub.Name)
-			setStateAndCondition(sub, corev1alpha1.StateUninstalled)
+			updateStateAndCondition(sub, corev1alpha1.StateUninstalled, "")
 			return r.removeFinalizer(ctx, sub)
-		}
-		if jobCondition == batchv1.JobFailed {
-			setStateAndCondition(sub, corev1alpha1.StateUninstallFailed)
+		} else if latestJobCondition.Type == batchv1.JobFailed && latestJobCondition.Status == corev1.ConditionTrue {
+			updateStateAndCondition(sub, corev1alpha1.StateUninstallFailed, fmt.Sprintf("helm executor job failed: %s", latestJobCondition.Message))
 			return r.updateSubscription(ctx, sub)
 		}
+
 		// Job is still running, check it later
 		return ctrl.Result{
 			RequeueAfter: time.Second * 3,
@@ -179,8 +181,9 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 	}
 
 	klog.Infof("delete helm release %s/%s", sub.Status.TargetNamespace, sub.Status.ReleaseName)
+	sub = sub.DeepCopy()
 	sub.Status.JobName = jobName
-	setStateAndCondition(sub, corev1alpha1.StateUninstalling)
+	updateStateAndCondition(sub, corev1alpha1.StateUninstalling, "")
 	return r.updateSubscription(ctx, sub)
 }
 
@@ -298,7 +301,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 			klog.Errorf("install helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
 			return ctrl.Result{}, err
 		}
-		setStateAndCondition(sub, corev1alpha1.StateInstalling)
+		updateStateAndCondition(sub, corev1alpha1.StateInstalling, "")
 	} else {
 		// release exists, we need to upgrade it
 		klog.Infof("upgrade helm release %s/%s", targetNamespace, releaseName)
@@ -307,7 +310,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 			klog.Errorf("upgrade helm release %s/%s failed, error: %s", targetNamespace, releaseName, err)
 			return ctrl.Result{}, err
 		}
-		setStateAndCondition(sub, corev1alpha1.StateUpgrading)
+		updateStateAndCondition(sub, corev1alpha1.StateInstalling, "")
 	}
 
 	sub.Status.ReleaseName = releaseName
@@ -316,7 +319,7 @@ func (r *SubscriptionReconciler) installOrUpdate(ctx context.Context, sub *corev
 	return r.updateSubscription(ctx, sub)
 }
 
-func setStateAndCondition(sub *corev1alpha1.Subscription, state string) {
+func updateStateAndCondition(sub *corev1alpha1.Subscription, state string, message string) {
 	sub.Status.State = state
 
 	newCondition := metav1.Condition{
@@ -324,6 +327,7 @@ func setStateAndCondition(sub *corev1alpha1.Subscription, state string) {
 		Status:             metav1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
 		Reason:             state,
+		Message:            message,
 	}
 
 	if sub.Status.Conditions == nil {
@@ -361,20 +365,13 @@ func (r *SubscriptionReconciler) syncJobStatus(ctx context.Context, sub *corev1a
 		// This is unlikely to happen in normal processes, and this is just to avoid subsequent exceptions
 		return ctrl.Result{}, nil
 	}
-	jobCondition, err := r.jobCondition(ctx, sub.Status.TargetNamespace, sub.Status.JobName)
+	latestJobCondition, err := r.latestJobCondition(ctx, sub.Status.TargetNamespace, sub.Status.JobName)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if jobCondition == "" {
-		// Job is still running, check it later
-		return ctrl.Result{
-			RequeueAfter: time.Second * 3,
-		}, nil
-	}
-
 	sub = sub.DeepCopy()
-	if jobCondition == batchv1.JobComplete {
+	if latestJobCondition.Type == batchv1.JobComplete && latestJobCondition.Status == corev1.ConditionTrue {
 		// sync Subscription version to Extension's SubscribedVersion
 		extension := &corev1alpha1.Extension{}
 		if err = r.Get(ctx, types.NamespacedName{Name: sub.Spec.Extension.Name}, extension); err != nil {
@@ -388,26 +385,29 @@ func (r *SubscriptionReconciler) syncJobStatus(ctx context.Context, sub *corev1a
 		}
 
 		sub.Status.JobName = ""
-		setStateAndCondition(sub, corev1alpha1.StateInstalled)
+		updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
+	} else if latestJobCondition.Type == batchv1.JobFailed && latestJobCondition.Status == corev1.ConditionTrue {
+		updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, fmt.Sprintf("helm executor job failed: %s", latestJobCondition.Message))
+	} else {
+		return ctrl.Result{RequeueAfter: time.Second * 3}, nil
 	}
-	if jobCondition == batchv1.JobFailed {
-		setStateAndCondition(sub, corev1alpha1.StateInstallFailed)
-	}
+
 	return r.updateSubscription(ctx, sub)
 }
 
-func (r *SubscriptionReconciler) jobCondition(ctx context.Context, namespace, name string) (batchv1.JobConditionType, error) {
+func (r *SubscriptionReconciler) latestJobCondition(ctx context.Context, namespace, name string) (batchv1.JobCondition, error) {
 	job := &batchv1.Job{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, job); err != nil {
-		return "", err
+		return batchv1.JobCondition{}, err
 	}
-	if job.Status.Succeeded > 0 {
-		return batchv1.JobComplete, nil
+	jobConditions := job.Status.Conditions
+	sort.Slice(jobConditions, func(i, j int) bool {
+		return jobConditions[i].LastTransitionTime.After(jobConditions[j].LastTransitionTime.Time)
+	})
+	if len(job.Status.Conditions) > 0 {
+		return jobConditions[0], nil
 	}
-	if job.Status.Failed > 0 {
-		return batchv1.JobFailed, nil
-	}
-	return "", nil
+	return batchv1.JobCondition{}, nil
 }
 
 func (r *SubscriptionReconciler) removeFinalizer(ctx context.Context, sub *corev1alpha1.Subscription) (ctrl.Result, error) {
@@ -640,9 +640,9 @@ func (r *SubscriptionReconciler) syncEnabledStatus(ctx context.Context, sub *cor
 	if inconsistent {
 		sub := sub.DeepCopy()
 		if sub.Spec.Enabled {
-			setStateAndCondition(sub, corev1alpha1.StateEnabled)
+			updateStateAndCondition(sub, corev1alpha1.StateEnabled, "")
 		} else {
-			setStateAndCondition(sub, corev1alpha1.StateDisabled)
+			updateStateAndCondition(sub, corev1alpha1.StateDisabled, "")
 		}
 		return r.updateSubscription(ctx, sub)
 	}

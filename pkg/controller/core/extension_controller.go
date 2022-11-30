@@ -61,17 +61,17 @@ func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *c
 		return ctrl.Result{}, err
 	}
 
-	versionInfo := make([]corev1alpha1.ExtensionVersionInfo, 0, len(versionList.Items))
+	versions := make([]corev1alpha1.ExtensionVersionInfo, 0, len(versionList.Items))
 	for i := range versionList.Items {
-		if versionList.Items[i].DeletionTimestamp == nil {
-			versionInfo = append(versionInfo, corev1alpha1.ExtensionVersionInfo{
+		if versionList.Items[i].DeletionTimestamp.IsZero() {
+			versions = append(versions, corev1alpha1.ExtensionVersionInfo{
 				Version:           versionList.Items[i].Spec.Version,
 				CreationTimestamp: versionList.Items[i].CreationTimestamp,
 			})
 		}
 	}
-	sort.Slice(versionInfo, func(i, j int) bool {
-		return versionInfo[i].Version < versionInfo[j].Version
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].Version < versions[j].Version
 	})
 
 	extensionCopy := extension.DeepCopy()
@@ -81,9 +81,9 @@ func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *c
 	} else {
 		klog.V(2).Info(err)
 	}
-	extensionCopy.Status.Versions = versionInfo
+	extensionCopy.Status.Versions = versions
 
-	if !reflect.DeepEqual(extensionCopy, extension) {
+	if !reflect.DeepEqual(extensionCopy.Status, extension.Status) {
 		if err := c.Update(ctx, extensionCopy); err != nil {
 			return ctrl.Result{}, err
 		}

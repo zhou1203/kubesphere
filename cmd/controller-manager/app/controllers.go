@@ -375,9 +375,9 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		addController(mgr, "volumesnapshot", volumeSnapshotController)
 	}
 
-	// "pvc-autoresizer"
+	// "pvcautoresizer"
 	if prometheus.MonitorModuleEnable(cmOptions.MonitoringOptions) {
-		if cmOptions.IsControllerEnabled("pvc-autoresizer") {
+		if cmOptions.IsControllerEnabled("pvcautoresizer") {
 			if err := runners.SetupIndexer(mgr, false); err != nil {
 				return err
 			}

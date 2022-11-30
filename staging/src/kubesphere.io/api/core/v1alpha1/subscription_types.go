@@ -34,11 +34,6 @@ type Override struct {
 	ConfigOverride string `json:"configOverride"`
 }
 
-type Distribute struct {
-	Placement *Placement `json:"placement,omitempty"`
-	Overrides []Override `json:"overrides,omitempty"`
-}
-
 type Delivery struct {
 	Placement *Placement `json:"placement,omitempty"`
 	Overrides []Override `json:"overrides,omitempty"`
@@ -61,7 +56,7 @@ type SubscriptionSpec struct {
 	Extension ExtensionRef `json:"extension"`
 	Enabled   bool         `json:"enabled"`
 	Config    string       `json:"config,omitempty"`
-	Delivery  *Delivery    `json:"delivery"`
+	Delivery  *Delivery    `json:"delivery,omitempty"`
 }
 
 type SubscriptionStatus struct {

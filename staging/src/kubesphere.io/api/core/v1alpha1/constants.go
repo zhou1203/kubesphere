@@ -41,4 +41,6 @@ const (
 	SubscriptionReferenceLabel = "kubesphere.io/subscription-ref"
 	DisplayNameAnnotation      = "kubesphere.io/display-name"
 	ForceDeleteAnnotation      = "kubesphere.io/force-delete"
+	KSVersionAnnotation        = "kubesphere.io/ks-version"
+	InstallationModeAnnotation = "kubesphere.io/installation-mode"
 )
