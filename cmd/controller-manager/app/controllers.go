@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -55,8 +55,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/simple/client/devops/jenkins"
 	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
 	"kubesphere.io/kubesphere/pkg/simple/client/s3"
-
-	"kubesphere.io/kubesphere/pkg/controller/storage/snapshotclass"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
@@ -104,7 +102,6 @@ var allControllers = []string{
 	"destinationrule",
 	"job",
 	"storagecapability",
-	"volumesnapshot",
 	"pvcautoresizer",
 	"workloadrestart",
 	"loginrecord",
@@ -365,18 +362,9 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		addController(mgr, "storagecapability", storageCapabilityController)
 	}
 
-	// "volumesnapshot" controller
-	if cmOptions.IsControllerEnabled("volumesnapshot") {
-		volumeSnapshotController := snapshotclass.NewController(
-			kubernetesInformer.Storage().V1().StorageClasses(),
-			client.Snapshot().SnapshotV1().VolumeSnapshotClasses(),
-			informerFactory.SnapshotSharedInformerFactory().Snapshot().V1().VolumeSnapshotClasses(),
-		)
-		addController(mgr, "volumesnapshot", volumeSnapshotController)
-	}
-
-	// "pvcautoresizer"
-	if prometheus.MonitorModuleEnable(cmOptions.MonitoringOptions) {
+	// "pvc-autoresizer"
+	monitoringOptionsEnable := cmOptions.MonitoringOptions != nil && len(cmOptions.MonitoringOptions.Endpoint) != 0
+	if monitoringOptionsEnable {
 		if cmOptions.IsControllerEnabled("pvcautoresizer") {
 			if err := runners.SetupIndexer(mgr, false); err != nil {
 				return err

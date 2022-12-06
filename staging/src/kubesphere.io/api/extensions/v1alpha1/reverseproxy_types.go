@@ -49,6 +49,7 @@ type Directives struct {
 	// Change Host header for name-based virtual hosted sites.
 	ChangeOrigin bool `json:"changeOrigin,omitempty"`
 	// InterceptRedirects determines whether the proxy should sniff backend responses for redirects, only allows redirects to the same host.
+	// Deprecated, https://github.com/kubernetes/kubernetes/pull/106830
 	InterceptRedirects bool `json:"interceptRedirects,omitempty"`
 	//  WrapTransport indicates whether the provided Transport should be wrapped with default proxy transport behavior (URL rewriting, X-Forwarded-* header setting)
 	WrapTransport bool `json:"wrapTransport,omitempty"`

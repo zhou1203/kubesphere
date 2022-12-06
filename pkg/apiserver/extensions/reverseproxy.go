@@ -150,10 +150,6 @@ func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.Revers
 	if reverseProxy.Spec.Directives.ChangeOrigin {
 		handler.UseLocationHost = true
 	}
-	if reverseProxy.Spec.Directives.InterceptRedirects {
-		handler.InterceptRedirects = true
-		handler.RequireSameHostRedirects = true
-	}
 	if len(reverseProxy.Spec.Directives.HeaderDown) > 0 {
 		w = &responseWriterWrapper{
 			ResponseWriter: w,

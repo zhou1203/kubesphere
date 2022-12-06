@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/informers"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -100,10 +100,11 @@ func contains(secret *v1.Secret, queryValue query.Value) bool {
 	for _, requirement := range fieldSelector.Requirements() {
 		var negative bool
 		// supports '=', '==' and '!='.(e.g. ?fieldSelector=key1=value1,key2=value2)
+		// fields.ParseSelector(FieldSelector) has handled the case where the operator is '==' and converted it to '=',
+		// so case selection.DoubleEquals can be ignored here.
 		switch requirement.Operator {
 		case selection.NotEquals:
 			negative = true
-		case selection.DoubleEquals:
 		case selection.Equals:
 			negative = false
 		}

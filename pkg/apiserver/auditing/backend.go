@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/auditing/v1alpha1"
 	options "kubesphere.io/kubesphere/pkg/simple/client/auditing"
@@ -141,6 +141,7 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 	defer cancel()
 
 	stopCh := make(chan struct{})
+	skipReturnSender := false
 
 	send := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), b.getSenderTimeout)
@@ -149,6 +150,7 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 		select {
 		case <-ctx.Done():
 			klog.Error("Get auditing event sender timeout")
+			skipReturnSender = true
 			return
 		case b.senderCh <- struct{}{}:
 		}
@@ -183,7 +185,9 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 	go send()
 
 	defer func() {
-		<-b.senderCh
+		if !skipReturnSender {
+			<-b.senderCh
+		}
 	}()
 
 	select {
