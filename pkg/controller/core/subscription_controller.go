@@ -660,8 +660,10 @@ func (r *SubscriptionReconciler) syncExtensionState(ctx context.Context, sub *co
 			update := latest.DeepCopy()
 			if sub.Status.State == corev1alpha1.StateUninstalled {
 				update.Status.State = ""
+				update.Status.SubscribedVersion = ""
 			} else {
 				update.Status.State = sub.Status.State
+				update.Status.SubscribedVersion = sub.Spec.Extension.Version
 			}
 			if err := r.Update(ctx, update); err != nil {
 				return err
