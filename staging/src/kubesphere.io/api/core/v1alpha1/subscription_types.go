@@ -60,12 +60,12 @@ type SubscriptionSpec struct {
 }
 
 type SubscriptionStatus struct {
-	// Describe the installation status of the extension
+	// State describes the installation status of the extension
 	State           string `json:"state,omitempty"`
 	ReleaseName     string `json:"releaseName,omitempty"`
 	TargetNamespace string `json:"targetNamespace,omitempty"`
 	JobName         string `json:"jobName,omitempty"`
-	// Describe the subchart installation status of the extension
+	// DeliveryStatuses describes the subchart installation status of the extension
 	DeliveryStatuses []DeliveryStatus   `json:"deliveryStatuses"`
 	Conditions       []metav1.Condition `json:"conditions,omitempty"`
 }
