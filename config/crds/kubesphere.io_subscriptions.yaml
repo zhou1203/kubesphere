@@ -229,8 +229,6 @@ spec:
                 type: string
               targetNamespace:
                 type: string
-            required:
-            - deliveryStatuses
             type: object
         type: object
     served: true

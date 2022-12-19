@@ -66,7 +66,7 @@ type SubscriptionStatus struct {
 	TargetNamespace string `json:"targetNamespace,omitempty"`
 	JobName         string `json:"jobName,omitempty"`
 	// DeliveryStatuses describes the subchart installation status of the extension
-	DeliveryStatuses []DeliveryStatus   `json:"deliveryStatuses"`
+	DeliveryStatuses []DeliveryStatus   `json:"deliveryStatuses,omitempty"`
 	Conditions       []metav1.Condition `json:"conditions,omitempty"`
 }
 
