@@ -151,7 +151,6 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 		sub = sub.DeepCopy()
 		if latestJobCondition.Type == batchv1.JobComplete && latestJobCondition.Status == corev1.ConditionTrue {
 			klog.V(4).Infof("remove the finalizer for subscription %s", sub.Name)
-			updateStateAndCondition(sub, corev1alpha1.StateUninstalled, "")
 			return r.removeFinalizer(ctx, sub)
 		} else if latestJobCondition.Type == batchv1.JobFailed && latestJobCondition.Status == corev1.ConditionTrue {
 			updateStateAndCondition(sub, corev1alpha1.StateUninstallFailed, fmt.Sprintf("helm executor job failed: %s", latestJobCondition.Message))
@@ -162,6 +161,11 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 		return ctrl.Result{
 			RequeueAfter: time.Second * 3,
 		}, nil
+	}
+
+	// It has not been installed correctly.
+	if sub.Status.ReleaseName == "" {
+		return r.removeFinalizer(ctx, sub)
 	}
 
 	if _, err = helmExecutor.Manifest(); err != nil {
@@ -202,7 +206,6 @@ func (r *SubscriptionReconciler) forceDelete(ctx context.Context, sub *corev1alp
 		return ctrl.Result{}, err
 	}
 
-	sub.Status.State = corev1alpha1.StateUninstalled
 	return r.removeFinalizer(ctx, sub)
 }
 
@@ -416,6 +419,7 @@ func (r *SubscriptionReconciler) removeFinalizer(ctx context.Context, sub *corev
 	}
 	// Remove the finalizer from the subscription and update it.
 	controllerutil.RemoveFinalizer(sub, SubscriptionFinalizer)
+	sub.Status.State = corev1alpha1.StateUninstalled
 	return r.updateSubscription(ctx, sub)
 }
 
