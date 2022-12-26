@@ -313,7 +313,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 // reconcileHostCluster will create a host cluster if there are no clusters labeled 'cluster-role.kubesphere.io/host'
 func (r *Reconciler) reconcileHostCluster() error {
 	clusters := &clusterv1alpha1.ClusterList{}
-	if err := r.List(context.TODO(), clusters); err != nil {
+	if err := r.List(context.TODO(), clusters, client.MatchingLabels{clusterv1alpha1.HostCluster: ""}); err != nil {
 		return err
 	}
 
