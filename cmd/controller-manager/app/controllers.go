@@ -86,18 +86,15 @@ var allControllers = []string{
 	"workspacerole",
 	"workspacerolebinding",
 	"namespace",
-
 	"helmrepo",
 	"helmcategory",
 	"helmapplication",
 	"helmapplicationversion",
 	"helmrelease",
 	"helm",
-
 	"application",
 	"serviceaccount",
 	"resourcequota",
-
 	"virtualservice",
 	"destinationrule",
 	"job",
@@ -109,18 +106,18 @@ var allControllers = []string{
 	"nsnp",
 	"ippool",
 	"csr",
-
 	"clusterrolebinding",
-
 	"fedglobalrolecache",
 	"globalrole",
 	"fedglobalrolebindingcache",
 	"globalrolebinding",
-
 	"groupbinding",
 	"group",
-
 	"notification",
+	"pvcworkloadrestarter",
+	"rulegroup",
+	"clusterrulegroup",
+	"globalrulegroup",
 }
 
 // setup all available controllers one by one
@@ -129,13 +126,19 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	stopCh <-chan struct{}) error {
 	var err error
 
+	////////////////////////////////////
 	// begin init necessary informers
+	////////////////////////////////////
 	kubernetesInformer := informerFactory.KubernetesSharedInformerFactory()
 	istioInformer := informerFactory.IstioSharedInformerFactory()
 	kubesphereInformer := informerFactory.KubeSphereSharedInformerFactory()
+	////////////////////////////////////
 	// end informers
+	////////////////////////////////////
 
+	////////////////////////////////////
 	// begin init necessary clients
+	////////////////////////////////////
 	kubeconfigClient := kubeconfig.NewOperator(client.Kubernetes(),
 		informerFactory.KubernetesSharedInformerFactory().Core().V1().ConfigMaps().Lister(),
 		client.Config())
@@ -162,9 +165,13 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	} else {
 		klog.Warning("ks-controller-manager starts without ldap provided, it will not sync user into ldap")
 	}
+	////////////////////////////////////
 	// end init clients
+	////////////////////////////////////
 
+	////////////////////////////////////////////////////////
 	// begin init controller and add to manager one by one
+	////////////////////////////////////////////////////////
 
 	// "user" controller
 	if cmOptions.IsControllerEnabled("user") {
@@ -258,13 +265,13 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 		// "helmapplication" controller
 		if cmOptions.IsControllerEnabled("helmapplication") {
-			reconcileHelmApp := (&helmapplication.ReconcileHelmApplication{})
+			reconcileHelmApp := &helmapplication.ReconcileHelmApplication{}
 			addControllerWithSetup(mgr, "helmapplication", reconcileHelmApp)
 		}
 
 		// "helmapplicationversion" controller
 		if cmOptions.IsControllerEnabled("helmapplicationversion") {
-			reconcileHelmAppVersion := (&helmapplication.ReconcileHelmApplicationVersion{})
+			reconcileHelmAppVersion := &helmapplication.ReconcileHelmApplicationVersion{}
 			addControllerWithSetup(mgr, "helmapplicationversion", reconcileHelmAppVersion)
 		}
 	}
@@ -362,7 +369,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		addController(mgr, "storagecapability", storageCapabilityController)
 	}
 
-	// "pvc-autoresizer"
+	// "pvcautoresizer" controller
 	monitoringOptionsEnable := cmOptions.MonitoringOptions != nil && len(cmOptions.MonitoringOptions.Endpoint) != 0
 	if monitoringOptionsEnable {
 		if cmOptions.IsControllerEnabled("pvcautoresizer") {
@@ -376,20 +383,21 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 			pvcAutoResizerController := runners.NewPVCAutoresizer(
 				promClient,
 				mgr.GetClient(),
-				ctrl.Log.WithName("pvc-autoresizer"),
+				ctrl.Log.WithName("pvcautoresizer"),
 				1*time.Minute,
-				mgr.GetEventRecorderFor("pvc-autoresizer"),
+				mgr.GetEventRecorderFor("pvcautoresizer"),
 			)
 			addController(mgr, "pvcautoresizer", pvcAutoResizerController)
 		}
 	}
 
-	if cmOptions.IsControllerEnabled("pvc-workload-restarter") {
+	// "pvcworkloadrestarter" controller
+	if cmOptions.IsControllerEnabled("pvcworkloadrestarter") {
 		restarter := runners.NewRestarter(
 			mgr.GetClient(),
-			ctrl.Log.WithName("pvc-workload-restarter"),
+			ctrl.Log.WithName("pvcworkloadrestarter"),
 			1*time.Minute,
-			mgr.GetEventRecorderFor("pvc-workload-restarter"),
+			mgr.GetEventRecorderFor("pvcworkloadrestarter"),
 		)
 		addController(mgr, "pvcworkloadrestarter", restarter)
 	}
