@@ -1,4 +1,4 @@
-
+{{ if eq .Values.role "host" }}
 apiVersion: v1
 data:
   local_config.yaml: |
@@ -26,3 +26,4 @@ data:
 kind: ConfigMap
 metadata:
   name: ks-console-config
+{{ end }}

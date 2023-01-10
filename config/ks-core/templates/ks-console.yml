@@ -1,3 +1,4 @@
+{{ if eq .Values.role "host" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -101,6 +102,7 @@ spec:
     tier: frontend
 {{- if .Values.console.nodePort }}
   type: NodePort
-{{- else}}
+{{- else }}
   type: ClusterIP
-{{- end}}
+{{- end }}
+{{ end }}

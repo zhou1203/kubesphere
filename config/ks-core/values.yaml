@@ -1,7 +1,7 @@
 # Default values for ks-core.
 
 replicaCount: 1
-
+role: host
 image:
   # Overrides the image tag whose default is the chart appVersion.
   ks_controller_manager_repo: kubesphere/ks-controller-manager
@@ -144,4 +144,3 @@ controller:
   ## Additional volumes to the controller pod.
   #  - name: example-config
   #    emptyDir: {}
-

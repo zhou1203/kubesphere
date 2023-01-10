@@ -1,12 +1,12 @@
-{{ if eq .Values.role "host" }}
+{{ if eq .Values.role "member" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: ks-controller-manager
+    app: ks-agent
     tier: backend
     version: {{ .Chart.AppVersion }}
-  name: ks-controller-manager
+  name: ks-agent
 spec:
   strategy:
     rollingUpdate:
@@ -17,13 +17,13 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: ks-controller-manager
+      app: ks-agent
       tier: backend
       # version: {{ .Chart.AppVersion }}
   template:
     metadata:
       labels:
-        app: ks-controller-manager
+        app: ks-agent
         tier: backend
         # version: {{ .Chart.AppVersion }}
     spec:
@@ -32,6 +32,38 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
+      - command:
+        - ks-apiserver
+        - --logtostderr=true
+        image: {{ .Values.image.ks_apiserver_repo }}:{{ .Values.image.ks_apiserver_tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        name: ks-apiserver
+        ports:
+        - containerPort: 9090
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.apiserver.resources | nindent 12 }}
+        volumeMounts:
+        - mountPath: /etc/kubesphere/
+          name: kubesphere-config
+        - mountPath: /etc/localtime
+          name: host-time
+          readOnly: true
+        {{- if .Values.apiserver.extraVolumeMounts }}
+          {{- toYaml .Values.apiserver.extraVolumeMounts | nindent 8 }}
+        {{- end }}
+        env:
+        {{- if .Values.env }}
+        {{- toYaml .Values.env | nindent 8 }}
+        {{- end }}
+        livenessProbe:
+          failureThreshold: 8
+          httpGet:
+            path: /kapis/version
+            port: 9090
+            scheme: HTTP
+          initialDelaySeconds: 15
+          timeoutSeconds: 15
       - command:
         - controller-manager
         - --logtostderr=true
@@ -82,6 +114,9 @@ spec:
         name: host-time
       {{- if .Values.controller.extraVolumes }}
         {{ toYaml .Values.controller.extraVolumes | nindent 6 }}
+      {{- end }}
+      {{- if .Values.apiserver.extraVolumes }}
+        {{ toYaml .Values.apiserver.extraVolumes | nindent 6 }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
