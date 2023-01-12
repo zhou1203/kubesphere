@@ -218,7 +218,7 @@ func SetHelmJobLabels(jobLabels map[string]string) HelmOption {
 	}
 }
 
-func initHelmConf(kubeConfig, namespace string) (*action.Configuration, error) {
+func InitHelmConf(kubeConfig, namespace string) (*action.Configuration, error) {
 	getter := NewClusterRESTClientGetter(kubeConfig, namespace)
 	helmConf := new(action.Configuration)
 	if err := helmConf.Init(getter, namespace, "", klog.Infof); err != nil {
@@ -234,7 +234,7 @@ func (e *executor) Install(ctx context.Context, chartName string, chartData, val
 		f(helmOptions)
 	}
 
-	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
 		return "", err
 	}
@@ -262,7 +262,7 @@ func (e *executor) Upgrade(ctx context.Context, chartName string, chartData, val
 		f(helmOptions)
 	}
 
-	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
 		return "", err
 	}
@@ -438,7 +438,7 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 		f(helmOptions)
 	}
 
-	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
 		return "", err
 	}
@@ -542,7 +542,7 @@ func (e *executor) ForceDelete(ctx context.Context, options ...HelmOption) error
 		f(helmOptions)
 	}
 
-	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
 		return err
 	}
@@ -567,7 +567,7 @@ func (e *executor) Manifest(options ...HelmOption) (string, error) {
 		f(helmOptions)
 	}
 
-	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
 		return "", err
 	}
@@ -589,7 +589,7 @@ func (e *executor) IsReleaseReady(timeout time.Duration, options ...HelmOption) 
 		f(helmOptions)
 	}
 
-	helmConf, err := initHelmConf(helmOptions.kubeConfig, e.namespace)
+	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
 		return false, err
 	}

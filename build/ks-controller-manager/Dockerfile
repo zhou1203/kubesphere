@@ -14,11 +14,13 @@ WORKDIR /tmp
 
 RUN apk add --no-cache ca-certificates
 
-
 # Install Nginx Ingress Helm Chart
 ADD https://github.com/kubernetes/ingress-nginx/releases/download/helm-chart-${INGRESS_NGINX_VERSION}/ingress-nginx-${INGRESS_NGINX_VERSION}.tgz /tmp
 RUN tar xvzf /tmp/ingress-nginx-${INGRESS_NGINX_VERSION}.tgz -C /tmp
 RUN mv /tmp/ingress-nginx ${OUTDIR}/var/helm-charts/
+
+# Add KS Core Helm Chart
+COPY config/ks-core ${OUTDIR}/var/helm-charts/ks-core
 
 # Build
 
