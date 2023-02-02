@@ -125,6 +125,8 @@ const (
 
 	// ClusterKubeConfigCertExpiresInSevenDays indicates that the cluster certificate is about to expire.
 	ClusterKubeConfigCertExpiresInSevenDays ClusterConditionType = "KubeConfigCertExpiresInSevenDays"
+
+	ClusterKSCoreReady = "KSCoreReady"
 )
 
 type ClusterCondition struct {
