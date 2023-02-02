@@ -1,0 +1,38 @@
+on:
+  push:
+    branches:
+      - 'ksc'
+  pull_request:
+    branches:
+      - 'ksc'
+
+jobs:
+  sync-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Setup SSH
+        uses: MrSquaare/ssh-setup-action@v2
+        with:
+          host: github.com
+          private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - run: |
+          git config --global user.email "ci-bot@kubesphere.io"
+          git config --global user.name "ci-bot"
+          git clone git@github.com:kubesphere/helm-charts.git
+          rm -rf helm-charts/src/test/ks-core
+          cp -r ks-core helm-charts/src/test/
+          cd helm-charts/
+          git add .
+          git commit -m "update ks-core helm chart"
+          git push origin master:sync/ks-core --force
+
+      - run: |
+          cd helm-charts/
+          gh pr create --title "Update ks-core helm chart" --body "Update ks-core helm chart" --head sync/ks-core
+        env:
+          GH_TOKEN: ${{ secrets.CIBOT_ACCESS_TOKEN }}
