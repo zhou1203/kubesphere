@@ -50,7 +50,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
 	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
-	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 	"kubesphere.io/kubesphere/pkg/simple/client/devops"
 	"kubesphere.io/kubesphere/pkg/simple/client/devops/jenkins"
 	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
@@ -118,6 +117,9 @@ var allControllers = []string{
 	"rulegroup",
 	"clusterrulegroup",
 	"globalrulegroup",
+	"repository",
+	"subscription",
+	"extension",
 }
 
 // setup all available controllers one by one
@@ -133,9 +135,11 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	// end informers
 
 	// begin init necessary clients
-	kubeconfigClient := kubeconfig.NewOperator(client.Kubernetes(),
-		informerFactory.KubernetesSharedInformerFactory().Core().V1().ConfigMaps().Lister(),
-		client.Config())
+
+	// TODO refactor
+	//kubeconfigClient := kubeconfig.NewOperator(client.Kubernetes(),
+	//	informerFactory.KubernetesSharedInformerFactory().Core().V1().ConfigMaps().Lister(),
+	//	client.Config())
 
 	var devopsClient devops.Interface
 	if cmOptions.DevopsOptions != nil && len(cmOptions.DevopsOptions.Host) != 0 {
@@ -170,7 +174,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 			MaxConcurrentReconciles: 4,
 			LdapClient:              ldapClient,
 			DevopsClient:            devopsClient,
-			KubeconfigClient:        kubeconfigClient,
 			AuthenticationOptions:   cmOptions.AuthenticationOptions,
 		}
 		addControllerWithSetup(mgr, "user", userController)
