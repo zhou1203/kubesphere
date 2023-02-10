@@ -117,7 +117,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
 
-	if ok := cache.WaitForCacheSync(stopCh, c.globalRoleSynced, c.fedGlobalRoleCacheController.HasSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.globalRoleSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -218,10 +218,11 @@ func (c *Controller) reconcile(key string) error {
 		return err
 	}
 
-	if err = c.multiClusterSync(context.Background(), globalRole); err != nil {
-		klog.Error(err)
-		return err
-	}
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	// if err = c.multiClusterSync(context.Background(), globalRole); err != nil {
+	// 	klog.Error(err)
+	// 	return err
+	// }
 
 	c.recorder.Event(globalRole, corev1.EventTypeNormal, successSynced, messageResourceSynced)
 	return nil
@@ -231,6 +232,7 @@ func (c *Controller) Start(ctx context.Context) error {
 	return c.Run(4, ctx.Done())
 }
 
+// nolint
 func (c *Controller) multiClusterSync(ctx context.Context, globalRole *iamv1alpha2.GlobalRole) error {
 
 	if err := c.ensureNotControlledByKubefed(ctx, globalRole); err != nil {
@@ -268,6 +270,7 @@ func (c *Controller) multiClusterSync(ctx context.Context, globalRole *iamv1alph
 	return nil
 }
 
+// nolint
 func (c *Controller) createFederatedGlobalRole(ctx context.Context, globalRole *iamv1alpha2.GlobalRole) error {
 	federatedGlobalRole := &iamv1alpha2.FederatedRole{
 		TypeMeta: metav1.TypeMeta{
@@ -317,6 +320,7 @@ func (c *Controller) createFederatedGlobalRole(ctx context.Context, globalRole *
 	return nil
 }
 
+// nolint
 func (c *Controller) updateFederatedGlobalRole(ctx context.Context, federatedGlobalRole *iamv1alpha2.FederatedRole) error {
 
 	data, err := json.Marshal(federatedGlobalRole)
@@ -342,6 +346,7 @@ func (c *Controller) updateFederatedGlobalRole(ctx context.Context, federatedGlo
 	return nil
 }
 
+// nolint
 func (c *Controller) ensureNotControlledByKubefed(ctx context.Context, globalRole *iamv1alpha2.GlobalRole) error {
 	if globalRole.Labels[constants.KubefedManagedLabel] != "false" {
 		if globalRole.Labels == nil {

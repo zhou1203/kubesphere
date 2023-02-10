@@ -30,10 +30,6 @@ const (
 )
 
 type Options struct {
-	// Enable
-	// Deprecated: this field will be removed in the future version, use ClusterRole instead.
-	Enable bool `json:"enable" yaml:"enable"`
-
 	// ProxyPublishService is the service name of multicluster component tower.
 	//   If this field provided, apiserver going to use the ingress.ip of this service.
 	// This field will be used when generating agent deployment yaml for joining clusters.
@@ -66,7 +62,6 @@ type Options struct {
 // NewOptions returns a default nil options
 func NewOptions() *Options {
 	return &Options{
-		Enable:                        false,
 		ProxyPublishAddress:           "",
 		ProxyPublishService:           "",
 		AgentImage:                    "kubesphere/tower:v1.0",
@@ -91,9 +86,6 @@ func (o *Options) Validate() []error {
 }
 
 func (o *Options) AddFlags(fs *pflag.FlagSet, s *Options) {
-	fs.BoolVar(&o.Enable, "multiple-clusters", s.Enable, ""+
-		"This field instructs KubeSphere to enter multiple-cluster mode or not.")
-
 	fs.StringVar(&o.ProxyPublishService, "proxy-publish-service", s.ProxyPublishService, ""+
 		"Service name of tower. APIServer will use its ingress address as proxy publish address."+
 		"For example, tower.kubesphere-system.svc.")

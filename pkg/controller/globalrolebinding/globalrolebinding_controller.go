@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -43,10 +45,7 @@ import (
 	iamv1alpha2informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/iam/v1alpha2"
 	iamv1alpha2listers "kubesphere.io/kubesphere/pkg/client/listers/iam/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/constants"
-	devops "kubesphere.io/kubesphere/pkg/simple/client/devops"
-
-	"reflect"
-	"time"
+	"kubesphere.io/kubesphere/pkg/simple/client/devops"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -74,16 +73,14 @@ type Controller struct {
 	workqueue workqueue.RateLimitingInterface
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
-	recorder            record.EventRecorder
-	multiClusterEnabled bool
+	recorder record.EventRecorder
 	//nolint:unused
 	devopsClient devops.Interface
 }
 
 func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface,
 	globalRoleBindingInformer iamv1alpha2informers.GlobalRoleBindingInformer,
-	fedGlobalRoleBindingCache cache.Store, fedGlobalRoleBindingCacheController cache.Controller,
-	multiClusterEnabled bool) *Controller {
+	fedGlobalRoleBindingCache cache.Store, fedGlobalRoleBindingCacheController cache.Controller) *Controller {
 	// Create event broadcaster
 	// Add sample-controller types to the default Kubernetes Scheme so Events can be
 	// logged for sample-controller types.
@@ -102,7 +99,6 @@ func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface
 		fedGlobalRoleBindingCacheController: fedGlobalRoleBindingCacheController,
 		workqueue:                           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "GlobalRoleBinding"),
 		recorder:                            recorder,
-		multiClusterEnabled:                 multiClusterEnabled,
 	}
 	klog.Info("Setting up event handlers")
 	globalRoleBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -127,9 +123,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 
 	synced := make([]cache.InformerSynced, 0)
 	synced = append(synced, c.globalRoleBindingSynced)
-	if c.multiClusterEnabled {
-		synced = append(synced, c.fedGlobalRoleBindingCacheController.HasSynced)
-	}
 
 	if ok := cache.WaitForCacheSync(stopCh, synced...); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
@@ -239,12 +232,11 @@ func (c *Controller) reconcile(key string) error {
 		}
 	}
 
-	if c.multiClusterEnabled {
-		if err = c.multiClusterSync(globalRoleBinding); err != nil {
-			klog.Error(err)
-			return err
-		}
-	}
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	// if err = c.multiClusterSync(globalRoleBinding); err != nil {
+	// 	klog.Error(err)
+	// 	return err
+	// }
 
 	c.recorder.Event(globalRoleBinding, corev1.EventTypeNormal, successSynced, messageResourceSynced)
 	return nil
@@ -254,6 +246,7 @@ func (c *Controller) Start(ctx context.Context) error {
 	return c.Run(4, ctx.Done())
 }
 
+// nolint
 func (c *Controller) multiClusterSync(globalRoleBinding *iamv1alpha2.GlobalRoleBinding) error {
 
 	if err := c.ensureNotControlledByKubefed(globalRoleBinding); err != nil {
@@ -340,6 +333,7 @@ func findExpectUsername(globalRoleBinding *iamv1alpha2.GlobalRoleBinding) string
 	return ""
 }
 
+// nolint
 func (c *Controller) createFederatedGlobalRoleBinding(globalRoleBinding *iamv1alpha2.GlobalRoleBinding) error {
 	federatedGlobalRoleBinding := &iamv1alpha2.FederatedRoleBinding{
 		TypeMeta: metav1.TypeMeta{
@@ -390,6 +384,7 @@ func (c *Controller) createFederatedGlobalRoleBinding(globalRoleBinding *iamv1al
 	return nil
 }
 
+// nolint
 func (c *Controller) updateFederatedGlobalRoleBinding(federatedGlobalRoleBinding *iamv1alpha2.FederatedRoleBinding) error {
 
 	data, err := json.Marshal(federatedGlobalRoleBinding)
@@ -415,6 +410,7 @@ func (c *Controller) updateFederatedGlobalRoleBinding(federatedGlobalRoleBinding
 	return nil
 }
 
+// nolint
 func (c *Controller) ensureNotControlledByKubefed(globalRoleBinding *iamv1alpha2.GlobalRoleBinding) error {
 	if globalRoleBinding.Labels[constants.KubefedManagedLabel] != "false" {
 		if globalRoleBinding.Labels == nil {

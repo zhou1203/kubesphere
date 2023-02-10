@@ -270,7 +270,6 @@ func TestStripEmptyOptions(t *testing.T) {
 	}
 	config.LoggingOptions = &logging.Options{Host: ""}
 	config.NotificationOptions = &notification.Options{Endpoint: ""}
-	config.MultiClusterOptions = &multicluster.Options{Enable: false}
 	config.EventsOptions = &events.Options{Host: ""}
 	config.AuditingOptions = &auditing.Options{Host: ""}
 	config.KubeEdgeOptions = &kubeedge.Options{Endpoint: ""}
@@ -289,7 +288,6 @@ func TestStripEmptyOptions(t *testing.T) {
 		config.AlertingOptions != nil ||
 		config.LoggingOptions != nil ||
 		config.NotificationOptions != nil ||
-		config.MultiClusterOptions != nil ||
 		config.EventsOptions != nil ||
 		config.AuditingOptions != nil ||
 		config.KubeEdgeOptions != nil ||

@@ -24,10 +24,9 @@ import (
 	"strings"
 	"sync"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	openpitrixv1 "kubesphere.io/kubesphere/pkg/kapis/openpitrix/v1"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	cliflag "k8s.io/component-base/cli/flag"
@@ -127,6 +126,8 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		kubernetesClient.Istio(), kubernetesClient.Snapshot(), kubernetesClient.ApiExtensions(), kubernetesClient.Prometheus())
 	apiServer.InformerFactory = informerFactory
 
+	apiServer.ClusterClient = clusterclient.NewClusterClient(informerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
+
 	if !prometheus.MonitorModuleEnable(s.MonitoringOptions) {
 		klog.Warning("monitoring configuration is empty, disable monitor component")
 	} else {
@@ -216,11 +217,6 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 			return nil, fmt.Errorf("failed to init alerting client: %v", err)
 		}
 		apiServer.AlertingClient = alertingClient
-	}
-
-	if s.Config.MultiClusterOptions.Enable {
-		cc := clusterclient.NewClusterClient(informerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
-		apiServer.ClusterClient = cc
 	}
 
 	apiServer.OpenpitrixClient = openpitrixv1.NewOpenpitrixClient(informerFactory, apiServer.KubernetesClient.KubeSphere(), s.OpenPitrixOptions, apiServer.ClusterClient)

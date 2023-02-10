@@ -34,7 +34,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	v1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	"kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 	fedv1beta1types "kubesphere.io/api/types/v1beta1"
 
@@ -141,7 +141,7 @@ func (f *fixture) newController() (*Controller, ksinformers.SharedInformerFactor
 
 	c := NewController(f.k8sclient, f.ksclient,
 		ksinformers.Iam().V1alpha2().Groups(),
-		ksinformers.Types().V1beta1().FederatedGroups(), true)
+		ksinformers.Types().V1beta1().FederatedGroups())
 	c.recorder = &record.FakeRecorder{}
 
 	return c, ksinformers, k8sinformers

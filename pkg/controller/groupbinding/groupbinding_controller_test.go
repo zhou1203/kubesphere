@@ -35,8 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"kubesphere.io/api/iam/v1alpha2"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
-	v1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	fedv1beta1types "kubesphere.io/api/types/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/client/clientset/versioned/fake"
@@ -153,7 +153,7 @@ func (f *fixture) newController() (*Controller, ksinformers.SharedInformerFactor
 
 	c := NewController(f.k8sclient, f.ksclient,
 		ksinformers.Iam().V1alpha2().GroupBindings(),
-		ksinformers.Types().V1beta1().FederatedGroupBindings(), true)
+		ksinformers.Types().V1beta1().FederatedGroupBindings())
 	c.Synced = []cache.InformerSynced{alwaysReady}
 	c.recorder = &record.FakeRecorder{}
 

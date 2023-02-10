@@ -19,7 +19,6 @@ package groupbinding
 import (
 	"context"
 	"fmt"
-
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
@@ -63,13 +62,12 @@ type Controller struct {
 	groupBindingLister          iamv1alpha2listers.GroupBindingLister
 	recorder                    record.EventRecorder
 	federatedGroupBindingLister fedv1beta1lister.FederatedGroupBindingLister
-	multiClusterEnabled         bool
 }
 
 // NewController creates GroupBinding Controller instance
 func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface,
 	groupBindingInformer iamv1alpha2informers.GroupBindingInformer,
-	federatedGroupBindingInformer fedv1beta1informers.FederatedGroupBindingInformer, multiClusterEnabled bool) *Controller {
+	federatedGroupBindingInformer fedv1beta1informers.FederatedGroupBindingInformer) *Controller {
 	klog.V(4).Info("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -81,17 +79,14 @@ func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface
 			Synced:    []cache.InformerSynced{groupBindingInformer.Informer().HasSynced},
 			Name:      controllerName,
 		},
-		k8sClient:           k8sClient,
-		ksClient:            ksClient,
-		groupBindingLister:  groupBindingInformer.Lister(),
-		multiClusterEnabled: multiClusterEnabled,
-		recorder:            recorder,
+		k8sClient:          k8sClient,
+		ksClient:           ksClient,
+		groupBindingLister: groupBindingInformer.Lister(),
+		recorder:           recorder,
 	}
 	ctl.Handler = ctl.reconcile
-	if ctl.multiClusterEnabled {
-		ctl.federatedGroupBindingLister = federatedGroupBindingInformer.Lister()
-		ctl.Synced = append(ctl.Synced, federatedGroupBindingInformer.Informer().HasSynced)
-	}
+	ctl.federatedGroupBindingLister = federatedGroupBindingInformer.Lister()
+	ctl.Synced = append(ctl.Synced, federatedGroupBindingInformer.Informer().HasSynced)
 	klog.Info("Setting up event handlers")
 	groupBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: ctl.Enqueue,
@@ -122,18 +117,18 @@ func (c *Controller) reconcile(key string) error {
 			g.ObjectMeta.Finalizers = append(g.ObjectMeta.Finalizers, finalizer)
 		}
 
-		if c.multiClusterEnabled {
-			// Ensure not controlled by Kubefed
-			if groupBinding.Labels == nil || groupBinding.Labels[constants.KubefedManagedLabel] != "false" {
-				if g == nil {
-					g = groupBinding.DeepCopy()
-				}
-				if g.Labels == nil {
-					g.Labels = make(map[string]string, 0)
-				}
-				g.Labels[constants.KubefedManagedLabel] = "false"
+		// Ensure not controlled by Kubefed
+		// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+		if groupBinding.Labels == nil || groupBinding.Labels[constants.KubefedManagedLabel] != "false" {
+			if g == nil {
+				g = groupBinding.DeepCopy()
 			}
+			if g.Labels == nil {
+				g.Labels = make(map[string]string, 0)
+			}
+			g.Labels[constants.KubefedManagedLabel] = "false"
 		}
+
 		if g != nil {
 			if _, err = c.ksClient.IamV1alpha2().GroupBindings().Update(context.Background(), g, metav1.UpdateOptions{}); err != nil {
 				return err
@@ -167,11 +162,10 @@ func (c *Controller) reconcile(key string) error {
 	}
 
 	// synchronization through kubefed-controller when multi cluster is enabled
-	if c.multiClusterEnabled {
-		if err = c.multiClusterSync(groupBinding); err != nil {
-			klog.Error(err)
-			return err
-		}
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	if err = c.multiClusterSync(groupBinding); err != nil {
+		klog.Error(err)
+		return err
 	}
 
 	c.recorder.Event(groupBinding, corev1.EventTypeNormal, successSynced, messageResourceSynced)

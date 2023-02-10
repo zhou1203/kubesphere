@@ -70,8 +70,7 @@ type ReconcileHelmRelease struct {
 	helmMock                  bool
 	checkReleaseStatusBackoff *flowcontrol.Backoff
 
-	clusterClients     clusterclient.ClusterClients
-	MultiClusterEnable bool
+	clusterClients clusterclient.ClusterClients
 
 	MaxConcurrent int
 	// wait time when check release is ready or not
@@ -80,15 +79,18 @@ type ReconcileHelmRelease struct {
 	StopChan <-chan struct{}
 }
 
-//            =========================>
-//            ^                         |
-//            |        <==upgraded<==upgrading================
-//            |        \      =========^                     /
-//            |         |   /                               |
+//	=========================>
+//	^                         |
+//	|        <==upgraded<==upgrading================
+//	|        \      =========^                     /
+//	|         |   /                               |
+//
 // creating=>created===>active=====>deleting=>deleted       |
-//                 \    ^           /                     |
-//                  \   |  /======>                      /
-//                   \=>failed<==========================
+//
+//	\    ^           /                     |
+//	 \   |  /======>                      /
+//	  \=>failed<==========================
+//
 // Reconcile reads that state of the cluster for a helmreleases object and makes changes based on the state read
 // and what is in the helmreleases.Spec
 // +kubebuilder:rbac:groups=application.kubesphere.io,resources=helmreleases,verbs=get;list;watch;create;update;patch;delete
@@ -119,7 +121,7 @@ func (r *ReconcileHelmRelease) Reconcile(ctx context.Context, request reconcile.
 		// then lets add the finalizer and update the object.
 		if !sliceutil.HasString(instance.ObjectMeta.Finalizers, HelmReleaseFinalizer) {
 			clusterName := instance.GetRlsCluster()
-			if r.MultiClusterEnable && clusterName != "" {
+			if clusterName != "" {
 				clusterInfo, err := r.clusterClients.Get(clusterName)
 				if err != nil {
 					// cluster not exists, delete the crd
@@ -225,7 +227,7 @@ func (r *ReconcileHelmRelease) doCheck(rls *v1alpha1.HelmRelease) (retryAfter ti
 	clusterName := rls.GetRlsCluster()
 
 	var clusterConfig string
-	if r.MultiClusterEnable && clusterName != "" {
+	if clusterName != "" {
 		clusterConfig, err = r.clusterClients.GetClusterKubeconfig(clusterName)
 		if err != nil {
 			klog.Errorf("get cluster %s config failed", clusterConfig)
@@ -329,7 +331,7 @@ func (r *ReconcileHelmRelease) createOrUpgradeHelmRelease(rls *v1alpha1.HelmRele
 	clusterName := rls.GetRlsCluster()
 
 	var clusterConfig string
-	if r.MultiClusterEnable && clusterName != "" {
+	if clusterName != "" {
 		clusterConfig, err = r.clusterClients.GetClusterKubeconfig(clusterName)
 		if err != nil {
 			klog.Errorf("get cluster %s config failed", clusterConfig)
@@ -379,7 +381,7 @@ func (r *ReconcileHelmRelease) uninstallHelmRelease(rls *v1alpha1.HelmRelease) e
 	clusterName := rls.GetRlsCluster()
 	var clusterConfig string
 	var err error
-	if r.MultiClusterEnable && clusterName != "" {
+	if clusterName != "" {
 		clusterInfo, err := r.clusterClients.Get(clusterName)
 		if err != nil {
 			klog.V(2).Infof("cluster %s was deleted, skip helm release uninstall", clusterName)
@@ -404,7 +406,7 @@ func (r *ReconcileHelmRelease) uninstallHelmRelease(rls *v1alpha1.HelmRelease) e
 
 func (r *ReconcileHelmRelease) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
-	if r.KsFactory != nil && r.MultiClusterEnable {
+	if r.KsFactory != nil {
 		r.clusterClients = clusterclient.NewClusterClient(r.KsFactory.Cluster().V1alpha1().Clusters())
 	}
 

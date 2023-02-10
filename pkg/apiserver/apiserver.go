@@ -218,7 +218,8 @@ func (s *APIServer) installMetricsAPI() {
 
 // Install all kubesphere api groups
 // Installation happens before all informers start to cache objects, so
-//   any attempt to list objects using listers will get empty results.
+//
+//	any attempt to list objects using listers will get empty results.
 func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 	imOperator := im.NewOperator(s.KubernetesClient.KubeSphere(),
 		user.New(s.InformerFactory.KubeSphereSharedInformerFactory(),
@@ -381,10 +382,8 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	}
 
 	handler = filters.WithAuthorization(handler, authorizers)
-	if s.Config.MultiClusterOptions.Enable {
-		multiClusterProxy := proxies.NewMultiClusterProxy(s.InformerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
-		handler = filters.WithMiddleware(handler, multiClusterProxy)
-	}
+	multiClusterProxy := proxies.NewMultiClusterProxy(s.InformerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
+	handler = filters.WithMiddleware(handler, multiClusterProxy)
 
 	userLister := s.InformerFactory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users().Lister()
 	loginRecorder := auth.NewLoginRecorder(s.KubernetesClient.KubeSphere(), userLister)
@@ -570,20 +569,18 @@ func (s *APIServer) waitForResourceSync(ctx context.Context) error {
 	}
 
 	// federated resources on cached in multi cluster setup
-	if s.Config.MultiClusterOptions.Enable {
-		ksGVRs[typesv1beta1.SchemeGroupVersion] = []string{
-			typesv1beta1.ResourcePluralFederatedClusterRole,
-			typesv1beta1.ResourcePluralFederatedClusterRoleBindingBinding,
-			typesv1beta1.ResourcePluralFederatedNamespace,
-			typesv1beta1.ResourcePluralFederatedService,
-			typesv1beta1.ResourcePluralFederatedDeployment,
-			typesv1beta1.ResourcePluralFederatedSecret,
-			typesv1beta1.ResourcePluralFederatedConfigmap,
-			typesv1beta1.ResourcePluralFederatedStatefulSet,
-			typesv1beta1.ResourcePluralFederatedIngress,
-			typesv1beta1.ResourcePluralFederatedPersistentVolumeClaim,
-			typesv1beta1.ResourcePluralFederatedApplication,
-		}
+	ksGVRs[typesv1beta1.SchemeGroupVersion] = []string{
+		typesv1beta1.ResourcePluralFederatedClusterRole,
+		typesv1beta1.ResourcePluralFederatedClusterRoleBindingBinding,
+		typesv1beta1.ResourcePluralFederatedNamespace,
+		typesv1beta1.ResourcePluralFederatedService,
+		typesv1beta1.ResourcePluralFederatedDeployment,
+		typesv1beta1.ResourcePluralFederatedSecret,
+		typesv1beta1.ResourcePluralFederatedConfigmap,
+		typesv1beta1.ResourcePluralFederatedStatefulSet,
+		typesv1beta1.ResourcePluralFederatedIngress,
+		typesv1beta1.ResourcePluralFederatedPersistentVolumeClaim,
+		typesv1beta1.ResourcePluralFederatedApplication,
 	}
 
 	if err := waitForCacheSync(s.KubernetesClient.Kubernetes().Discovery(),

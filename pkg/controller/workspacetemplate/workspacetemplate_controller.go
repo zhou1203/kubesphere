@@ -61,7 +61,6 @@ type Reconciler struct {
 	Logger                  logr.Logger
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
-	MultiClusterEnabled     bool
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -138,15 +137,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	if r.MultiClusterEnabled {
-		if err := r.multiClusterSync(ctx, logger, workspaceTemplate); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		if err := r.singleClusterSync(ctx, logger, workspaceTemplate); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+	// // TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	// if err := r.multiClusterSync(ctx, logger, workspaceTemplate); err != nil {
+	// 	return ctrl.Result{}, err
+	// }
+
 	if err := r.initWorkspaceRoles(ctx, logger, workspaceTemplate); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -157,6 +152,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
+// nolint
 func (r *Reconciler) singleClusterSync(ctx context.Context, logger logr.Logger, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
 	workspace := &tenantv1alpha1.Workspace{}
 	if err := r.Get(ctx, types.NamespacedName{Name: workspaceTemplate.Name}, workspace); err != nil {
@@ -190,6 +186,7 @@ func (r *Reconciler) singleClusterSync(ctx context.Context, logger logr.Logger, 
 	return nil
 }
 
+// nolint
 func (r *Reconciler) multiClusterSync(ctx context.Context, logger logr.Logger, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
 	if err := r.ensureNotControlledByKubefed(ctx, logger, workspaceTemplate); err != nil {
 		return err
@@ -227,6 +224,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, logger logr.Logger, w
 	return nil
 }
 
+// nolint
 func newFederatedWorkspace(template *tenantv1alpha2.WorkspaceTemplate) (*typesv1beta1.FederatedWorkspace, error) {
 	federatedWorkspace := &typesv1beta1.FederatedWorkspace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -238,6 +236,7 @@ func newFederatedWorkspace(template *tenantv1alpha2.WorkspaceTemplate) (*typesv1
 	return federatedWorkspace, nil
 }
 
+// nolint
 func newWorkspace(template *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha1.Workspace, error) {
 	workspace := &tenantv1alpha1.Workspace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -251,36 +250,35 @@ func newWorkspace(template *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha1.W
 }
 
 func (r *Reconciler) deleteWorkspace(ctx context.Context, template *tenantv1alpha2.WorkspaceTemplate) error {
-	if r.MultiClusterEnabled {
-		federatedWorkspace := &typesv1beta1.FederatedWorkspace{}
-		if err := r.Client.Get(ctx, types.NamespacedName{Name: template.Name}, federatedWorkspace); err != nil {
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	federatedWorkspace := &typesv1beta1.FederatedWorkspace{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: template.Name}, federatedWorkspace); err != nil {
+		return err
+	}
+
+	// Workspace will be deleted with Orphan Option when it has a orphan finalizer.
+	// Reousrces that owned by the Workspace will not be deleted.
+	if sliceutil.HasString(template.ObjectMeta.Finalizers, orphanFinalizer) {
+		if federatedWorkspace.Annotations == nil {
+			federatedWorkspace.Annotations = make(map[string]string, 1)
+		}
+		federatedWorkspace.Annotations[orphanDeleteOptionAnnotationKey] = orphanDeleteOptionAnnotation
+		if err := r.Update(ctx, federatedWorkspace); err != nil {
 			return err
 		}
-
-		// Workspace will be deleted with Orphan Option when it has a orphan finalizer.
-		// Reousrces that owned by the Workspace will not be deleted.
-		if sliceutil.HasString(template.ObjectMeta.Finalizers, orphanFinalizer) {
-			if federatedWorkspace.Annotations == nil {
-				federatedWorkspace.Annotations = make(map[string]string, 1)
-			}
-			federatedWorkspace.Annotations[orphanDeleteOptionAnnotationKey] = orphanDeleteOptionAnnotation
-			if err := r.Update(ctx, federatedWorkspace); err != nil {
-				return err
-			}
-		} else {
-			// Usually namespace will bind the lifecycle of workspace with ownerReference,
-			// in multi-cluster environment workspace will not be created in host cluster
-			// if the cluster is not be granted or kubefed-controller-manager is unavailable,
-			// this will cause the federated namespace left an orphan object in host cluster.
-			// After workspaceTemplate deleted we need to deleted orphan namespace in host cluster directly.
-			if err := r.deleteNamespacesInWorkspace(ctx, template); err != nil {
-				return err
-			}
-		}
-
-		if err := r.Delete(ctx, federatedWorkspace); err != nil {
+	} else {
+		// Usually namespace will bind the lifecycle of workspace with ownerReference,
+		// in multi-cluster environment workspace will not be created in host cluster
+		// if the cluster is not be granted or kubefed-controller-manager is unavailable,
+		// this will cause the federated namespace left an orphan object in host cluster.
+		// After workspaceTemplate deleted we need to deleted orphan namespace in host cluster directly.
+		if err := r.deleteNamespacesInWorkspace(ctx, template); err != nil {
 			return err
 		}
+	}
+
+	if err := r.Delete(ctx, federatedWorkspace); err != nil {
+		return err
 	}
 
 	opt := &client.DeleteOptions{}
@@ -302,6 +300,7 @@ func (r *Reconciler) deleteWorkspace(ctx context.Context, template *tenantv1alph
 	return nil
 }
 
+// nolint
 func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, logger logr.Logger, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
 	if workspaceTemplate.Labels[constants.KubefedManagedLabel] != "false" {
 		if workspaceTemplate.Labels == nil {

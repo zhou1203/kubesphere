@@ -67,82 +67,78 @@ var _ = Describe("WorkspaceTemplate", func() {
 	// Avoid adding tests for vanilla CRUD operations because they would
 	// test Kubernetes API server, which isn't the goal here.
 	Context("WorkspaceTemplate Controller", func() {
-		for _, multiCluster := range []bool{true, false} {
-			enalbed := multiCluster
-			It("Should create successfully", func() {
-				reconciler.MultiClusterEnabled = enalbed
-				key := types.NamespacedName{
-					Name: "workspace-template",
-				}
+		It("Should create successfully", func() {
+			key := types.NamespacedName{
+				Name: "workspace-template",
+			}
 
-				created := &tenantv1alpha2.WorkspaceTemplate{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: key.Name,
-					},
-				}
+			created := &tenantv1alpha2.WorkspaceTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: key.Name,
+				},
+			}
 
-				// Create
-				Expect(reconciler.Create(context.Background(), created)).Should(Succeed())
+			// Create
+			Expect(reconciler.Create(context.Background(), created)).Should(Succeed())
 
-				req := ctrl.Request{
-					NamespacedName: key,
-				}
-				_, err := reconciler.Reconcile(context.Background(), req)
-				Expect(err).To(BeNil())
+			req := ctrl.Request{
+				NamespacedName: key,
+			}
+			_, err := reconciler.Reconcile(context.Background(), req)
+			Expect(err).To(BeNil())
 
-				By("Expecting to create workspace template successfully")
-				Expect(func() *tenantv1alpha2.WorkspaceTemplate {
-					f := &tenantv1alpha2.WorkspaceTemplate{}
-					reconciler.Get(context.Background(), key, f)
-					return f
-				}()).ShouldNot(BeNil())
+			By("Expecting to create workspace template successfully")
+			Expect(func() *tenantv1alpha2.WorkspaceTemplate {
+				f := &tenantv1alpha2.WorkspaceTemplate{}
+				reconciler.Get(context.Background(), key, f)
+				return f
+			}()).ShouldNot(BeNil())
 
-				By("Expecting to create workspace successfully")
-				Expect(func() *tenantv1alpha1.Workspace {
-					f := &tenantv1alpha1.Workspace{}
-					reconciler.Get(context.Background(), key, f)
-					return f
-				}()).ShouldNot(BeNil())
+			By("Expecting to create workspace successfully")
+			Expect(func() *tenantv1alpha1.Workspace {
+				f := &tenantv1alpha1.Workspace{}
+				reconciler.Get(context.Background(), key, f)
+				return f
+			}()).ShouldNot(BeNil())
 
-				// List workspace roles
-				By("Expecting to create workspace role successfully")
-				Eventually(func() bool {
-					f := &iamv1alpha2.WorkspaceRoleList{}
-					reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: key.Name})})
-					return len(f.Items) == 1
-				}, timeout, interval).Should(BeTrue())
+			// List workspace roles
+			By("Expecting to create workspace role successfully")
+			Eventually(func() bool {
+				f := &iamv1alpha2.WorkspaceRoleList{}
+				reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: key.Name})})
+				return len(f.Items) == 1
+			}, timeout, interval).Should(BeTrue())
 
-				// Update
-				updated := &tenantv1alpha2.WorkspaceTemplate{}
-				Expect(reconciler.Get(context.Background(), key, updated)).Should(Succeed())
-				updated.Spec.Template.Spec.Manager = "admin"
-				Expect(reconciler.Update(context.Background(), updated)).Should(Succeed())
+			// Update
+			updated := &tenantv1alpha2.WorkspaceTemplate{}
+			Expect(reconciler.Get(context.Background(), key, updated)).Should(Succeed())
+			updated.Spec.Template.Spec.Manager = "admin"
+			Expect(reconciler.Update(context.Background(), updated)).Should(Succeed())
 
-				_, err = reconciler.Reconcile(context.Background(), req)
-				Expect(err).To(BeNil())
+			_, err = reconciler.Reconcile(context.Background(), req)
+			Expect(err).To(BeNil())
 
-				// List workspace role bindings
-				By("Expecting to create workspace manager role binding successfully")
-				Eventually(func() bool {
-					f := &iamv1alpha2.WorkspaceRoleBindingList{}
-					reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: key.Name})})
-					return len(f.Items) == 1
-				}, timeout, interval).Should(BeTrue())
+			// List workspace role bindings
+			By("Expecting to create workspace manager role binding successfully")
+			Eventually(func() bool {
+				f := &iamv1alpha2.WorkspaceRoleBindingList{}
+				reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: key.Name})})
+				return len(f.Items) == 1
+			}, timeout, interval).Should(BeTrue())
 
-				// Delete
-				By("Expecting to finalize workspace successfully")
-				Eventually(func() error {
-					f := &tenantv1alpha2.WorkspaceTemplate{}
-					reconciler.Get(context.Background(), key, f)
-					now := metav1.NewTime(time.Now())
-					f.DeletionTimestamp = &now
-					return reconciler.Update(context.Background(), f)
-				}, timeout, interval).Should(Succeed())
+			// Delete
+			By("Expecting to finalize workspace successfully")
+			Eventually(func() error {
+				f := &tenantv1alpha2.WorkspaceTemplate{}
+				reconciler.Get(context.Background(), key, f)
+				now := metav1.NewTime(time.Now())
+				f.DeletionTimestamp = &now
+				return reconciler.Update(context.Background(), f)
+			}, timeout, interval).Should(Succeed())
 
-				_, err = reconciler.Reconcile(context.Background(), req)
-				Expect(err).To(BeNil())
-			})
-		}
+			_, err = reconciler.Reconcile(context.Background(), req)
+			Expect(err).To(BeNil())
+		})
 	})
 })
 

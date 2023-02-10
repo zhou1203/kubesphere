@@ -49,7 +49,6 @@ const (
 // Reconciler reconciles a WorkspaceRole object
 type Reconciler struct {
 	client.Client
-	MultiClusterEnabled     bool
 	Logger                  logr.Logger
 	Scheme                  *runtime.Scheme
 	Recorder                record.EventRecorder
@@ -102,11 +101,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if r.MultiClusterEnabled {
-		if err = r.multiClusterSync(rootCtx, logger, workspaceRole); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	// if err = r.multiClusterSync(rootCtx, logger, workspaceRole); err != nil {
+	// 	return ctrl.Result{}, err
+	// }
 
 	r.Recorder.Event(workspaceRole, corev1.EventTypeNormal, controllerutils.SuccessSynced, controllerutils.MessageResourceSynced)
 	return ctrl.Result{}, nil
@@ -135,6 +133,7 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 	return nil
 }
 
+// nolint
 func (r *Reconciler) multiClusterSync(ctx context.Context, logger logr.Logger, workspaceRole *iamv1alpha2.WorkspaceRole) error {
 	if err := r.ensureNotControlledByKubefed(ctx, logger, workspaceRole); err != nil {
 		return err
@@ -172,6 +171,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, logger logr.Logger, w
 	return nil
 }
 
+// nolint
 func newFederatedWorkspaceRole(workspaceRole *iamv1alpha2.WorkspaceRole) (*typesv1beta1.FederatedWorkspaceRole, error) {
 	federatedWorkspaceRole := &typesv1beta1.FederatedWorkspaceRole{
 		ObjectMeta: metav1.ObjectMeta{
@@ -197,6 +197,7 @@ func newFederatedWorkspaceRole(workspaceRole *iamv1alpha2.WorkspaceRole) (*types
 	return federatedWorkspaceRole, nil
 }
 
+// nolint
 func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, logger logr.Logger, workspaceRole *iamv1alpha2.WorkspaceRole) error {
 	if workspaceRole.Labels[constants.KubefedManagedLabel] != "false" {
 		if workspaceRole.Labels == nil {

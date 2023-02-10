@@ -75,7 +75,6 @@ const (
 type Reconciler struct {
 	client.Client
 	KubeconfigClient        kubeconfig.Interface
-	MultiClusterEnabled     bool
 	DevopsClient            devops.Interface
 	LdapClient              ldapclient.Interface
 	AuthenticationOptions   *authentication.Options
@@ -179,12 +178,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	// synchronization through kubefed-controller when multi cluster is enabled
-	if r.MultiClusterEnabled {
-		if err = r.multiClusterSync(ctx, user); err != nil {
-			r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
-			return ctrl.Result{}, err
-		}
-	}
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	// if err = r.multiClusterSync(ctx, user); err != nil {
+	// 	r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+	// 	return ctrl.Result{}, err
+	// }
 
 	// we do not need to sync ldap info when ldapClient is nil
 	if r.LdapClient != nil {
@@ -262,6 +260,7 @@ func (r *Reconciler) encryptPassword(ctx context.Context, user *iamv1alpha2.User
 	return nil
 }
 
+// nolint
 func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, user *iamv1alpha2.User) error {
 	if user.Labels[constants.KubefedManagedLabel] != "false" {
 		if user.Labels == nil {
@@ -277,6 +276,7 @@ func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, user *iam
 	return nil
 }
 
+// nolint
 func (r *Reconciler) multiClusterSync(ctx context.Context, user *iamv1alpha2.User) error {
 	if err := r.ensureNotControlledByKubefed(ctx, user); err != nil {
 		klog.Error(err)
@@ -305,6 +305,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, user *iamv1alpha2.Use
 	return nil
 }
 
+// nolint
 func (r *Reconciler) createFederatedUser(ctx context.Context, user *iamv1alpha2.User) error {
 	federatedUser := &typesv1beta1.FederatedUser{
 		ObjectMeta: metav1.ObjectMeta{

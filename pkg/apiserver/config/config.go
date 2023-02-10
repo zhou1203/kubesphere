@@ -337,10 +337,6 @@ func (conf *Config) stripEmptyOptions() {
 		conf.NotificationOptions = nil
 	}
 
-	if conf.MultiClusterOptions != nil && !conf.MultiClusterOptions.Enable {
-		conf.MultiClusterOptions = nil
-	}
-
 	if conf.EventsOptions != nil && conf.EventsOptions.Host == "" {
 		conf.EventsOptions = nil
 	}

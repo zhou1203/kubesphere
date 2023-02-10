@@ -238,7 +238,7 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	hookServer := mgr.GetWebhookServer()
 
 	klog.V(2).Info("registering webhooks to the webhook server")
-	if s.IsControllerEnabled("cluster") && s.MultiClusterOptions.Enable {
+	if s.IsControllerEnabled("cluster") {
 		hookServer.Register("/validate-cluster-kubesphere-io-v1alpha1", &webhook.Admission{Handler: &cluster.ValidatingHandler{Client: mgr.GetClient()}})
 	}
 	hookServer.Register("/validate-email-iam-kubesphere-io-v1alpha2", &webhook.Admission{Handler: &user.EmailValidator{Client: mgr.GetClient()}})
@@ -268,7 +268,7 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	}
 
 	klog.V(2).Info("registering metrics to the webhook server")
-	// Add an extra metric endpoint, so we can use the the same metric definition with ks-apiserver
+	// Add an extra metric endpoint, so we can use the same metric definition with ks-apiserver
 	// /kapis/metrics is independent of controller-manager's built-in /metrics
 	mgr.AddMetricsExtraHandler("/kapis/metrics", metrics.Handler())
 

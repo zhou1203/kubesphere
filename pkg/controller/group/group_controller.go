@@ -67,13 +67,11 @@ type Controller struct {
 	groupLister          iamv1alpha1listers.GroupLister
 	recorder             record.EventRecorder
 	federatedGroupLister fedv1beta1lister.FederatedGroupLister
-	multiClusterEnabled  bool
 }
 
 // NewController creates Group Controller instance
 func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface, groupInformer iamv1alpha2informers.GroupInformer,
-	federatedGroupInformer fedv1beta1informers.FederatedGroupInformer,
-	multiClusterEnabled bool) *Controller {
+	federatedGroupInformer fedv1beta1informers.FederatedGroupInformer) *Controller {
 
 	klog.V(4).Info("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()
@@ -85,18 +83,15 @@ func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface
 			Synced:    []cache.InformerSynced{groupInformer.Informer().HasSynced},
 			Name:      controllerName,
 		},
-		recorder:            eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerName}),
-		k8sClient:           k8sClient,
-		ksClient:            ksClient,
-		groupInformer:       groupInformer,
-		groupLister:         groupInformer.Lister(),
-		multiClusterEnabled: multiClusterEnabled,
+		recorder:      eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerName}),
+		k8sClient:     k8sClient,
+		ksClient:      ksClient,
+		groupInformer: groupInformer,
+		groupLister:   groupInformer.Lister(),
 	}
 
-	if ctl.multiClusterEnabled {
-		ctl.federatedGroupLister = federatedGroupInformer.Lister()
-		ctl.Synced = append(ctl.Synced, federatedGroupInformer.Informer().HasSynced)
-	}
+	ctl.federatedGroupLister = federatedGroupInformer.Lister()
+	ctl.Synced = append(ctl.Synced, federatedGroupInformer.Informer().HasSynced)
 
 	ctl.Handler = ctl.reconcile
 
@@ -134,17 +129,16 @@ func (c *Controller) reconcile(key string) error {
 			g.ObjectMeta.Finalizers = append(g.ObjectMeta.Finalizers, finalizer)
 		}
 
-		if c.multiClusterEnabled {
-			// Ensure not controlled by Kubefed
-			if group.Labels == nil || group.Labels[constants.KubefedManagedLabel] != "false" {
-				if g == nil {
-					g = group.DeepCopy()
-				}
-				if g.Labels == nil {
-					g.Labels = make(map[string]string, 0)
-				}
-				g.Labels[constants.KubefedManagedLabel] = "false"
+		// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+		// Ensure not controlled by Kubefed
+		if group.Labels == nil || group.Labels[constants.KubefedManagedLabel] != "false" {
+			if g == nil {
+				g = group.DeepCopy()
 			}
+			if g.Labels == nil {
+				g.Labels = make(map[string]string, 0)
+			}
+			g.Labels[constants.KubefedManagedLabel] = "false"
 		}
 
 		// Set OwnerReferences when the group has a parent or Workspace. And it's not owned by kubefed
@@ -226,11 +220,10 @@ func (c *Controller) reconcile(key string) error {
 	}
 
 	// synchronization through kubefed-controller when multi cluster is enabled
-	if c.multiClusterEnabled {
-		if err = c.multiClusterSync(group); err != nil {
-			klog.Error(err)
-			return err
-		}
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	if err = c.multiClusterSync(group); err != nil {
+		klog.Error(err)
+		return err
 	}
 
 	c.recorder.Event(group, corev1.EventTypeNormal, successSynced, messageResourceSynced)

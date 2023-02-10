@@ -53,7 +53,6 @@ type Reconciler struct {
 	Scheme                  *runtime.Scheme
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
-	MultiClusterEnabled     bool
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -101,11 +100,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if r.MultiClusterEnabled {
-		if err := r.multiClusterSync(rootCtx, logger, workspaceRoleBinding); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	// if err := r.multiClusterSync(rootCtx, logger, workspaceRoleBinding); err != nil {
+	// 	return ctrl.Result{}, err
+	// }
 
 	r.Recorder.Event(workspaceRoleBinding, corev1.EventTypeNormal, controllerutils.SuccessSynced, controllerutils.MessageResourceSynced)
 	return ctrl.Result{}, nil
@@ -137,6 +135,7 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 	return nil
 }
 
+// nolint
 func (r *Reconciler) multiClusterSync(ctx context.Context, logger logr.Logger, workspaceRoleBinding *iamv1alpha2.WorkspaceRoleBinding) error {
 	if err := r.ensureNotControlledByKubefed(ctx, logger, workspaceRoleBinding); err != nil {
 		return err
@@ -176,6 +175,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, logger logr.Logger, w
 	return nil
 }
 
+// nolint
 func newFederatedWorkspaceRoleBinding(workspaceRoleBinding *iamv1alpha2.WorkspaceRoleBinding) (*typesv1beta1.FederatedWorkspaceRoleBinding, error) {
 	federatedWorkspaceRoleBinding := &typesv1beta1.FederatedWorkspaceRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -200,6 +200,7 @@ func newFederatedWorkspaceRoleBinding(workspaceRoleBinding *iamv1alpha2.Workspac
 	return federatedWorkspaceRoleBinding, nil
 }
 
+// nolint
 func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, logger logr.Logger, workspaceRoleBinding *iamv1alpha2.WorkspaceRoleBinding) error {
 	if workspaceRoleBinding.Labels[constants.KubefedManagedLabel] != "false" {
 		if workspaceRoleBinding.Labels == nil {
