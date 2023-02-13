@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/emicklei/go-restful"
-	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -71,7 +71,6 @@ import (
 	alertingv2beta1 "kubesphere.io/kubesphere/pkg/kapis/alerting/v2beta1"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
-	"kubesphere.io/kubesphere/pkg/kapis/crd"
 	kapisdevops "kubesphere.io/kubesphere/pkg/kapis/devops"
 	edgeruntimev1alpha1 "kubesphere.io/kubesphere/pkg/kapis/edgeruntime/v1alpha1"
 	gatewayv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha1"
@@ -102,6 +101,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/openpitrix"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/loginrecord"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/user"
+	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 	"kubesphere.io/kubesphere/pkg/server/healthz"
 	"kubesphere.io/kubesphere/pkg/simple/client/alerting"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
@@ -183,7 +183,6 @@ func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
 		logStackOnRecover(panicReason, httpWriter)
 	})
 	s.installKubeSphereAPIs(stopCh)
-	s.installCRDAPIs()
 	s.installMetricsAPI()
 	s.installHealthz()
 
@@ -285,14 +284,6 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
 }
 
-// installCRDAPIs Install CRDs to the KAPIs with List and Get options
-func (s *APIServer) installCRDAPIs() {
-	crds := &extv1.CustomResourceDefinitionList{}
-	// TODO Maybe we need a better label name
-	urlruntime.Must(s.RuntimeClient.List(context.TODO(), crds, runtimeclient.MatchingLabels{"kubesphere.io/resource-served": "true"}))
-	urlruntime.Must(crd.AddToContainer(s.container, s.RuntimeClient, s.RuntimeCache, crds))
-}
-
 // installHealthz creates the healthz endpoint for this server
 func (s *APIServer) installHealthz() {
 	urlruntime.Must(healthz.InstallHandler(s.container, []healthz.HealthChecker{}...))
@@ -361,6 +352,9 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 
 	handler = filters.WithMiddleware(handler, kubeAPI, apiService, jsBundle, reverseProxy)
 
+	middleware := proxies.NewUnregisteredMiddleware(s.container, resourcev1beta1.New(s.RuntimeClient, s.RuntimeCache))
+	handler = filters.WithMiddleware(handler, middleware)
+
 	if s.Config.AuditingOptions.Enable {
 		handler = filters.WithAuditing(handler,
 			audit.NewAuditing(s.InformerFactory, s.Config.AuditingOptions, stopCh))
@@ -400,7 +394,6 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 			userLister)))
 	handler = filters.WithAuthentication(handler, authn)
 	handler = filters.WithRequestInfo(handler, requestInfoResolver)
-
 	s.Server.Handler = handler
 	return nil
 }
