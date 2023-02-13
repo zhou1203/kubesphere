@@ -25,7 +25,7 @@ jobs:
           git config --global user.name "ci-bot"
           git clone git@github.com:kubesphere/helm-charts.git
           rm -rf helm-charts/src/test/ks-core
-          cp -r ks-core helm-charts/src/test/
+          cp -r config/ks-core helm-charts/src/test/
           cd helm-charts/
           git add .
           git commit -m "update ks-core helm chart"
