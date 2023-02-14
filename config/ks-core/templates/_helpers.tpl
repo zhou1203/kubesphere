@@ -56,9 +56,9 @@ Create the name of the service account to use
 */}}
 {{- define "ks-core.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "ks-core.fullname" .) .Values.serviceAccount.name }}
+    {{- default (include "ks-core.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
-{{- default "default" .Values.serviceAccount.name }}
+    {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
 
@@ -86,16 +86,14 @@ Returns user's password or use default. Used by NOTES.txt
 
 {{- define "getNodeAddress" -}}
 {{- $address := "127.0.0.1"}}
-{{- range $index, $node := (lookup "v1" "Node" "" "").items -}}
-  {{- range $k, $v := $node.status.addresses }}
-    {{- if (eq $v.type "InternalIP") }}
-      {{- $address = $v.address }}
-      {{- break }}
-    {{- end }}
+{{- with $nodes := lookup "v1" "Node" "" "" }}
+{{- $node := first $nodes.items -}}
+{{- range $k, $v := $node.status.addresses }}
+  {{- if (eq $v.type "InternalIP") }}
+     {{- $address = $v.address }}
   {{- end }}
-  {{- if (ne $address "127.0.0.1") }}
-    {{- break }}
-  {{- end }}
+{{- end }}
+{{- else }}
 {{- end }}
 {{- printf "%s" $address }}
 {{- end }}

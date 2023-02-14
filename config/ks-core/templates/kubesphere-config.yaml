@@ -11,7 +11,7 @@ data:
       loginHistoryRetentionPeriod: {{ .Values.config.authentication.loginHistoryRetentionPeriod | default "168h"  }}
       maximumClockSkew: {{ .Values.config.authentication.maximumClockSkew | default "10s" }}
       multipleLogin: {{ .Values.console.enableMultiLogin | default true }}
-      kubectlImage: {{ .Values.image.ks_kubectl_repo }}:{{ .Values.image.ks_kubectl_tag | default "latest" }}
+      kubectlImage: {{ template "kubectl.image" . }}
       jwtSecret: "{{ .Values.config.jwtSecret | default (randAlphaNum 32 ) }}"
 {{- if .Values.config.authentication.oauthOptions }}
       {{- with .Values.config.authentication.oauthOptions }}

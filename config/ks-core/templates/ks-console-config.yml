@@ -1,4 +1,4 @@
-{{ if eq .Values.role "host" }}
+
 apiVersion: v1
 data:
   local_config.yaml: |
@@ -19,11 +19,10 @@ data:
     client:
       version:
         kubesphere: {{ .Chart.AppVersion }}
-        kubernetes: {{ .Values.kube_version }}
+        kubernetes: {{ .Values.kubeVersion }}
         openpitrix: {{ .Chart.AppVersion }}
       enableKubeConfig: true
     defaultClusterName: {{ .Values.console.defaultClusterName }}
 kind: ConfigMap
 metadata:
   name: ks-console-config
-{{ end }}

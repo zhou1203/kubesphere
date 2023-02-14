@@ -293,3 +293,4 @@ rules:
       - 'extensions.kubesphere.io'
     resources:
       - '*'
+
