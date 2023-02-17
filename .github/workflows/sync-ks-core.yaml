@@ -31,8 +31,8 @@ jobs:
           git commit -m "update ks-core helm chart"
           git push origin master:sync/ks-core --force
 
-      - run: |
+      - env:
+          GH_TOKEN: ${{ secrets.CIBOT_ACCESS_TOKEN }}
+        run: |
           cd helm-charts/
           gh pr create --title "Update ks-core helm chart" --body "Update ks-core helm chart" --head sync/ks-core
-        env:
-          GH_TOKEN: ${{ secrets.CIBOT_ACCESS_TOKEN }}
