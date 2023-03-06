@@ -1,8 +1,7 @@
 on:
   push:
-    branches:
-      - 'ksc'
-  pull_request:
+    paths:
+      - 'config/ks-core/**'
     branches:
       - 'ksc'
 
