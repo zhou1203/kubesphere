@@ -369,15 +369,6 @@ func (h *handler) validateCluster(request *restful.Request, response *restful.Re
 		return
 	}
 
-	if _, err = validateKubeSphereAPIServer(config); err != nil {
-		api.HandleBadRequest(response, request, fmt.Errorf("unable validate kubesphere endpoint, %v", err))
-		return
-	}
-
-	if err = h.validateMemberClusterConfiguration(clientSet); err != nil {
-		api.HandleBadRequest(response, request, fmt.Errorf("failed to validate member cluster configuration, err: %v", err))
-	}
-
 	response.WriteHeader(http.StatusOK)
 }
 
