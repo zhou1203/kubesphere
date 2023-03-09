@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/emicklei/go-restful"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -45,7 +44,6 @@ import (
 	notificationv2beta1 "kubesphere.io/api/notification/v2beta1"
 	notificationv2beta2 "kubesphere.io/api/notification/v2beta2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	typesv1beta1 "kubesphere.io/api/types/v1beta1"
 
 	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/basic"
@@ -61,9 +59,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/rbac"
 	unionauthorizer "kubesphere.io/kubesphere/pkg/apiserver/authorization/union"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
-	"kubesphere.io/kubesphere/pkg/apiserver/extensions"
 	"kubesphere.io/kubesphere/pkg/apiserver/filters"
-	"kubesphere.io/kubesphere/pkg/apiserver/proxies"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/informers"
 	alertingv1 "kubesphere.io/kubesphere/pkg/kapis/alerting/v1"
@@ -182,6 +178,7 @@ func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
 	s.container.RecoverHandler(func(panicReason interface{}, httpWriter http.ResponseWriter) {
 		logStackOnRecover(panicReason, httpWriter)
 	})
+	s.installDynamicResourceAPI()
 	s.installKubeSphereAPIs(stopCh)
 	s.installMetricsAPI()
 	s.installHealthz()
@@ -216,9 +213,8 @@ func (s *APIServer) installMetricsAPI() {
 }
 
 // Install all kubesphere api groups
-// Installation happens before all informers start to cache objects, so
-//
-//	any attempt to list objects using listers will get empty results.
+// Installation happens before all informers start to cache objects,
+// so any attempt to list objects using listers will get empty results.
 func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 	imOperator := im.NewOperator(s.KubernetesClient.KubeSphere(),
 		user.New(s.InformerFactory.KubeSphereSharedInformerFactory(),
@@ -341,19 +337,12 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 			notificationv2beta2.Resource(notificationv2beta2.ResourcesPluralSilence),
 		)
 	}
+
 	handler := s.Server.Handler
-	reverseProxy := extensions.NewReverseProxy(s.RuntimeCache)
-	jsBundle := extensions.NewJSBundle(s.RuntimeCache)
-	apiService := extensions.NewAPIService(s.RuntimeCache)
-	kubeAPI, err := proxies.NewKubeAPIProxy(s.KubernetesClient.Config())
-	if err != nil {
-		return fmt.Errorf("failed to create kubernetes API proxy: %v", err)
-	}
-
-	handler = filters.WithMiddleware(handler, kubeAPI, apiService, jsBundle, reverseProxy)
-
-	middleware := proxies.NewUnregisteredMiddleware(s.container, resourcev1beta1.New(s.RuntimeClient, s.RuntimeCache))
-	handler = filters.WithMiddleware(handler, middleware)
+	handler = filters.WithKubeAPIServer(handler, s.KubernetesClient.Config())
+	handler = filters.WithAPIService(handler, s.RuntimeCache)
+	handler = filters.WithReverseProxy(handler, s.RuntimeCache)
+	handler = filters.WithJSBundle(handler, s.RuntimeCache)
 
 	if s.Config.AuditingOptions.Enable {
 		handler = filters.WithAuditing(handler,
@@ -376,8 +365,7 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	}
 
 	handler = filters.WithAuthorization(handler, authorizers)
-	multiClusterProxy := proxies.NewMultiClusterProxy(s.InformerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
-	handler = filters.WithMiddleware(handler, multiClusterProxy)
+	handler = filters.WithMulticluster(handler, s.ClusterClient)
 
 	userLister := s.InformerFactory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users().Lister()
 	loginRecorder := auth.NewLoginRecorder(s.KubernetesClient.KubeSphere(), userLister)
@@ -480,7 +468,7 @@ func (s *APIServer) waitForResourceSync(ctx context.Context) error {
 		{Group: "batch", Version: "v1"}: {
 			"jobs",
 		},
-		{Group: "batch", Version: "v1beta1"}: {
+		{Group: "batch", Version: "v1"}: {
 			"cronjobs",
 		},
 		{Group: "networking.k8s.io", Version: "v1"}: {
@@ -561,21 +549,6 @@ func (s *APIServer) waitForResourceSync(ctx context.Context) error {
 		}
 	}
 
-	// federated resources on cached in multi cluster setup
-	ksGVRs[typesv1beta1.SchemeGroupVersion] = []string{
-		typesv1beta1.ResourcePluralFederatedClusterRole,
-		typesv1beta1.ResourcePluralFederatedClusterRoleBindingBinding,
-		typesv1beta1.ResourcePluralFederatedNamespace,
-		typesv1beta1.ResourcePluralFederatedService,
-		typesv1beta1.ResourcePluralFederatedDeployment,
-		typesv1beta1.ResourcePluralFederatedSecret,
-		typesv1beta1.ResourcePluralFederatedConfigmap,
-		typesv1beta1.ResourcePluralFederatedStatefulSet,
-		typesv1beta1.ResourcePluralFederatedIngress,
-		typesv1beta1.ResourcePluralFederatedPersistentVolumeClaim,
-		typesv1beta1.ResourcePluralFederatedApplication,
-	}
-
 	if err := waitForCacheSync(s.KubernetesClient.Kubernetes().Discovery(),
 		s.InformerFactory.KubeSphereSharedInformerFactory(),
 		func(resource schema.GroupVersionResource) (interface{}, error) {
@@ -638,6 +611,18 @@ func (s *APIServer) waitForResourceSync(ctx context.Context) error {
 	klog.V(0).Info("Finished caching objects")
 	return nil
 
+}
+
+func (s *APIServer) installDynamicResourceAPI() {
+	dynamicResourceHandler := filters.NewDynamicResourceHandle(func(err restful.ServiceError, req *restful.Request, resp *restful.Response) {
+		for header, values := range err.Header {
+			for _, value := range values {
+				resp.Header().Add(header, value)
+			}
+		}
+		resp.WriteErrorString(err.Code, err.Message)
+	}, resourcev1beta1.New(s.RuntimeClient, s.RuntimeCache))
+	s.container.ServiceErrorHandler(dynamicResourceHandler.HandleServiceError)
 }
 
 func logStackOnRecover(panicReason interface{}, w http.ResponseWriter) {
