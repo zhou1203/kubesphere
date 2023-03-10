@@ -6,7 +6,6 @@ on:
       - 'master'
       - 'release-*'
       - 'kse-3.3'
-      - 'ksc'
     tags:
       - 'v*'
 
