@@ -20,31 +20,29 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	Automatic UpgradeStrategy = "Automatic"
+	Manual    UpgradeStrategy = "Manual"
+)
+
 type Placement struct {
-	Clusters        []Cluster             `json:"clusters,omitempty"`
+	Clusters        []string              `json:"clusters,omitempty"`
 	ClusterSelector *metav1.LabelSelector `json:"clusterSelector,omitempty"`
 }
 
-type Cluster struct {
-	Name string `json:"name"`
+type ClusterScheduling struct {
+	Placement *Placement        `json:"placement,omitempty"`
+	Overrides map[string]string `json:"overrides,omitempty"`
 }
 
-type Override struct {
-	ClusterName    string `json:"clusterName"`
-	ConfigOverride string `json:"configOverride"`
-}
+type UpgradeStrategy string
 
-type Delivery struct {
-	Placement *Placement `json:"placement,omitempty"`
-	Overrides []Override `json:"overrides,omitempty"`
-}
-
-type DeliveryStatus struct {
-	State           string `json:"state,omitempty"`
-	ClusterName     string `json:"clusterName,omitempty"`
-	ReleaseName     string `json:"releaseName,omitempty"`
-	TargetNamespace string `json:"targetNamespace,omitempty"`
-	JobName         string `json:"jobName,omitempty"`
+type InstallationStatus struct {
+	State           string             `json:"state,omitempty"`
+	ReleaseName     string             `json:"releaseName,omitempty"`
+	TargetNamespace string             `json:"targetNamespace,omitempty"`
+	JobName         string             `json:"jobName,omitempty"`
+	Conditions      []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type ExtensionRef struct {
@@ -55,23 +53,21 @@ type ExtensionRef struct {
 type SubscriptionSpec struct {
 	Extension ExtensionRef `json:"extension"`
 	Enabled   bool         `json:"enabled"`
-	Config    string       `json:"config,omitempty"`
-	Delivery  *Delivery    `json:"delivery,omitempty"`
+	// +kubebuilder:default:=Manual
+	UpgradeStrategy   UpgradeStrategy    `json:"upgradeStrategy,omitempty"`
+	Config            string             `json:"config,omitempty"`
+	ClusterScheduling *ClusterScheduling `json:"clusterScheduling,omitempty"`
 }
 
 type SubscriptionStatus struct {
-	// State describes the installation status of the extension
-	State           string `json:"state,omitempty"`
-	ReleaseName     string `json:"releaseName,omitempty"`
-	TargetNamespace string `json:"targetNamespace,omitempty"`
-	JobName         string `json:"jobName,omitempty"`
-	// DeliveryStatuses describes the subchart installation status of the extension
-	DeliveryStatuses []DeliveryStatus   `json:"deliveryStatuses,omitempty"`
-	Conditions       []metav1.Condition `json:"conditions,omitempty"`
+	InstallationStatus `json:",inline"`
+	// ClusterSchedulingStatuses describes the subchart installation status of the extension
+	ClusterSchedulingStatuses map[string]InstallationStatus `json:"clusterSchedulingStatuses,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories="extensions",scope="Cluster"
+// +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"
 
 // Subscription describes the configuration and the extension version to be subscribed.
 type Subscription struct {

@@ -38,10 +38,6 @@ type Directives struct {
 	StripPathPrefix string `json:"stripPathPrefix,omitempty"`
 	// Strips the given suffix from the end of the URI path.
 	StripPathSuffix string `json:"stripPathSuffix,omitempty"`
-	// Performs substring replacements on the URI.
-	URISubstring []string `json:"uriSubstring,omitempty"`
-	// Performs regular expression replacements on the URI path.
-	PathRegexp []string `json:"pathRegexp,omitempty"`
 	// Sets, adds (with the + prefix), deletes (with the - prefix), or performs a replacement (by using two arguments, a search and replacement) in a request header going upstream to the backend.
 	HeaderUp []string `json:"headerUp,omitempty"`
 	// Sets, adds (with the + prefix), deletes (with the - prefix), or performs a replacement (by using two arguments, a search and replacement) in a response header coming downstream from the backend.

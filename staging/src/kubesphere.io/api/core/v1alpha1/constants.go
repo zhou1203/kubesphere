@@ -23,6 +23,8 @@ const (
 	StateUpgrading       = "Upgrading"
 	StateInstalled       = "Installed"
 	StateInstallFailed   = "InstallFailed"
+	StateFailed          = "Failed"
+	StateUpgradeFailed   = "UpgradeFailed"
 	StateUninstalling    = "Uninstalling"
 	StateUninstalled     = "Uninstalled"
 	StateUninstallFailed = "UninstallFailed"

@@ -216,7 +216,6 @@ func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.I
 			}
 
 			ksVersion := version.Annotations[corev1alpha1.KSVersionAnnotation]
-
 			extensionVersions = append(extensionVersions, corev1alpha1.ExtensionVersion{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: fmt.Sprintf("%s-%s", version.Name, version.Version),
@@ -350,12 +349,9 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if !controllerutil.ContainsFinalizer(repo, RepositoryFinalizer) {
-		patch := client.MergeFrom(repo.DeepCopy())
-		controllerutil.AddFinalizer(repo, RepositoryFinalizer)
-		if err := r.Patch(ctx, repo, patch); err != nil {
-			klog.Errorf("unable to register finalizer for repository %s, error: %s", repo.Name, err)
-			return ctrl.Result{}, err
-		}
+		expected := repo.DeepCopy()
+		controllerutil.AddFinalizer(expected, RepositoryFinalizer)
+		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(repo))
 	}
 
 	if !repo.ObjectMeta.DeletionTimestamp.IsZero() {

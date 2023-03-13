@@ -66,8 +66,9 @@ type ExtensionVersionSpec struct {
 	KSVersion string `json:"ksVersion,omitempty"`
 	Home      string `json:"home,omitempty"`
 	// ChartDataRef refers to a configMap which contains raw chart data.
-	ChartDataRef     *ConfigMapKeyRef `json:"chartDataRef,omitempty"`
-	ChartURL         string           `json:"chartURL,omitempty"`
+	ChartDataRef *ConfigMapKeyRef `json:"chartDataRef,omitempty"`
+	ChartURL     string           `json:"chartURL,omitempty"`
+	// +kubebuilder:default:=HostOnly
 	InstallationMode InstallationMode `json:"installationMode,omitempty"`
 }
 
@@ -116,6 +117,7 @@ type ExtensionStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories="extensions",scope="Cluster"
+// +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"
 
 // Extension is synchronized from the Repository.
 // An extension can contain multiple versions.

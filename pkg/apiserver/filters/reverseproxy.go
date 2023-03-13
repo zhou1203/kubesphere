@@ -145,7 +145,7 @@ func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.Revers
 	}
 
 	upgrade := httpstream.IsUpgradeRequest(req)
-	handler := proxy.NewUpgradeAwareHandler(location, proxyRoundTripper, false, upgrade, s)
+	handler := proxy.NewUpgradeAwareHandler(location, proxyRoundTripper, false, upgrade, &responder{})
 	if reverseProxy.Spec.Directives.WrapTransport {
 		handler.WrapTransport = true
 	}
@@ -222,8 +222,4 @@ func (rww *responseWriterWrapper) Write(d []byte) (int, error) {
 		rww.WriteHeader(http.StatusOK)
 	}
 	return rww.ResponseWriter.Write(d)
-}
-
-func (s *reverseProxy) Error(w http.ResponseWriter, req *http.Request, err error) {
-	responsewriters.InternalError(w, req, err)
 }

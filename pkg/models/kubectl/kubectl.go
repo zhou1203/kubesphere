@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	namespace        = constants.KubeSphereControlNamespace
+	namespace        = constants.KubeSphereNamespace
 	deployNameFormat = "kubectl-%s"
 )
 
@@ -152,7 +152,7 @@ func (o *operator) CreateKubectlDeploy(username string, owner metav1.Object) err
 							},
 						},
 					},
-					ServiceAccountName: "kubesphere-cluster-admin",
+					ServiceAccountName: "kubesphere",
 					Volumes: []v1.Volume{
 						{
 							Name: "host-time",
