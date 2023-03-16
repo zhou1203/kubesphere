@@ -73,12 +73,9 @@ func (r *ExtensionVersionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	if !controllerutil.ContainsFinalizer(extensionVersion, ExtensionVersionFinalizer) {
-		patch := client.MergeFrom(extensionVersion.DeepCopy())
-		controllerutil.AddFinalizer(extensionVersion, ExtensionVersionFinalizer)
-		if err := r.Patch(ctx, extensionVersion, patch); err != nil {
-			klog.Errorf("unable to register finalizer for extension version %s, error: %s", extensionVersion.Name, err)
-			return ctrl.Result{}, err
-		}
+		expected := extensionVersion.DeepCopy()
+		controllerutil.AddFinalizer(expected, ExtensionVersionFinalizer)
+		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(extensionVersion))
 	}
 
 	if extensionVersion.ObjectMeta.DeletionTimestamp != nil {

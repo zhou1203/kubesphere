@@ -100,7 +100,7 @@ func (s *jsBundle) rawFromRemote(rawURL string, w http.ResponseWriter, req *http
 		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, message, w)
 		return
 	}
-	handler := proxy.NewUpgradeAwareHandler(location, http.DefaultTransport, false, false, s)
+	handler := proxy.NewUpgradeAwareHandler(location, http.DefaultTransport, false, false, &responder{})
 	handler.ServeHTTP(w, req)
 }
 
@@ -141,8 +141,4 @@ func (s *jsBundle) rawFromSecret(secretRef *extensionsv1alpha1.SecretKeyRef, w h
 		return
 	}
 	w.Write(secret.Data[secretRef.Key])
-}
-
-func (s *jsBundle) Error(w http.ResponseWriter, req *http.Request, err error) {
-	responsewriters.InternalError(w, req, err)
 }

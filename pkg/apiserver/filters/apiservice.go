@@ -99,10 +99,6 @@ func (s *apiService) handleProxyRequest(apiService extensionsv1alpha1.APIService
 	proxyRoundTripper := transport.NewAuthProxyRoundTripper(user.GetName(), user.GetGroups(), user.GetExtra(), http.DefaultTransport)
 
 	upgrade := httpstream.IsUpgradeRequest(req)
-	handler := proxy.NewUpgradeAwareHandler(location, proxyRoundTripper, true, upgrade, s)
+	handler := proxy.NewUpgradeAwareHandler(location, proxyRoundTripper, true, upgrade, &responder{})
 	handler.ServeHTTP(w, newReq)
-}
-
-func (s *apiService) Error(w http.ResponseWriter, req *http.Request, err error) {
-	responsewriters.InternalError(w, req, err)
 }

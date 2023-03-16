@@ -188,9 +188,12 @@ func NewExecutor(kubeConfig, namespace, releaseName string, options ...Option) (
 }
 
 type helmOption struct {
-	kubeConfig string
-	debug      bool
-	jobLabels  map[string]string
+	kubeConfig  string
+	debug       bool
+	jobLabels   map[string]string
+	kubeAsUser  string
+	kubeAsGroup string
+	overrides   []string
 }
 
 type HelmOption func(*helmOption)
@@ -215,6 +218,24 @@ func SetHelmDebug(debug bool) HelmOption {
 func SetHelmJobLabels(jobLabels map[string]string) HelmOption {
 	return func(o *helmOption) {
 		o.jobLabels = jobLabels
+	}
+}
+
+func SetKubeAsUser(user string) HelmOption {
+	return func(o *helmOption) {
+		o.kubeAsUser = user
+	}
+}
+
+func SetKubeAsGroup(group string) HelmOption {
+	return func(o *helmOption) {
+		o.kubeAsGroup = group
+	}
+}
+
+func SetOverrides(overrides []string) HelmOption {
+	return func(o *helmOption) {
+		o.overrides = overrides
 	}
 }
 
@@ -353,6 +374,12 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 		args = append(args, "--kubeconfig", kubeConfigPath)
 	}
 
+	for _, override := range helmOptions.overrides {
+		if override != "" {
+			args = append(args, "--set", override)
+		}
+	}
+
 	// Post render, add annotations or labels to resources
 	if len(e.labels) > 0 || len(e.annotations) > 0 {
 		args = append(args, "--post-renderer", filepath.Join(workspaceBase, postRenderExecFile))
@@ -361,6 +388,14 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 	if helmOptions.debug {
 		// output debug info
 		args = append(args, "--debug")
+	}
+
+	if helmOptions.kubeAsUser != "" {
+		args = append(args, "--kube-as-user", helmOptions.kubeAsUser)
+	}
+
+	if helmOptions.kubeAsGroup != "" {
+		args = append(args, "--kube-as-group", helmOptions.kubeAsGroup)
 	}
 
 	name, err := e.createConfigMap(ctx, helmOptions.kubeConfig, chartName, chartData, values)

@@ -17,11 +17,19 @@ limitations under the License.
 package core
 
 import (
+	"bytes"
+	goerrors "errors"
 	"fmt"
+	"io"
 	"sort"
 
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
+	rbacv1 "k8s.io/api/rbac/v1"
+
 	"github.com/Masterminds/semver/v3"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 
@@ -119,13 +127,60 @@ func getLatestExtensionVersion(versions []corev1alpha1.ExtensionVersion) *corev1
 	return latestVersion
 }
 
-func ContainsAnnotation(obj metav1.Object, key string) bool {
-	annotations := obj.GetAnnotations()
-	if annotations == nil {
-		return false
+func clusterConfig(sub *corev1alpha1.Subscription, clusterName string) string {
+	for cluster, config := range sub.Spec.ClusterScheduling.Overrides {
+		if cluster == clusterName {
+			return config
+		}
 	}
-	if _, ok := annotations[key]; ok {
-		return true
+	return sub.Spec.Config
+}
+
+func usesPermissions(chartData []byte) (rbacv1.ClusterRole, rbacv1.Role) {
+	var clusterRole rbacv1.ClusterRole
+	var role rbacv1.Role
+
+	files, err := loader.LoadArchiveFiles(bytes.NewReader(chartData))
+	if err != nil {
+		return clusterRole, role
+	}
+	for _, file := range files {
+		if file.Name == permissionDefinitionFile {
+			//decoder := yaml.NewDecoder(bytes.NewReader(file.Data))
+			decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(file.Data), 1024)
+			for {
+				result := new(rbacv1.Role)
+				// create new spec here
+				// pass a reference to spec reference
+				err := decoder.Decode(&result)
+				// check it was parsed
+				if result == nil {
+					continue
+				}
+				// break the loop in case of EOF
+				if goerrors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					return clusterRole, role
+				}
+				if result.Kind == "ClusterRole" {
+					clusterRole.Rules = append(clusterRole.Rules, result.Rules...)
+				}
+				if result.Kind == "Role" {
+					role.Rules = append(clusterRole.Rules, result.Rules...)
+				}
+			}
+		}
+	}
+	return clusterRole, role
+}
+
+func hasCluster(clusters []clusterv1alpha1.Cluster, clusterName string) bool {
+	for _, cluster := range clusters {
+		if cluster.Name == clusterName {
+			return true
+		}
 	}
 	return false
 }
