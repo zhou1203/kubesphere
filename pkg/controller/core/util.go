@@ -128,6 +128,9 @@ func getLatestExtensionVersion(versions []corev1alpha1.ExtensionVersion) *corev1
 }
 
 func isReleaseNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
 	return strings.Contains(err.Error(), driver.ErrReleaseNotFound.Error())
 }
 
