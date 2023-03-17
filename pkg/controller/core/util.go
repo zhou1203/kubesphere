@@ -22,15 +22,15 @@ import (
 	"fmt"
 	"io"
 	"sort"
-
-	"helm.sh/helm/v3/pkg/chart/loader"
-	"k8s.io/apimachinery/pkg/util/yaml"
-	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-
-	rbacv1 "k8s.io/api/rbac/v1"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/storage/driver"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/version"
@@ -125,6 +125,10 @@ func getLatestExtensionVersion(versions []corev1alpha1.ExtensionVersion) *corev1
 		}
 	}
 	return latestVersion
+}
+
+func isReleaseNotFoundError(err error) bool {
+	return strings.Contains(err.Error(), driver.ErrReleaseNotFound.Error())
 }
 
 func clusterConfig(sub *corev1alpha1.Subscription, clusterName string) string {

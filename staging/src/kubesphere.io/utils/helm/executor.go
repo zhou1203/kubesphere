@@ -30,7 +30,6 @@ import (
 	helmrelease "helm.sh/helm/v3/pkg/release"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -53,8 +52,8 @@ type Executor interface {
 	Uninstall(ctx context.Context, options ...HelmOption) (string, error)
 	// ForceDelete forcibly deletes all resources of the chart.
 	ForceDelete(ctx context.Context, options ...HelmOption) error
-	// Manifest returns the manifest data for this release.
-	Manifest(options ...HelmOption) (string, error)
+	// Release returns the helm release
+	Release(options ...HelmOption) (*helmrelease.Release, error)
 	// IsReleaseReady checks if the helm release is ready.
 	IsReleaseReady(timeout time.Duration, options ...HelmOption) (bool, error)
 }
@@ -83,54 +82,37 @@ var (
 
 type executor struct {
 	// target cluster client
-	client    kubernetes.Interface
-	namespace string
-	// helm release name
+	client      kubernetes.Interface
+	namespace   string
 	releaseName string
-
-	helmImage string
+	helmImage   string
+	jobLabels   map[string]string
 	// add labels to helm chart
 	labels map[string]string
 	// add annotations to helm chart
-	annotations     map[string]string
-	createNamespace bool
-	dryRun          bool
+	annotations map[string]string
 }
 
-type Option func(*executor)
-
-// SetDryRun sets the dryRun option.
-func SetDryRun(dryRun bool) Option {
-	return func(e *executor) {
-		e.dryRun = dryRun
-	}
-}
+type ExecutorOption func(*executor)
 
 // SetAnnotations sets extra annotations added to all resources in chart.
-func SetAnnotations(annotations map[string]string) Option {
+func SetAnnotations(annotations map[string]string) ExecutorOption {
 	return func(e *executor) {
 		e.annotations = annotations
 	}
 }
 
 // SetLabels sets extra labels added to all resources in chart.
-func SetLabels(labels map[string]string) Option {
+func SetLabels(labels map[string]string) ExecutorOption {
 	return func(e *executor) {
 		e.labels = labels
 	}
 }
 
 // SetHelmImage sets the helmImage option.
-func SetHelmImage(helmImage string) Option {
+func SetHelmImage(helmImage string) ExecutorOption {
 	return func(e *executor) {
 		e.helmImage = helmImage
-	}
-}
-
-// SetCreateNamespace sets the createNamespace option.
-func SetCreateNamespace(createNamespace bool) Option {
-	return func(e *executor) {
-		e.createNamespace = createNamespace
 	}
 }
 
@@ -141,7 +123,7 @@ func SetCreateNamespace(createNamespace bool) Option {
 //   - namespace: the namespace of the helm release
 //   - releaseName: the helm release name
 //   - options: functions to set optional parameters
-func NewExecutor(kubeConfig, namespace, releaseName string, options ...Option) (Executor, error) {
+func NewExecutor(kubeConfig, namespace, releaseName string, options ...ExecutorOption) (Executor, error) {
 	e := &executor{
 		namespace:   namespace,
 		releaseName: releaseName,
@@ -173,27 +155,18 @@ func NewExecutor(kubeConfig, namespace, releaseName string, options ...Option) (
 	e.client = clusterClient
 
 	klog.V(8).Infof("namespace: %s, release name: %s, kube config:%s", e.namespace, e.releaseName, kubeConfig)
-
-	if e.createNamespace {
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: e.namespace,
-			},
-		}
-		if _, err = e.client.CoreV1().Namespaces().Create(context.Background(), ns, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
-			return e, err
-		}
-	}
 	return e, nil
 }
 
 type helmOption struct {
-	kubeConfig  string
-	debug       bool
-	jobLabels   map[string]string
-	kubeAsUser  string
-	kubeAsGroup string
-	overrides   []string
+	kubeConfig      string
+	debug           bool
+	kubeAsUser      string
+	kubeAsGroup     string
+	overrides       []string
+	createNamespace bool
+	install         bool
+	dryRun          bool
 }
 
 type HelmOption func(*helmOption)
@@ -215,8 +188,29 @@ func SetHelmDebug(debug bool) HelmOption {
 	}
 }
 
-func SetHelmJobLabels(jobLabels map[string]string) HelmOption {
-	return func(o *helmOption) {
+// SetCreateNamespace sets the createNamespace option.
+func SetCreateNamespace(createNamespace bool) HelmOption {
+	return func(e *helmOption) {
+		e.createNamespace = createNamespace
+	}
+}
+
+// SetCreateNamespace sets the createNamespace option.
+func SetInstall(install bool) HelmOption {
+	return func(e *helmOption) {
+		e.install = install
+	}
+}
+
+// SetDryRun sets the dryRun option.
+func SetDryRun(dryRun bool) HelmOption {
+	return func(e *helmOption) {
+		e.dryRun = dryRun
+	}
+}
+
+func SetHelmJobLabels(jobLabels map[string]string) ExecutorOption {
+	return func(o *executor) {
 		o.jobLabels = jobLabels
 	}
 }
@@ -283,20 +277,7 @@ func (e *executor) Upgrade(ctx context.Context, chartName string, chartData, val
 		f(helmOptions)
 	}
 
-	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
-	if err != nil {
-		return "", err
-	}
-
-	sts, err := e.status(helmConf)
-	if err != nil {
-		return "", err
-	}
-
-	if sts.Info.Status == "deployed" {
-		return e.createInstallJob(ctx, chartName, chartData, values, true, helmOptions)
-	}
-	return "", fmt.Errorf("cannot upgrade release %s/%s, current state is %s", e.namespace, e.releaseName, sts.Info.Status)
+	return e.createInstallJob(ctx, chartName, chartData, values, true, helmOptions)
 }
 
 func (e *executor) chartPath(chartName string) string {
@@ -360,14 +341,14 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 		args = append(args, "install")
 	}
 
+	if helmOptions.install {
+		args = append(args, "--install")
+	}
+
 	args = append(args, "--wait", e.releaseName, e.chartPath(chartName), "--namespace", e.namespace)
 
 	if len(values) > 0 {
 		args = append(args, "--values", "values.yaml")
-	}
-
-	if e.dryRun {
-		args = append(args, "--dry-run")
 	}
 
 	if helmOptions.kubeConfig != "" {
@@ -383,6 +364,14 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 	// Post render, add annotations or labels to resources
 	if len(e.labels) > 0 || len(e.annotations) > 0 {
 		args = append(args, "--post-renderer", filepath.Join(workspaceBase, postRenderExecFile))
+	}
+
+	if helmOptions.createNamespace {
+		args = append(args, "--create-namespace")
+	}
+
+	if helmOptions.dryRun {
+		args = append(args, "--dry-run")
 	}
 
 	if helmOptions.debug {
@@ -406,10 +395,10 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: e.namespace,
-			Labels:    helmOptions.jobLabels,
+			Labels:    e.jobLabels,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: pointer.Int32Ptr(1),
+			BackoffLimit: pointer.Int32(1),
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -489,7 +478,8 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 		"--namespace",
 		e.namespace,
 	}
-	if e.dryRun {
+
+	if helmOptions.dryRun {
 		args = append(args, "--dry-run")
 	}
 
@@ -519,7 +509,7 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: e.namespace,
-			Labels:    helmOptions.jobLabels,
+			Labels:    e.jobLabels,
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: pointer.Int32Ptr(1),
@@ -595,8 +585,8 @@ func (e *executor) ForceDelete(ctx context.Context, options ...HelmOption) error
 	return nil
 }
 
-// Manifest returns the manifest data for this release.
-func (e *executor) Manifest(options ...HelmOption) (string, error) {
+// Release returns the helm release
+func (e *executor) Release(options ...HelmOption) (*helmrelease.Release, error) {
 	helmOptions := &helmOption{}
 	for _, f := range options {
 		f(helmOptions)
@@ -604,17 +594,16 @@ func (e *executor) Manifest(options ...HelmOption) (string, error) {
 
 	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	get := action.NewGet(helmConf)
 	rel, err := get.Run(e.releaseName)
 	if err != nil {
 		klog.Errorf("namespace: %s, name: %s, run command failed, error: %v", e.namespace, e.releaseName, err)
-		return "", err
+		return nil, err
 	}
 	klog.V(2).Infof("namespace: %s, name: %s, run command success", e.namespace, e.releaseName)
-	klog.V(8).Infof("namespace: %s, name: %s, run command success, manifest: %s", e.namespace, e.releaseName, rel.Manifest)
-	return rel.Manifest, nil
+	return rel, nil
 }
 
 // IsReleaseReady checks if the helm release is ready.

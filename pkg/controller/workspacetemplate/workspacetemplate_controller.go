@@ -113,15 +113,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				return ctrl.Result{}, err
 			}
 
-			if err := r.deleteWorkspace(ctx, workspaceTemplate); err != nil {
-				if errors.IsNotFound(err) {
-					logger.V(4).Info("related workspace not found")
-				} else {
-					logger.Error(err, "failed to delete related workspace")
-					return ctrl.Result{}, nil
-				}
-			}
-
 			// remove our finalizer from the list and update it.
 			workspaceTemplate.ObjectMeta.Finalizers = sliceutil.RemoveString(workspaceTemplate.ObjectMeta.Finalizers, func(item string) bool {
 				return item == workspaceTemplateFinalizer || item == orphanFinalizer
@@ -247,57 +238,6 @@ func newWorkspace(template *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha1.W
 	}
 
 	return workspace, nil
-}
-
-func (r *Reconciler) deleteWorkspace(ctx context.Context, template *tenantv1alpha2.WorkspaceTemplate) error {
-	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
-	federatedWorkspace := &typesv1beta1.FederatedWorkspace{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: template.Name}, federatedWorkspace); err != nil {
-		return err
-	}
-
-	// Workspace will be deleted with Orphan Option when it has a orphan finalizer.
-	// Reousrces that owned by the Workspace will not be deleted.
-	if sliceutil.HasString(template.ObjectMeta.Finalizers, orphanFinalizer) {
-		if federatedWorkspace.Annotations == nil {
-			federatedWorkspace.Annotations = make(map[string]string, 1)
-		}
-		federatedWorkspace.Annotations[orphanDeleteOptionAnnotationKey] = orphanDeleteOptionAnnotation
-		if err := r.Update(ctx, federatedWorkspace); err != nil {
-			return err
-		}
-	} else {
-		// Usually namespace will bind the lifecycle of workspace with ownerReference,
-		// in multi-cluster environment workspace will not be created in host cluster
-		// if the cluster is not be granted or kubefed-controller-manager is unavailable,
-		// this will cause the federated namespace left an orphan object in host cluster.
-		// After workspaceTemplate deleted we need to deleted orphan namespace in host cluster directly.
-		if err := r.deleteNamespacesInWorkspace(ctx, template); err != nil {
-			return err
-		}
-	}
-
-	if err := r.Delete(ctx, federatedWorkspace); err != nil {
-		return err
-	}
-
-	opt := &client.DeleteOptions{}
-	// Dependents won't be deleted when it's has a orphanFinalizer
-	if sliceutil.HasString(template.ObjectMeta.Finalizers, orphanFinalizer) {
-		orphan := metav1.DeletePropagationOrphan
-		opt = &client.DeleteOptions{PropagationPolicy: &orphan}
-	}
-
-	ws := &tenantv1alpha1.Workspace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: template.Name,
-		},
-	}
-	if err := r.Delete(ctx, ws, opt); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // nolint
