@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"helm.sh/helm/v3/pkg/getter"
+	helmrelease "helm.sh/helm/v3/pkg/release"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -813,42 +814,129 @@ func (r *SubscriptionReconciler) syncClusterSchedulingStatus(ctx context.Context
 	return nil
 }
 
-func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *corev1alpha1.Subscription, cluster clusterv1alpha1.Cluster) error {
-	clusterSchedulingStatus := sub.Status.ClusterSchedulingStatuses[cluster.Name]
-	logger := klog.FromContext(ctx).WithValues("cluster", cluster.Name)
+func (r *SubscriptionReconciler) syncSubscriptionStatus(ctx context.Context, sub *corev1alpha1.Subscription) error {
+	logger := klog.FromContext(ctx)
 
-	var (
-		jobCompleted = false
-		jobFailed    = false
-		jobActive    = false
-	)
-	if clusterSchedulingStatus.TargetNamespace != "" && clusterSchedulingStatus.JobName != "" {
-		job := batchv1.Job{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: clusterSchedulingStatus.TargetNamespace, Name: clusterSchedulingStatus.JobName}, &job); err != nil {
-			logger.Error(err, "failed to get job", "namespace", clusterSchedulingStatus.TargetNamespace, "job", clusterSchedulingStatus.JobName)
-			clusterSchedulingStatus.State = ""
-			clusterSchedulingStatus.TargetNamespace = ""
-			clusterSchedulingStatus.JobName = ""
-			sub.Status.ClusterSchedulingStatuses[cluster.Name] = clusterSchedulingStatus
-			if err := r.updateSubscription(ctx, sub); err != nil {
-				return err
+	if sub.Status.TargetNamespace != "" && sub.Status.JobName != "" {
+		lastExecutor := batchv1.Job{}
+
+		err := r.Get(ctx, client.ObjectKey{Namespace: sub.Status.TargetNamespace, Name: sub.Status.JobName}, &lastExecutor)
+
+		if err != nil && !errors.IsNotFound(err) {
+			logger.Error(err, "failed to get job", "namespace", sub.Status.TargetNamespace, "job", sub.Status.JobName)
+			return err
+		}
+
+		jobActive, _, jobFailed := jobStatus(lastExecutor)
+
+		stateChange := ""
+
+		if jobFailed {
+			switch sub.Status.State {
+			case corev1alpha1.StateInstalling:
+				stateChange = corev1alpha1.StateInstallFailed
+			case corev1alpha1.StateUpgrading:
+				stateChange = corev1alpha1.StateUpgradeFailed
+			case corev1alpha1.StateUninstalling:
+				stateChange = corev1alpha1.StateUninstallFailed
+			}
+
+			if stateChange != "" {
+				updateStateAndCondition(sub, stateChange, latestJobCondition(lastExecutor).Message)
+				if err := r.updateSubscription(ctx, sub); err != nil {
+					return err
+				}
 			}
 		}
-		jobActive, jobCompleted, jobFailed = jobStatus(job)
 
-		if jobFailed && sub.Status.State != corev1alpha1.StateFailed {
-			updateClusterSchedulingStateAndCondition(sub, cluster.Name,
-				&clusterSchedulingStatus, corev1alpha1.StateFailed, latestJobCondition(job).Message)
-			if err := r.updateSubscription(ctx, sub); err != nil {
-				return err
-			}
+		// helm executor is still running
+		if jobActive || jobFailed {
 			return nil
 		}
 	}
 
-	// helm executor is still running
-	if jobActive || jobFailed {
-		return nil
+	targetNamespace := fmt.Sprintf(targetNamespaceFormat, sub.Spec.Extension.Name)
+	releaseName := sub.Spec.Extension.Name
+
+	options := []helm.ExecutorOption{
+		helm.SetHelmJobLabels(map[string]string{corev1alpha1.SubscriptionReferenceLabel: sub.Name}),
+		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}),
+	}
+
+	executor, err := helm.NewExecutor(r.kubeconfig, targetNamespace, releaseName, options...)
+	if err != nil {
+		logger.Error(err, "failed to create executor")
+		return err
+	}
+
+	release, err := executor.Release()
+	if err != nil {
+		if isReleaseNotFoundError(err) {
+			return r.installOrUpgradeExtension(ctx, sub, executor)
+		} else {
+			logger.Error(err, "failed to get helm release status")
+			return err
+		}
+	}
+
+	// TODO upgrade after configuration changes
+
+	if release.Info.Status == helmrelease.StatusDeployed && sub.Status.State != corev1alpha1.StateInstalled {
+		updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
+		if err := r.updateSubscription(ctx, sub); err != nil {
+			return err
+		}
+	}
+
+	if sub.Status.State == corev1alpha1.StateInstalled {
+		if err := syncExtendedAPIStatus(ctx, r.Client, sub); err != nil {
+			return err
+		}
+		return r.syncExtensionStatus(ctx, sub)
+	}
+
+	return nil
+}
+
+func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *corev1alpha1.Subscription, cluster clusterv1alpha1.Cluster) error {
+	logger := klog.FromContext(ctx).WithValues("cluster", cluster.Name)
+	clusterSchedulingStatus := sub.Status.ClusterSchedulingStatuses[cluster.Name]
+
+	if clusterSchedulingStatus.TargetNamespace != "" && clusterSchedulingStatus.JobName != "" {
+		lastExecutor := batchv1.Job{}
+
+		err := r.Get(ctx, client.ObjectKey{Namespace: clusterSchedulingStatus.TargetNamespace, Name: clusterSchedulingStatus.JobName}, &lastExecutor)
+		if err != nil && !errors.IsNotFound(err) {
+			logger.Error(err, "failed to get job", "namespace", clusterSchedulingStatus.TargetNamespace, "job", clusterSchedulingStatus.JobName)
+			return err
+		}
+
+		jobActive, _, jobFailed := jobStatus(lastExecutor)
+		stateChange := ""
+
+		if jobFailed {
+			switch clusterSchedulingStatus.State {
+			case corev1alpha1.StateInstalling:
+				stateChange = corev1alpha1.StateInstallFailed
+			case corev1alpha1.StateUpgrading:
+				stateChange = corev1alpha1.StateUpgradeFailed
+			case corev1alpha1.StateUninstalling:
+				stateChange = corev1alpha1.StateUninstallFailed
+			}
+
+			if stateChange != "" {
+				updateClusterSchedulingStateAndCondition(sub, cluster.Name,
+					&clusterSchedulingStatus, stateChange, latestJobCondition(lastExecutor).Message)
+				if err := r.updateSubscription(ctx, sub); err != nil {
+					return err
+				}
+			}
+		}
+
+		// helm executor is still running
+		if jobActive || jobFailed {
+			return nil
+		}
 	}
 
 	// cluster client without cache
@@ -871,6 +959,7 @@ func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *cor
 		logger.Error(err, "failed to create executor")
 		return err
 	}
+
 	release, err := executor.Release(helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)))
 	if err != nil {
 		if isReleaseNotFoundError(err) {
@@ -891,12 +980,11 @@ func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *cor
 		}
 	}
 
-	if jobCompleted && !release.Info.LastDeployed.IsZero() && clusterSchedulingStatus.State != corev1alpha1.StateInstalled {
+	if release.Info.Status == helmrelease.StatusDeployed && clusterSchedulingStatus.State != corev1alpha1.StateInstalled {
 		updateClusterSchedulingStateAndCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstalled, "")
 		if err := r.updateSubscription(ctx, sub); err != nil {
 			return err
 		}
-		return nil
 	}
 
 	if sub.Status.State == corev1alpha1.StateInstalled {
@@ -956,90 +1044,6 @@ func (r *SubscriptionReconciler) installOrUpgradeClusterAgent(ctx context.Contex
 	clusterSchedulingStatus.JobName = jobName
 	updateClusterSchedulingStateAndCondition(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstalling, "")
 	return r.updateSubscription(ctx, sub)
-}
-
-func (r *SubscriptionReconciler) syncSubscriptionStatus(ctx context.Context, sub *corev1alpha1.Subscription) error {
-	logger := klog.FromContext(ctx)
-	var (
-		jobCompleted = false
-		jobFailed    = false
-		jobActive    = false
-	)
-	if sub.Status.TargetNamespace != "" && sub.Status.JobName != "" {
-		job := batchv1.Job{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: sub.Status.TargetNamespace, Name: sub.Status.JobName}, &job); err != nil {
-			logger.Error(err, "failed to get job", "namespace", sub.Status.TargetNamespace, "job", sub.Status.JobName)
-			return err
-		}
-		jobActive, jobCompleted, jobFailed = jobStatus(job)
-
-		if jobFailed && sub.Status.State != corev1alpha1.StateFailed {
-			updateStateAndCondition(sub, corev1alpha1.StateFailed, latestJobCondition(job).Message)
-			if err := r.updateSubscription(ctx, sub); err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-
-	// helm executor is still running
-	if jobActive || jobFailed {
-		return nil
-	}
-
-	targetNamespace := fmt.Sprintf(targetNamespaceFormat, sub.Spec.Extension.Name)
-	releaseName := sub.Spec.Extension.Name
-
-	options := []helm.ExecutorOption{
-		helm.SetHelmJobLabels(map[string]string{corev1alpha1.SubscriptionReferenceLabel: sub.Name}),
-		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}),
-	}
-
-	executor, err := helm.NewExecutor(r.kubeconfig, targetNamespace, releaseName, options...)
-	if err != nil {
-		logger.Error(err, "failed to create executor")
-		return err
-	}
-
-	release, err := executor.Release()
-	if err != nil {
-		if isReleaseNotFoundError(err) {
-			if err := r.installOrUpgradeExtension(ctx, sub, executor); err != nil {
-				logger.Error(err, "failed to install extension")
-				return err
-			}
-			return nil
-		}
-		logger.Error(err, "failed to get helm release status")
-		return err
-	}
-
-	if sub.Status.State == "" {
-		if err := r.installOrUpgradeExtension(ctx, sub, executor); err != nil {
-			logger.Error(err, "failed to upgrade extension")
-			return err
-		}
-	}
-
-	if jobCompleted && !release.Info.LastDeployed.IsZero() && sub.Status.State != corev1alpha1.StateInstalled {
-		updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
-		if err := r.updateSubscription(ctx, sub); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if sub.Status.State == corev1alpha1.StateInstalled {
-		if err := syncExtendedAPIStatus(ctx, r.Client, sub); err != nil {
-			return err
-		}
-	}
-
-	if err := r.syncExtensionStatus(ctx, sub); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (r *SubscriptionReconciler) uninstallClusterAgent(ctx context.Context, sub *corev1alpha1.Subscription, clusterName string) error {
