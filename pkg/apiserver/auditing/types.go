@@ -33,16 +33,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/apis/audit"
 	"k8s.io/klog/v2"
-	devopsv1alpha3 "kubesphere.io/api/devops/v1alpha3"
 	"kubesphere.io/api/iam/v1alpha2"
 
 	auditv1alpha1 "kubesphere.io/kubesphere/pkg/apiserver/auditing/v1alpha1"
-	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/client/listers/auditing/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/informers"
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3"
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/devops"
 	options "kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/utils/iputil"
 )
@@ -62,7 +58,6 @@ type Auditing interface {
 
 type auditing struct {
 	webhookLister v1alpha1.WebhookLister
-	devopsGetter  v1alpha3.Interface
 	cache         chan *auditv1alpha1.Event
 	backend       *Backend
 }
@@ -71,7 +66,6 @@ func NewAuditing(informers informers.InformerFactory, opts *options.Options, sto
 
 	a := &auditing{
 		webhookLister: informers.KubeSphereSharedInformerFactory().Auditing().V1alpha1().Webhooks().Lister(),
-		devopsGetter:  devops.New(informers.KubeSphereSharedInformerFactory()),
 		cache:         make(chan *auditv1alpha1.Event, DefaultCacheCapacity),
 	}
 
@@ -127,7 +121,6 @@ func (a *auditing) LogRequestObject(req *http.Request, info *request.RequestInfo
 	}
 
 	e := &auditv1alpha1.Event{
-		Devops:    info.DevOps,
 		Workspace: info.Workspace,
 		Cluster:   info.Cluster,
 		Event: audit.Event{
@@ -151,25 +144,6 @@ func (a *auditing) LogRequestObject(req *http.Request, info *request.RequestInfo
 				Subresource:     info.Subresource,
 			},
 		},
-	}
-
-	// Get the workspace which the devops project be in.
-	if len(e.Devops) > 0 && len(e.Workspace) == 0 {
-		res, err := a.devopsGetter.List("", query.New())
-		if err != nil {
-			klog.Error(err)
-		}
-
-		for _, obj := range res.Items {
-			d := obj.(*devopsv1alpha3.DevOpsProject)
-
-			if d.Name == e.Devops {
-				e.Workspace = d.Labels["kubesphere.io/workspace"]
-			} else if d.Status.AdminNamespace == e.Devops {
-				e.Workspace = d.Labels["kubesphere.io/workspace"]
-				e.Devops = d.Name
-			}
-		}
 	}
 
 	ips := make([]string, 1)

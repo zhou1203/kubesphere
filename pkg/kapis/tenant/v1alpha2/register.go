@@ -41,16 +41,11 @@ import (
 	"kubesphere.io/kubesphere/pkg/models"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
-	"kubesphere.io/kubesphere/pkg/models/metering"
-	"kubesphere.io/kubesphere/pkg/models/monitoring"
-	"kubesphere.io/kubesphere/pkg/models/openpitrix"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/events"
 	"kubesphere.io/kubesphere/pkg/simple/client/logging"
-	meteringclient "kubesphere.io/kubesphere/pkg/simple/client/metering"
-	monitoringclient "kubesphere.io/kubesphere/pkg/simple/client/monitoring"
 )
 
 const (
@@ -66,11 +61,11 @@ func Resource(resource string) schema.GroupResource {
 func AddToContainer(c *restful.Container, factory informers.InformerFactory, k8sclient kubernetes.Interface,
 	ksclient kubesphere.Interface, evtsClient events.Client, loggingClient logging.Client,
 	auditingclient auditing.Client, am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer,
-	monitoringclient monitoringclient.Interface, cache cache.Cache, meteringOptions *meteringclient.Options, opClient openpitrix.Interface) error {
+	cache cache.Cache) error {
 	mimePatch := []string{restful.MIME_JSON, runtime.MimeMergePatchJson, runtime.MimeJsonPatchJson}
 
 	ws := runtime.NewWebService(GroupVersion)
-	handler := NewTenantHandler(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, im, authorizer, monitoringclient, resourcev1alpha3.NewResourceGetter(factory, cache), meteringOptions, opClient)
+	handler := NewTenantHandler(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, im, authorizer, resourcev1alpha3.NewResourceGetter(factory, cache))
 
 	ws.Route(ws.GET("/clusters").
 		To(handler.ListClusters).
@@ -154,22 +149,6 @@ func AddToContainer(c *restful.Container, factory informers.InformerFactory, k8s
 		Doc("List the namespaces of the specified workspace for the current user").
 		Returns(http.StatusOK, api.StatusOK, api.ListResult{}).
 		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceTag}))
-
-	ws.Route(ws.GET("/workspaces/{workspace}/devops").
-		To(handler.ListDevOpsProjects).
-		Param(ws.PathParameter("workspace", "workspace name")).
-		Doc("List the devops projects of the specified workspace for the current user").
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectTag}))
-
-	ws.Route(ws.GET("/workspaces/{workspace}/workspacemembers/{workspacemember}/devops").
-		To(handler.ListDevOpsProjects).
-		Param(ws.PathParameter("workspace", "workspace name")).
-		Param(ws.PathParameter("workspacemember", "workspacemember username")).
-		Doc("List the devops projects of specified workspace for the workspace member").
-		Reads(corev1.Namespace{}).
-		Returns(http.StatusOK, api.StatusOK, corev1.Namespace{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectTag}))
 
 	ws.Route(ws.GET("/workspaces/{workspace}/namespaces/{namespace}").
 		To(handler.DescribeNamespace).
@@ -300,56 +279,6 @@ func AddToContainer(c *restful.Container, factory informers.InformerFactory, k8s
 		Metadata(restfulspec.KeyOpenAPITags, []string{constants.AuditingQueryTag}).
 		Writes(auditingv1alpha1.APIResponse{}).
 		Returns(http.StatusOK, api.StatusOK, auditingv1alpha1.APIResponse{}))
-
-	ws.Route(ws.GET("/metering").
-		To(handler.QueryMetering).
-		Doc("Get meterings against the cluster.").
-		Param(ws.QueryParameter("level", "Metering level.").DataType("string").Required(true)).
-		Param(ws.QueryParameter("node", "Node name.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("workspace", "Workspace name.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("namespace", "Namespace name.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("kind", "Workload kind. One of deployment, daemonset, statefulset.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("workload", "Workload name.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("pod", "Pod name.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("applications", "Appliction names, format app_name[:app_version](such as nginx:v1, nignx) which are joined by \"|\" ").DataType("string").Required(false)).
-		Param(ws.QueryParameter("services", "Services which are joined by \"|\".").DataType("string").Required(false)).
-		Param(ws.QueryParameter("metrics_filter", "The metric name filter consists of a regexp pattern. It specifies which metric data to return. For example, the following filter matches both workspace CPU usage and memory usage: `meter_workspace_cpu_usage|meter_workspace_memory_usage`.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("resources_filter", "The workspace filter consists of a regexp pattern. It specifies which workspace data to return.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("start", "Start time of query. Use **start** and **end** to retrieve metric data over a time span. It is a string with Unix time format, eg. 1559347200. ").DataType("string").Required(false)).
-		Param(ws.QueryParameter("end", "End time of query. Use **start** and **end** to retrieve metric data over a time span. It is a string with Unix time format, eg. 1561939200. ").DataType("string").Required(false)).
-		Param(ws.QueryParameter("step", "Time interval. Retrieve metric data at a fixed interval within the time range of start and end. It requires both **start** and **end** are provided. The format is [0-9]+[smhdwy]. Defaults to 10m (i.e. 10 min).").DataType("string").DefaultValue("10m").Required(false)).
-		Param(ws.QueryParameter("time", "A timestamp in Unix time format. Retrieve metric data at a single point in time. Defaults to now. Time and the combination of start, end, step are mutually exclusive.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("sort_metric", "Sort workspaces by the specified metric. Not applicable if **start** and **end** are provided.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("sort_type", "Sort order. One of asc, desc.").DefaultValue("desc.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("page", "The page number. This field paginates result data of each metric, then returns a specific page. For example, setting **page** to 2 returns the second page. It only applies to sorted metric data.").DataType("integer").Required(false)).
-		Param(ws.QueryParameter("limit", "Page size, the maximum number of results in a single page. Defaults to 5.").DataType("integer").Required(false).DefaultValue("5")).
-		Param(ws.QueryParameter("storageclass", "The name of the storageclass.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("pvc_filter", "The PVC filter consists of a regexp pattern. It specifies which PVC data to return.").DataType("string").Required(false)).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.WorkspaceMetersTag}).
-		Writes(monitoring.Metrics{}).
-		Returns(http.StatusOK, api.StatusOK, monitoring.Metrics{}))
-
-	ws.Route(ws.GET("/namespaces/{namespace}/metering/hierarchy").
-		To(handler.QueryMeteringHierarchy).
-		Param(ws.PathParameter("namespace", "Namespace name.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("metrics_filter", "The metric name filter consists of a regexp pattern. It specifies which metric data to return. For example, the following filter matches both workspace CPU usage and memory usage: `meter_pod_cpu_usage|meter_pod_memory_usage_wo_cache`.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("time", "A timestamp in Unix time format. Retrieve metric data at a single point in time. Defaults to now. Time and the combination of start, end, step are mutually exclusive.").DataType("string").Required(false)).
-		Param(ws.QueryParameter("cluster", "Cluster name").DataType("string").Required(false)).
-		Doc("get current metering hierarchies info in last one hour").
-		Writes(metering.ResourceStatistic{}).
-		Returns(http.StatusOK, api.StatusOK, metering.ResourceStatistic{}))
-
-	ws.Route(ws.GET("/metering/price").
-		To(handler.HandlePriceInfoQuery).
-		Doc("Get resoure price.").
-		Writes(metering.PriceInfo{}).
-		Returns(http.StatusOK, api.StatusOK, metering.PriceInfo{}))
-	ws.Route(ws.POST("/workspaces/{workspace}/resourcequotas").
-		To(handler.CreateWorkspaceResourceQuota).
-		Reads(quotav1alpha2.ResourceQuota{}).
-		Returns(http.StatusOK, api.StatusOK, quotav1alpha2.ResourceQuota{}).
-		Doc("Create resource quota.").
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.WorkspaceTag}))
 
 	ws.Route(ws.DELETE("/workspaces/{workspace}/resourcequotas/{resourcequota}").
 		To(handler.DeleteWorkspaceResourceQuota).

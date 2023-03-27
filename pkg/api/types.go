@@ -114,7 +114,6 @@ var SupportedGroupVersionResources = map[ClientType][]schema.GroupVersionResourc
 	// all supported kubesphere api objects
 	ClientKubeSphere: {
 		{Group: "tenant.kubesphere.io", Version: "v1alpha1", Resource: "workspaces"},
-		{Group: "devops.kubesphere.io", Version: "v1alpha1", Resource: "s2ibinaries"},
 
 		{Group: "servicemesh.kubesphere.io", Version: "v1alpha2", Resource: "strategies"},
 		{Group: "servicemesh.kubesphere.io", Version: "v1alpha2", Resource: "servicepolicies"},
@@ -122,14 +121,6 @@ var SupportedGroupVersionResources = map[ClientType][]schema.GroupVersionResourc
 
 	// all supported istio api objects
 	ClientIstio: {},
-
-	// all supported s2i api objects
-	// TODO: move s2i clientset into kubesphere
-	ClientS2i: {
-		{Group: "devops.kubesphere.io", Version: "v1alpha1", Resource: "s2ibuildertemplates"},
-		{Group: "devops.kubesphere.io", Version: "v1alpha1", Resource: "s2iruns"},
-		{Group: "devops.kubesphere.io", Version: "v1alpha1", Resource: "s2ibuilders"},
-	},
 
 	// kubernetes-sigs application api objects
 	ClientApplication: {

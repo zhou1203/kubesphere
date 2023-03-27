@@ -33,8 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
-	alertingv2beta1 "kubesphere.io/api/alerting/v2beta1"
-
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
 	"kubesphere.io/kubesphere/pkg/apis"
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
@@ -44,7 +42,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/user"
 	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/simple/client/monitoring/prometheus"
 	"kubesphere.io/kubesphere/pkg/simple/client/s3"
 	"kubesphere.io/kubesphere/pkg/utils/metrics"
 	"kubesphere.io/kubesphere/pkg/utils/term"
@@ -58,17 +55,13 @@ func NewControllerManagerCommand() *cobra.Command {
 		// make sure LeaderElection is not nil
 		s = &options.KubeSphereControllerManagerOptions{
 			KubernetesOptions:     conf.KubernetesOptions,
-			DevopsOptions:         conf.DevopsOptions,
 			S3Options:             conf.S3Options,
 			AuthenticationOptions: conf.AuthenticationOptions,
 			LdapOptions:           conf.LdapOptions,
-			OpenPitrixOptions:     conf.OpenPitrixOptions,
 			NetworkOptions:        conf.NetworkOptions,
 			MultiClusterOptions:   conf.MultiClusterOptions,
 			ServiceMeshOptions:    conf.ServiceMeshOptions,
 			GatewayOptions:        conf.GatewayOptions,
-			MonitoringOptions:     conf.MonitoringOptions,
-			AlertingOptions:       conf.AlertingOptions,
 			LeaderElection:        s.LeaderElection,
 			LeaderElect:           s.LeaderElect,
 			WebhookCertDir:        s.WebhookCertDir,
@@ -165,7 +158,7 @@ func Run(s *options.KubeSphereControllerManagerOptions, configCh <-chan controll
 
 func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) error {
 
-	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions, prometheus.MonitorModuleEnable(s.MonitoringOptions))
+	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions)
 	if err != nil {
 		klog.Errorf("Failed to create kubernetes clientset %v", err)
 		return err
@@ -183,8 +176,7 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 		kubernetesClient.KubeSphere(),
 		kubernetesClient.Istio(),
 		kubernetesClient.Snapshot(),
-		kubernetesClient.ApiExtensions(),
-		kubernetesClient.Prometheus())
+		kubernetesClient.ApiExtensions())
 
 	mgrOptions := manager.Options{
 		CertDir: s.WebhookCertDir,
@@ -253,19 +245,6 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	hookServer.Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
 
 	hookServer.Register("/convert", &conversion.Webhook{})
-
-	rulegroup := alertingv2beta1.RuleGroup{}
-	if err := rulegroup.SetupWebhookWithManager(mgr); err != nil {
-		klog.Fatalf("Unable to setup RuleGroup webhook: %v", err)
-	}
-	clusterrulegroup := alertingv2beta1.ClusterRuleGroup{}
-	if err := clusterrulegroup.SetupWebhookWithManager(mgr); err != nil {
-		klog.Fatalf("Unable to setup ClusterRuleGroup webhook: %v", err)
-	}
-	globalrulegroup := alertingv2beta1.GlobalRuleGroup{}
-	if err := globalrulegroup.SetupWebhookWithManager(mgr); err != nil {
-		klog.Fatalf("Unable to setup GlobalRuleGroup webhook: %v", err)
-	}
 
 	klog.V(2).Info("registering metrics to the webhook server")
 	// Add an extra metric endpoint, so we can use the same metric definition with ks-apiserver

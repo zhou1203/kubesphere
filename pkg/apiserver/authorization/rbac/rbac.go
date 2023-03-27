@@ -237,20 +237,13 @@ func (r *RBACAuthorizer) visitRulesFor(requestAttributes authorizer.Attributes, 
 	}
 
 	if requestAttributes.GetResourceScope() == request.WorkspaceScope ||
-		requestAttributes.GetResourceScope() == request.NamespaceScope ||
-		requestAttributes.GetResourceScope() == request.DevOpsScope {
+		requestAttributes.GetResourceScope() == request.NamespaceScope {
 
 		var workspace string
 		var err error
-		// all of resource under namespace and devops belong to workspace
+
 		if requestAttributes.GetResourceScope() == request.NamespaceScope {
 			if workspace, err = r.am.GetNamespaceControlledWorkspace(requestAttributes.GetNamespace()); err != nil {
-				if !visitor(nil, "", nil, err) {
-					return
-				}
-			}
-		} else if requestAttributes.GetResourceScope() == request.DevOpsScope {
-			if workspace, err = r.am.GetDevOpsControlledWorkspace(requestAttributes.GetDevOps()); err != nil {
 				if !visitor(nil, "", nil, err) {
 					return
 				}
@@ -291,20 +284,9 @@ func (r *RBACAuthorizer) visitRulesFor(requestAttributes authorizer.Attributes, 
 		}
 	}
 
-	if requestAttributes.GetResourceScope() == request.NamespaceScope ||
-		requestAttributes.GetResourceScope() == request.DevOpsScope {
+	if requestAttributes.GetResourceScope() == request.NamespaceScope {
 
 		namespace := requestAttributes.GetNamespace()
-		// list devops role binding
-		if requestAttributes.GetResourceScope() == request.DevOpsScope {
-			if relatedNamespace, err := r.am.GetDevOpsRelatedNamespace(requestAttributes.GetDevOps()); err != nil {
-				if !visitor(nil, "", nil, err) {
-					return
-				}
-			} else {
-				namespace = relatedNamespace
-			}
-		}
 
 		if roleBindings, err := r.am.ListRoleBindings("", nil, namespace); err != nil {
 			if !visitor(nil, "", nil, err) {

@@ -50,9 +50,7 @@ import (
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/constants"
-	modelsdevops "kubesphere.io/kubesphere/pkg/models/devops"
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
-	"kubesphere.io/kubesphere/pkg/simple/client/devops"
 	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
@@ -75,7 +73,6 @@ const (
 type Reconciler struct {
 	client.Client
 	KubeconfigClient        kubeconfig.Interface
-	DevopsClient            devops.Interface
 	LdapClient              ldapclient.Interface
 	AuthenticationOptions   *authentication.Options
 	Logger                  logr.Logger
@@ -148,14 +145,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 				return ctrl.Result{}, err
 			}
 
-			if r.DevopsClient != nil {
-				// unassign jenkins role, unassign multiple times is allowed
-				if err = r.waitForUnassignDevOpsAdminRole(user); err != nil {
-					// ignore timeout error
-					r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
-				}
-			}
-
 			if err = r.deleteLoginRecords(ctx, user); err != nil {
 				r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
@@ -214,15 +203,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			klog.Error(err)
 			r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
 			return ctrl.Result{}, err
-		}
-	}
-
-	if r.DevopsClient != nil {
-		// assign jenkins role after user create, assign multiple times is allowed
-		// used as logged-in users can do anything
-		if err = r.waitForAssignDevOpsAdminRole(user); err != nil {
-			// ignore timeout error
-			r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
 		}
 	}
 
@@ -340,27 +320,6 @@ func (r *Reconciler) createFederatedUser(ctx context.Context, user *iamv1alpha2.
 	}
 
 	return nil
-}
-
-func (r *Reconciler) waitForAssignDevOpsAdminRole(user *iamv1alpha2.User) error {
-	err := utilwait.PollImmediate(interval, timeout, func() (done bool, err error) {
-		if err := r.DevopsClient.AssignGlobalRole(modelsdevops.JenkinsAdminRoleName, user.Name); err != nil {
-			klog.Error(err)
-			return false, err
-		}
-		return true, nil
-	})
-	return err
-}
-
-func (r *Reconciler) waitForUnassignDevOpsAdminRole(user *iamv1alpha2.User) error {
-	err := utilwait.PollImmediate(interval, timeout, func() (done bool, err error) {
-		if err := r.DevopsClient.UnAssignGlobalRole(modelsdevops.JenkinsAdminRoleName, user.Name); err != nil {
-			return false, err
-		}
-		return true, nil
-	})
-	return err
 }
 
 func (r *Reconciler) waitForSyncToLDAP(user *iamv1alpha2.User) error {

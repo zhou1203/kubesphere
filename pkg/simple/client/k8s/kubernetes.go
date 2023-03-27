@@ -20,7 +20,6 @@ import (
 	"strings"
 
 	snapshotclient "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
-	promresourcesclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned"
 	istioclient "istio.io/client-go/pkg/clientset/versioned"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
@@ -36,7 +35,7 @@ type Client interface {
 	Istio() istioclient.Interface
 	Snapshot() snapshotclient.Interface
 	ApiExtensions() apiextensionsclient.Interface
-	Prometheus() promresourcesclient.Interface
+	//Prometheus() promresourcesclient.Interface
 	Master() string
 	Config() *rest.Config
 }
@@ -54,7 +53,7 @@ type kubernetesClient struct {
 
 	apiextensions apiextensionsclient.Interface
 
-	prometheus promresourcesclient.Interface
+	//prometheus promresourcesclient.Interface
 
 	master string
 
@@ -77,7 +76,6 @@ func NewKubernetesClientOrDie(options *KubernetesOptions) Client {
 		istio:         istioclient.NewForConfigOrDie(config),
 		snapshot:      snapshotclient.NewForConfigOrDie(config),
 		apiextensions: apiextensionsclient.NewForConfigOrDie(config),
-		prometheus:    promresourcesclient.NewForConfigOrDie(config),
 		master:        config.Host,
 		config:        config,
 	}
@@ -95,7 +93,7 @@ func NewKubernetesClientOrDie(options *KubernetesOptions) Client {
 }
 
 // NewKubernetesClient creates a KubernetesClient
-func NewKubernetesClient(options *KubernetesOptions, promEnable bool) (Client, error) {
+func NewKubernetesClient(options *KubernetesOptions) (Client, error) {
 	config, err := clientcmd.BuildConfigFromFlags("", options.KubeConfig)
 	if err != nil {
 		return nil, err
@@ -131,13 +129,6 @@ func NewKubernetesClient(options *KubernetesOptions, promEnable bool) (Client, e
 		return nil, err
 	}
 
-	if promEnable {
-		k.prometheus, err = promresourcesclient.NewForConfig(config)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	k.master = options.Master
 	k.config = config
 
@@ -164,9 +155,9 @@ func (k *kubernetesClient) ApiExtensions() apiextensionsclient.Interface {
 	return k.apiextensions
 }
 
-func (k *kubernetesClient) Prometheus() promresourcesclient.Interface {
-	return k.prometheus
-}
+//func (k *kubernetesClient) Prometheus() promresourcesclient.Interface {
+//	return k.prometheus
+//}
 
 // master address used to generate kubeconfig for downloading
 func (k *kubernetesClient) Master() string {

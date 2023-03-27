@@ -37,7 +37,6 @@ const (
 	persistentvolumeclaimsKey = "persistentvolumeclaims"
 	jobsKey                   = "count/jobs.batch"
 	cronJobsKey               = "count/cronjobs.batch"
-	s2iBuilders               = "count/s2ibuilders.devops.kubesphere.io"
 )
 
 var supportedResources = map[string]schema.GroupVersionResource{
@@ -49,8 +48,7 @@ var supportedResources = map[string]schema.GroupVersionResource{
 	persistentvolumeclaimsKey: {Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
 	ingressKey:                {Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
 	jobsKey:                   {Group: "batch", Version: "v1", Resource: "jobs"},
-	cronJobsKey:               {Group: "batch", Version: "v1", Resource: "cronjobs"},
-	s2iBuilders:               {Group: "devops.kubesphere.io", Version: "v1alpha1", Resource: "s2ibuilders"},
+	cronJobsKey:               {Group: "batch", Version: "v1beta1", Resource: "cronjobs"},
 }
 
 type ResourceQuotaGetter interface {

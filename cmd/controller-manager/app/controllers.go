@@ -20,12 +20,9 @@ import (
 	"fmt"
 	"time"
 
-	"kubesphere.io/kubesphere/pkg/simple/client/monitoring/prometheus"
-
 	"kubesphere.io/kubesphere/pkg/controller/core"
 
 	"github.com/kubesphere/pvc-autoresizer/runners"
-	"github.com/prometheus/common/config"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
@@ -35,15 +32,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/kubefed/pkg/controller/util"
 
+	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
-	"kubesphere.io/kubesphere/pkg/controller/alerting"
 	"kubesphere.io/kubesphere/pkg/controller/application"
-	"kubesphere.io/kubesphere/pkg/controller/helm"
 	"kubesphere.io/kubesphere/pkg/controller/namespace"
-	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmapplication"
-	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmcategory"
-	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmrelease"
-	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmrepo"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/user"
@@ -51,12 +44,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
 	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
-	"kubesphere.io/kubesphere/pkg/simple/client/devops"
-	"kubesphere.io/kubesphere/pkg/simple/client/devops/jenkins"
 	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
-	"kubesphere.io/kubesphere/pkg/simple/client/s3"
-
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
@@ -71,7 +59,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/network/ippool"
 	"kubesphere.io/kubesphere/pkg/controller/network/nsnetworkpolicy"
 	"kubesphere.io/kubesphere/pkg/controller/network/nsnetworkpolicy/provider"
-	"kubesphere.io/kubesphere/pkg/controller/notification"
 	"kubesphere.io/kubesphere/pkg/controller/storage/capability"
 	"kubesphere.io/kubesphere/pkg/controller/virtualservice"
 	"kubesphere.io/kubesphere/pkg/informers"
@@ -86,35 +73,21 @@ var allControllers = []string{
 	"workspacerole",
 	"workspacerolebinding",
 	"namespace",
-	"helmrepo",
-	"helmcategory",
-	"helmapplication",
-	"helmapplicationversion",
-	"helmrelease",
-	"helm",
 	"application",
 	"serviceaccount",
 	"resourcequota",
-	"virtualservice",
-	"destinationrule",
 	"job",
 	"storagecapability",
-	"pvcautoresizer",
-	"workloadrestart",
 	"loginrecord",
 	"cluster",
 	"nsnp",
 	"ippool",
 	"csr",
 	"clusterrolebinding",
-	"fedglobalrolecache",
 	"globalrole",
-	"fedglobalrolebindingcache",
 	"globalrolebinding",
 	"groupbinding",
 	"group",
-	"notification",
-	"pvcworkloadrestarter",
 	"rulegroup",
 	"clusterrulegroup",
 	"globalrulegroup",
@@ -142,14 +115,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	//	informerFactory.KubernetesSharedInformerFactory().Core().V1().ConfigMaps().Lister(),
 	//	client.Config())
 
-	var devopsClient devops.Interface
-	if cmOptions.DevopsOptions != nil && len(cmOptions.DevopsOptions.Host) != 0 {
-		devopsClient, err = jenkins.NewDevopsClient(cmOptions.DevopsOptions)
-		if err != nil {
-			return fmt.Errorf("failed to connect jenkins, please check jenkins status, error: %v", err)
-		}
-	}
-
 	var ldapClient ldapclient.Interface
 	// when there is no ldapOption, we set ldapClient as nil, which means we don't need to sync user info into ldap.
 	if cmOptions.LdapOptions != nil && len(cmOptions.LdapOptions.Host) != 0 {
@@ -173,7 +138,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		userController := &user.Reconciler{
 			MaxConcurrentReconciles: 4,
 			LdapClient:              ldapClient,
-			DevopsClient:            devopsClient,
 			AuthenticationOptions:   cmOptions.AuthenticationOptions,
 		}
 		addControllerWithSetup(mgr, "user", userController)
@@ -235,59 +199,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	if cmOptions.IsControllerEnabled("namespace") {
 		namespaceReconciler := &namespace.Reconciler{GatewayOptions: cmOptions.GatewayOptions}
 		addControllerWithSetup(mgr, "namespace", namespaceReconciler)
-	}
-
-	// "helmrepo" controller
-	if cmOptions.IsControllerEnabled("helmrepo") {
-		helmRepoReconciler := &helmrepo.ReconcileHelmRepo{}
-		addControllerWithSetup(mgr, "helmrepo", helmRepoReconciler)
-	}
-
-	// "helmcategory" controller
-	if cmOptions.IsControllerEnabled("helmcategory") {
-		helmCategoryReconciler := &helmcategory.ReconcileHelmCategory{}
-		addControllerWithSetup(mgr, "helmcategory", helmCategoryReconciler)
-	}
-
-	var opS3Client s3.Interface
-	if !cmOptions.OpenPitrixOptions.AppStoreConfIsEmpty() {
-		opS3Client, err = s3.NewS3Client(cmOptions.OpenPitrixOptions.S3Options)
-		if err != nil {
-			klog.Fatalf("failed to connect to s3, please check openpitrix s3 service status, error: %v", err)
-		}
-
-		// "helmapplication" controller
-		if cmOptions.IsControllerEnabled("helmapplication") {
-			reconcileHelmApp := &helmapplication.ReconcileHelmApplication{}
-			addControllerWithSetup(mgr, "helmapplication", reconcileHelmApp)
-		}
-
-		// "helmapplicationversion" controller
-		if cmOptions.IsControllerEnabled("helmapplicationversion") {
-			reconcileHelmAppVersion := &helmapplication.ReconcileHelmApplicationVersion{}
-			addControllerWithSetup(mgr, "helmapplicationversion", reconcileHelmAppVersion)
-		}
-	}
-
-	// "helmrelease" controller
-	if cmOptions.IsControllerEnabled("helmrelease") {
-		reconcileHelmRelease := &helmrelease.ReconcileHelmRelease{
-			// nil interface is valid value.
-			StorageClient: opS3Client,
-			KsFactory:     informerFactory.KubeSphereSharedInformerFactory(),
-			WaitTime:      cmOptions.OpenPitrixOptions.ReleaseControllerOptions.WaitTime,
-			MaxConcurrent: cmOptions.OpenPitrixOptions.ReleaseControllerOptions.MaxConcurrent,
-			StopChan:      stopCh,
-		}
-		addControllerWithSetup(mgr, "helmrelease", reconcileHelmRelease)
-	}
-
-	// "helm" controller
-	if cmOptions.IsControllerEnabled("helm") {
-		if !cmOptions.GatewayOptions.IsEmpty() {
-			helmReconciler := &helm.Reconciler{GatewayOptions: cmOptions.GatewayOptions}
-			addControllerWithSetup(mgr, "helm", helmReconciler)
-		}
 	}
 
 	// "application" controller
@@ -359,28 +270,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 			kubernetesInformer.Storage().V1().CSIDrivers(),
 		)
 		addController(mgr, "storagecapability", storageCapabilityController)
-	}
-
-	// "pvcautoresizer" controller
-	monitoringOptionsEnable := cmOptions.MonitoringOptions != nil && len(cmOptions.MonitoringOptions.Endpoint) != 0
-	if monitoringOptionsEnable {
-		if cmOptions.IsControllerEnabled("pvcautoresizer") {
-			if err := runners.SetupIndexer(mgr, false); err != nil {
-				return err
-			}
-			promClient, err := runners.NewPrometheusClient(cmOptions.MonitoringOptions.Endpoint, &config.HTTPClientConfig{})
-			if err != nil {
-				return err
-			}
-			pvcAutoResizerController := runners.NewPVCAutoresizer(
-				promClient,
-				mgr.GetClient(),
-				ctrl.Log.WithName("pvcautoresizer"),
-				1*time.Minute,
-				mgr.GetEventRecorderFor("pvcautoresizer"),
-			)
-			addController(mgr, "pvcautoresizer", pvcAutoResizerController)
-		}
 	}
 
 	// "pvcworkloadrestarter" controller
@@ -523,35 +412,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 			ippoolController := ippool.NewIPPoolController(kubesphereInformer, kubernetesInformer, client.Kubernetes(),
 				client.KubeSphere(), ippoolProvider)
 			addController(mgr, "ippool", ippoolController)
-		}
-	}
-
-	// "notification" controller
-	if cmOptions.IsControllerEnabled("notification") {
-		notificationController, err := notification.NewController(client.Kubernetes(), mgr.GetClient(), mgr.GetCache())
-		if err != nil {
-			klog.Fatalf("Unable to create Notification controller: %v", err)
-		}
-		addController(mgr, "notification", notificationController)
-	}
-
-	// controllers for alerting
-	alertingOptionsEnable := cmOptions.AlertingOptions != nil && (cmOptions.AlertingOptions.PrometheusEndpoint != "" || cmOptions.AlertingOptions.ThanosRulerEndpoint != "")
-	if alertingOptionsEnable && prometheus.MonitorModuleEnable(cmOptions.MonitoringOptions) {
-		// "rulegroup" controller
-		if cmOptions.IsControllerEnabled("rulegroup") {
-			rulegroupReconciler := &alerting.RuleGroupReconciler{}
-			addControllerWithSetup(mgr, "rulegroup", rulegroupReconciler)
-		}
-		// "clusterrulegroup" controller
-		if cmOptions.IsControllerEnabled("clusterrulegroup") {
-			clusterrulegroupReconciler := &alerting.ClusterRuleGroupReconciler{}
-			addControllerWithSetup(mgr, "clusterrulegroup", clusterrulegroupReconciler)
-		}
-		// "globalrulegroup" controller
-		if cmOptions.IsControllerEnabled("globalrulegroup") {
-			globalrulegroupReconciler := &alerting.GlobalRuleGroupReconciler{}
-			addControllerWithSetup(mgr, "globalrulegroup", globalrulegroupReconciler)
 		}
 	}
 

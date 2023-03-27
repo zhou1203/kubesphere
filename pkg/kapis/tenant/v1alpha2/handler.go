@@ -42,35 +42,25 @@ import (
 	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
-	"kubesphere.io/kubesphere/pkg/models/openpitrix"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 	"kubesphere.io/kubesphere/pkg/models/tenant"
 	servererr "kubesphere.io/kubesphere/pkg/server/errors"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/events"
 	"kubesphere.io/kubesphere/pkg/simple/client/logging"
-	meteringclient "kubesphere.io/kubesphere/pkg/simple/client/metering"
-	monitoringclient "kubesphere.io/kubesphere/pkg/simple/client/monitoring"
 )
 
 type tenantHandler struct {
-	tenant          tenant.Interface
-	meteringOptions *meteringclient.Options
+	tenant tenant.Interface
 }
 
 func NewTenantHandler(factory informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface,
 	evtsClient events.Client, loggingClient logging.Client, auditingclient auditing.Client,
 	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer,
-	monitoringclient monitoringclient.Interface, resourceGetter *resourcev1alpha3.ResourceGetter,
-	meteringOptions *meteringclient.Options, opClient openpitrix.Interface) *tenantHandler {
-
-	if meteringOptions == nil || meteringOptions.RetentionDay == "" {
-		meteringOptions = &meteringclient.DefaultMeteringOption
-	}
+	resourceGetter *resourcev1alpha3.ResourceGetter) *tenantHandler {
 
 	return &tenantHandler{
-		tenant:          tenant.New(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, im, authorizer, monitoringclient, resourceGetter, opClient),
-		meteringOptions: meteringOptions,
+		tenant: tenant.New(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, im, authorizer, resourceGetter),
 	}
 }
 
@@ -137,36 +127,6 @@ func (h *tenantHandler) ListNamespaces(req *restful.Request, resp *restful.Respo
 	}
 
 	result, err := h.tenant.ListNamespaces(workspaceMember, workspace, queryParam)
-	if err != nil {
-		api.HandleInternalError(resp, nil, err)
-		return
-	}
-
-	resp.WriteEntity(result)
-}
-
-func (h *tenantHandler) ListDevOpsProjects(req *restful.Request, resp *restful.Response) {
-	workspace := req.PathParameter("workspace")
-	queryParam := query.ParseQueryParameter(req)
-
-	var workspaceMember user.Info
-	if username := req.PathParameter("workspacemember"); username != "" {
-		workspaceMember = &user.DefaultInfo{
-			Name: username,
-		}
-	} else {
-		requestUser, ok := request.UserFrom(req.Request.Context())
-		if !ok {
-			err := fmt.Errorf("cannot obtain user info")
-			klog.Errorln(err)
-			api.HandleForbidden(resp, nil, err)
-			return
-		}
-		workspaceMember = requestUser
-	}
-
-	result, err := h.tenant.ListDevOpsProjects(workspaceMember, workspace, queryParam)
-
 	if err != nil {
 		api.HandleInternalError(resp, nil, err)
 		return

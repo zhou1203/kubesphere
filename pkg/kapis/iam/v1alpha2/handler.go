@@ -204,12 +204,8 @@ func (h *iamHandler) RetrieveMemberRoleTemplates(request *restful.Request, respo
 	}
 
 	if strings.HasSuffix(request.Request.URL.Path, iamv1alpha2.ResourcesPluralRole) {
-		namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
+		namespace := request.PathParameter("namespace")
 		username := request.PathParameter("member")
-		if err != nil {
-			api.HandleInternalError(response, request, err)
-			return
-		}
 
 		user, err := h.im.DescribeUser(username)
 		if err != nil {
@@ -292,11 +288,7 @@ func appendGlobalRoleAnnotation(user *iamv1alpha2.User, globalRole string) *iamv
 }
 
 func (h *iamHandler) ListRoles(request *restful.Request, response *restful.Response) {
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
 	queryParam := query.ParseQueryParameter(request)
 	result, err := h.am.ListRoles(namespace, queryParam)
@@ -329,12 +321,7 @@ func (h *iamHandler) ListGlobalRoles(req *restful.Request, resp *restful.Respons
 
 func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *restful.Response) {
 	queryParam := query.ParseQueryParameter(request)
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
 	queryParam.Filters[iamv1alpha2.ScopeNamespace] = query.Value(namespace)
 	result, err := h.im.ListUsers(queryParam)
@@ -348,11 +335,7 @@ func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *re
 
 func (h *iamHandler) DescribeNamespaceMember(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("member")
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
 	queryParam := query.New()
 	queryParam.Filters[query.FieldNames] = query.Value(username)
@@ -786,15 +769,10 @@ func (h *iamHandler) DescribeWorkspaceRole(request *restful.Request, response *r
 }
 
 func (h *iamHandler) CreateNamespaceRole(request *restful.Request, response *restful.Response) {
-
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
 	var role rbacv1.Role
-	err = request.ReadEntity(&role)
+	err := request.ReadEntity(&role)
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
@@ -812,13 +790,9 @@ func (h *iamHandler) CreateNamespaceRole(request *restful.Request, response *res
 func (h *iamHandler) DeleteNamespaceRole(request *restful.Request, response *restful.Response) {
 	role := request.PathParameter("role")
 
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
-	err = h.am.DeleteNamespaceRole(namespace, role)
+	err := h.am.DeleteNamespaceRole(namespace, role)
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
@@ -829,14 +803,10 @@ func (h *iamHandler) DeleteNamespaceRole(request *restful.Request, response *res
 
 func (h *iamHandler) UpdateNamespaceRole(request *restful.Request, response *restful.Response) {
 	roleName := request.PathParameter("role")
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
 	var role rbacv1.Role
-	err = request.ReadEntity(&role)
+	err := request.ReadEntity(&role)
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
@@ -919,14 +889,10 @@ func (h *iamHandler) UpdateWorkspaceMember(request *restful.Request, response *r
 
 func (h *iamHandler) CreateNamespaceMembers(request *restful.Request, response *restful.Response) {
 
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
 	var members []Member
-	err = request.ReadEntity(&members)
+	err := request.ReadEntity(&members)
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
@@ -945,14 +911,10 @@ func (h *iamHandler) CreateNamespaceMembers(request *restful.Request, response *
 
 func (h *iamHandler) UpdateNamespaceMember(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("member")
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
 	var member Member
-	err = request.ReadEntity(&member)
+	err := request.ReadEntity(&member)
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
@@ -975,13 +937,9 @@ func (h *iamHandler) UpdateNamespaceMember(request *restful.Request, response *r
 
 func (h *iamHandler) RemoveNamespaceMember(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("member")
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
-	err = h.am.RemoveUserFromNamespace(username, namespace)
+	err := h.am.RemoveUserFromNamespace(username, namespace)
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
@@ -1083,11 +1041,7 @@ func (h *iamHandler) ListClusterMembers(request *restful.Request, response *rest
 
 func (h *iamHandler) DescribeNamespaceRole(request *restful.Request, response *restful.Response) {
 	roleName := request.PathParameter("role")
-	namespace, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespace := request.PathParameter("namespace")
 
 	role, err := h.am.GetNamespaceRole(namespace, roleName)
 	if err != nil {
@@ -1096,14 +1050,6 @@ func (h *iamHandler) DescribeNamespaceRole(request *restful.Request, response *r
 	}
 
 	response.WriteEntity(role)
-}
-
-// resolve the namespace which controlled by the devops project
-func (h *iamHandler) resolveNamespace(namespace string, devops string) (string, error) {
-	if devops == "" {
-		return namespace, nil
-	}
-	return h.am.GetDevOpsRelatedNamespace(devops)
 }
 
 func (h *iamHandler) PatchWorkspaceRole(request *restful.Request, response *restful.Response) {
@@ -1149,14 +1095,10 @@ func (h *iamHandler) PatchGlobalRole(request *restful.Request, response *restful
 
 func (h *iamHandler) PatchNamespaceRole(request *restful.Request, response *restful.Response) {
 	roleName := request.PathParameter("role")
-	namespaceName, err := h.resolveNamespace(request.PathParameter("namespace"), request.PathParameter("devops"))
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
+	namespaceName := request.PathParameter("namespace")
 
 	var role rbacv1.Role
-	err = request.ReadEntity(&role)
+	err := request.ReadEntity(&role)
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
 		return

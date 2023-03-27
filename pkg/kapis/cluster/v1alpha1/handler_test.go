@@ -220,7 +220,7 @@ func TestGeranteAgentDeployment(t *testing.T) {
 	k8sclient := k8sfake.NewSimpleClientset(service)
 	ksclient := fake.NewSimpleClientset(cluster)
 
-	informersFactory := informers.NewInformerFactories(k8sclient, ksclient, nil, nil, nil, nil)
+	informersFactory := informers.NewInformerFactories(k8sclient, ksclient, nil, nil, nil)
 
 	informersFactory.KubernetesSharedInformerFactory().Core().V1().Services().Informer().GetIndexer().Add(service)
 	informersFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters().Informer().GetIndexer().Add(cluster)
@@ -328,7 +328,7 @@ func TestValidateKubeConfig(t *testing.T) {
 	k8sclient := k8sfake.NewSimpleClientset(service)
 	ksclient := fake.NewSimpleClientset(cluster)
 
-	informersFactory := informers.NewInformerFactories(k8sclient, ksclient, nil, nil, nil, nil)
+	informersFactory := informers.NewInformerFactories(k8sclient, ksclient, nil, nil, nil)
 
 	informersFactory.KubernetesSharedInformerFactory().Core().V1().Services().Informer().GetIndexer().Add(service)
 	informersFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters().Informer().GetIndexer().Add(cluster)
@@ -387,7 +387,7 @@ func TestValidateMemberClusterConfiguration(t *testing.T) {
 	k8sclient := k8sfake.NewSimpleClientset(service)
 	ksclient := fake.NewSimpleClientset(cluster)
 
-	informersFactory := informers.NewInformerFactories(k8sclient, ksclient, nil, nil, nil, nil)
+	informersFactory := informers.NewInformerFactories(k8sclient, ksclient, nil, nil, nil)
 
 	informersFactory.KubernetesSharedInformerFactory().Core().V1().Services().Informer().GetIndexer().Add(service)
 	informersFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters().Informer().GetIndexer().Add(cluster)

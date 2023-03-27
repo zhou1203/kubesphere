@@ -198,42 +198,6 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Returns(http.StatusOK, api.StatusOK, errors.None).
 		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceMemberTag}))
 
-	ws.Route(ws.GET("/devops/{devops}/members").
-		To(handler.ListNamespaceMembers).
-		Doc("List all members in the specified devops project.").
-		Param(ws.PathParameter("devops", "devops project name")).
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []interface{}{iamv1alpha2.User{}}}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectMemberTag}))
-	ws.Route(ws.GET("/devops/{devops}/members/{member}").
-		To(handler.DescribeNamespaceMember).
-		Doc("Retrieve devops project member details.").
-		Param(ws.PathParameter("devops", "devops project name")).
-		Param(ws.PathParameter("member", "devops project member's username")).
-		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.User{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectMemberTag}))
-	ws.Route(ws.POST("/devops/{devops}/members").
-		To(handler.CreateNamespaceMembers).
-		Doc("Add members to the DevOps project in bulk.").
-		Reads([]Member{}).
-		Returns(http.StatusOK, api.StatusOK, []Member{}).
-		Param(ws.PathParameter("devops", "devops project name")).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectMemberTag}))
-	ws.Route(ws.PUT("/devops/{devops}/members/{member}").
-		To(handler.UpdateNamespaceMember).
-		Doc("Update the role bind of the member.").
-		Reads(Member{}).
-		Returns(http.StatusOK, api.StatusOK, Member{}).
-		Param(ws.PathParameter("devops", "devops project name")).
-		Param(ws.PathParameter("member", "devops project member's username")).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectMemberTag}))
-	ws.Route(ws.DELETE("/devops/{devops}/members/{member}").
-		To(handler.RemoveNamespaceMember).
-		Doc("Delete a member from the DevOps project.").
-		Param(ws.PathParameter("devops", "devops project name")).
-		Param(ws.PathParameter("member", "devops project member's username")).
-		Returns(http.StatusOK, api.StatusOK, errors.None).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectMemberTag}))
-
 	// globalroles
 	ws.Route(ws.POST("/globalroles").
 		To(handler.CreateGlobalRole).
@@ -426,57 +390,6 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Returns(http.StatusOK, api.StatusOK, rbacv1.Role{}).
 		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceRoleTag}))
 
-	// roles
-	ws.Route(ws.POST("/devops/{devops}/roles").
-		To(handler.CreateNamespaceRole).
-		Doc("Create role in the specified devops project.").
-		Deprecate().
-		Reads(rbacv1.Role{}).
-		Param(ws.PathParameter("devops", "devops project name")).
-		Returns(http.StatusOK, api.StatusOK, rbacv1.Role{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectRoleTag}))
-	ws.Route(ws.DELETE("/devops/{devops}/roles/{role}").
-		To(handler.DeleteNamespaceRole).
-		Doc("Delete role in the specified devops project.").
-		Deprecate().
-		Param(ws.PathParameter("devops", "devops project name")).
-		Param(ws.PathParameter("role", "role name")).
-		Returns(http.StatusOK, api.StatusOK, errors.None).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectRoleTag}))
-	ws.Route(ws.PUT("/devops/{devops}/roles/{role}").
-		To(handler.UpdateNamespaceRole).
-		Doc("Update devops project role.").
-		Deprecate().
-		Param(ws.PathParameter("devops", "devops project name")).
-		Param(ws.PathParameter("role", "role name")).
-		Reads(rbacv1.Role{}).
-		Returns(http.StatusOK, api.StatusOK, rbacv1.Role{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectRoleTag}))
-	ws.Route(ws.PATCH("/devops/{devops}/roles/{role}").
-		To(handler.PatchNamespaceRole).
-		Doc("Patch devops project role.").
-		Deprecate().
-		Param(ws.PathParameter("devops", "devops project name")).
-		Param(ws.PathParameter("role", "role name")).
-		Reads(rbacv1.Role{}).
-		Returns(http.StatusOK, api.StatusOK, rbacv1.Role{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectRoleTag}))
-	ws.Route(ws.GET("/devops/{devops}/roles").
-		To(handler.ListRoles).
-		Doc("List all roles in the specified devops project.").
-		Deprecate().
-		Param(ws.PathParameter("devops", "devops project name")).
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []interface{}{rbacv1.Role{}}}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectRoleTag}))
-	ws.Route(ws.GET("/devops/{devops}/roles/{role}").
-		To(handler.DescribeNamespaceRole).
-		Doc("Retrieve devops project role details.").
-		Deprecate().
-		Param(ws.PathParameter("devops", "devops project name")).
-		Param(ws.PathParameter("role", "role name")).
-		Returns(http.StatusOK, api.StatusOK, rbacv1.Role{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectRoleTag}))
-
 	ws.Route(ws.GET("/users/{user}/globalroles").
 		To(handler.RetrieveMemberRoleTemplates).
 		Doc("Retrieve user's global role templates.").
@@ -503,13 +416,6 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Param(ws.PathParameter("member", "namespace member's username")).
 		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []interface{}{rbacv1.Role{}}}).
 		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceRoleTag}))
-	ws.Route(ws.GET("/devops/{devops}/members/{member}/roles").
-		To(handler.RetrieveMemberRoleTemplates).
-		Doc("Retrieve member's role templates in devops project.").
-		Param(ws.PathParameter("devops", "devops project name")).
-		Param(ws.PathParameter("member", "devops project member's username")).
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []interface{}{rbacv1.Role{}}}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.DevOpsProjectRoleTag}))
 
 	ws.Route(ws.GET("/workspaces/{workspace}/groups").
 		To(handler.ListWorkspaceGroups).

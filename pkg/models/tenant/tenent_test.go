@@ -494,7 +494,7 @@ func prepare() Interface {
 	ksClient := fakeks.NewSimpleClientset([]runtime.Object{testWorkspace, systemWorkspace}...)
 	k8sClient := fakek8s.NewSimpleClientset([]runtime.Object{testNamespace, kubesphereSystem}...)
 	istioClient := fakeistio.NewSimpleClientset()
-	fakeInformerFactory := informers.NewInformerFactories(k8sClient, ksClient, istioClient, nil, nil, nil)
+	fakeInformerFactory := informers.NewInformerFactories(k8sClient, ksClient, istioClient, nil, nil)
 
 	for _, workspace := range workspaces {
 		fakeInformerFactory.KubeSphereSharedInformerFactory().Tenant().V1alpha1().
@@ -541,8 +541,8 @@ func prepare() Interface {
 			RoleBindings().Informer().GetIndexer().Add(roleBinding)
 	}
 
-	amOperator := am.NewOperator(ksClient, k8sClient, fakeInformerFactory, nil)
+	amOperator := am.NewOperator(ksClient, k8sClient, fakeInformerFactory)
 	authorizer := rbac.NewRBACAuthorizer(amOperator)
 
-	return New(fakeInformerFactory, k8sClient, ksClient, nil, nil, nil, amOperator, nil, authorizer, nil, nil, nil)
+	return New(fakeInformerFactory, k8sClient, ksClient, nil, nil, nil, amOperator, nil, authorizer, nil)
 }

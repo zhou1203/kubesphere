@@ -22,8 +22,6 @@ import (
 )
 
 type Event struct {
-	// Devops project
-	Devops string
 	// The workspace which this audit event happened
 	Workspace string
 	// The cluster which this audit event happened

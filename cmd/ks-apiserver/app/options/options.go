@@ -28,7 +28,6 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 
-	openpitrixv1 "kubesphere.io/kubesphere/pkg/kapis/openpitrix/v1"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 
 	"k8s.io/client-go/kubernetes/scheme"
@@ -42,19 +41,14 @@ import (
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/informers"
 	genericoptions "kubesphere.io/kubesphere/pkg/server/options"
-	"kubesphere.io/kubesphere/pkg/simple/client/alerting"
 	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 
-	"kubesphere.io/kubesphere/pkg/simple/client/devops/jenkins"
 	eventsclient "kubesphere.io/kubesphere/pkg/simple/client/events/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	esclient "kubesphere.io/kubesphere/pkg/simple/client/logging/elasticsearch"
-	"kubesphere.io/kubesphere/pkg/simple/client/monitoring/metricsserver"
-	"kubesphere.io/kubesphere/pkg/simple/client/monitoring/prometheus"
 	"kubesphere.io/kubesphere/pkg/simple/client/s3"
 	fakes3 "kubesphere.io/kubesphere/pkg/simple/client/s3/fake"
-	"kubesphere.io/kubesphere/pkg/simple/client/sonarqube"
 )
 
 type ServerRunOptions struct {
@@ -87,18 +81,13 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
 	s.KubernetesOptions.AddFlags(fss.FlagSet("kubernetes"), s.KubernetesOptions)
 	s.AuthenticationOptions.AddFlags(fss.FlagSet("authentication"), s.AuthenticationOptions)
 	s.AuthorizationOptions.AddFlags(fss.FlagSet("authorization"), s.AuthorizationOptions)
-	s.DevopsOptions.AddFlags(fss.FlagSet("devops"), s.DevopsOptions)
-	s.SonarQubeOptions.AddFlags(fss.FlagSet("sonarqube"), s.SonarQubeOptions)
 	s.S3Options.AddFlags(fss.FlagSet("s3"), s.S3Options)
-	s.OpenPitrixOptions.AddFlags(fss.FlagSet("openpitrix"), s.OpenPitrixOptions)
 	s.NetworkOptions.AddFlags(fss.FlagSet("network"), s.NetworkOptions)
 	s.ServiceMeshOptions.AddFlags(fss.FlagSet("servicemesh"), s.ServiceMeshOptions)
-	s.MonitoringOptions.AddFlags(fss.FlagSet("monitoring"), s.MonitoringOptions)
 	s.LoggingOptions.AddFlags(fss.FlagSet("logging"), s.LoggingOptions)
 	s.MultiClusterOptions.AddFlags(fss.FlagSet("multicluster"), s.MultiClusterOptions)
 	s.EventsOptions.AddFlags(fss.FlagSet("events"), s.EventsOptions)
 	s.AuditingOptions.AddFlags(fss.FlagSet("auditing"), s.AuditingOptions)
-	s.AlertingOptions.AddFlags(fss.FlagSet("alerting"), s.AlertingOptions)
 
 	fs = fss.FlagSet("klog")
 	local := flag.NewFlagSet("klog", flag.ExitOnError)
@@ -119,29 +108,17 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		Config: s.Config,
 	}
 
-	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions, prometheus.MonitorModuleEnable(s.MonitoringOptions))
+	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions)
 	if err != nil {
 		return nil, err
 	}
 	apiServer.KubernetesClient = kubernetesClient
 
 	informerFactory := informers.NewInformerFactories(kubernetesClient.Kubernetes(), kubernetesClient.KubeSphere(),
-		kubernetesClient.Istio(), kubernetesClient.Snapshot(), kubernetesClient.ApiExtensions(), kubernetesClient.Prometheus())
+		kubernetesClient.Istio(), kubernetesClient.Snapshot(), kubernetesClient.ApiExtensions())
 	apiServer.InformerFactory = informerFactory
 
 	apiServer.ClusterClient = clusterclient.NewClusterClient(informerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
-
-	if !prometheus.MonitorModuleEnable(s.MonitoringOptions) {
-		klog.Warning("monitoring configuration is empty, disable monitor component")
-	} else {
-		monitoringClient, err := prometheus.NewPrometheus(s.MonitoringOptions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to prometheus, please check prometheus status, error: %v", err)
-		}
-		apiServer.MonitoringClient = monitoringClient
-	}
-
-	apiServer.MetricsClient = metricsserver.NewMetricsClient(kubernetesClient.Kubernetes(), s.KubernetesOptions)
 
 	if s.LoggingOptions.Host != "" {
 		loggingClient, err := esclient.NewClient(s.LoggingOptions)
@@ -161,22 +138,6 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 			}
 			apiServer.S3Client = s3Client
 		}
-	}
-
-	if s.DevopsOptions.Host != "" {
-		devopsClient, err := jenkins.NewDevopsClient(s.DevopsOptions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to jenkins, please check jenkins status, error: %v", err)
-		}
-		apiServer.DevopsClient = devopsClient
-	}
-
-	if s.SonarQubeOptions.Host != "" {
-		sonarClient, err := sonarqube.NewSonarQubeClient(s.SonarQubeOptions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connecto to sonarqube, please check sonarqube status, error: %v", err)
-		}
-		apiServer.SonarClient = sonarqube.NewSonar(sonarClient.SonarQube())
 	}
 
 	// If debug mode is on or CacheOptions is nil, will create a fake cache.
@@ -213,16 +174,6 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		}
 		apiServer.AuditingClient = auditingClient
 	}
-
-	if s.AlertingOptions != nil && (s.AlertingOptions.PrometheusEndpoint != "" || s.AlertingOptions.ThanosRulerEndpoint != "") {
-		alertingClient, err := alerting.NewRuleClient(s.AlertingOptions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to init alerting client: %v", err)
-		}
-		apiServer.AlertingClient = alertingClient
-	}
-
-	apiServer.OpenpitrixClient = openpitrixv1.NewOpenpitrixClient(informerFactory, apiServer.KubernetesClient.KubeSphere(), s.OpenPitrixOptions, apiServer.ClusterClient)
 
 	server := &http.Server{
 		Addr: fmt.Sprintf(":%d", s.GenericServerRunOptions.InsecurePort),

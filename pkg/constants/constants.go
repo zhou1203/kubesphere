@@ -19,35 +19,27 @@ package constants
 const (
 	APIVersion = "v1alpha1"
 
-	KubeSystemNamespace           = "kube-system"
-	OpenPitrixNamespace           = "openpitrix-system"
-	KubesphereDevOpsNamespace     = "kubesphere-devops-system"
-	IstioNamespace                = "istio-system"
-	KubeSphereMonitoringNamespace = "kubesphere-monitoring-system"
-	KubeSphereLoggingNamespace    = "kubesphere-logging-system"
-	KubeSphereNamespace           = "kubesphere-system"
-	KubeSphereControlNamespace    = "kubesphere-controls-system"
-	PorterNamespace               = "porter-system"
-	IngressControllerNamespace    = KubeSphereControlNamespace
-	AdminUserName                 = "admin"
-	IngressControllerPrefix       = "kubesphere-router-"
-	KubeSphereConfigName          = "kubesphere-config"
-	KubeSphereConfigMapDataKey    = "kubesphere.yaml"
+	KubeSystemNamespace        = "kube-system"
+	IstioNamespace             = "istio-system"
+	KubeSphereLoggingNamespace = "kubesphere-logging-system"
+	KubeSphereNamespace        = "kubesphere-system"
+	KubeSphereControlNamespace = "kubesphere-controls-system"
+	PorterNamespace            = "porter-system"
+	IngressControllerNamespace = KubeSphereControlNamespace
+	AdminUserName              = "admin"
+	IngressControllerPrefix    = "kubesphere-router-"
+	KubeSphereConfigName       = "kubesphere-config"
+	KubeSphereConfigMapDataKey = "kubesphere.yaml"
 
-	ClusterNameLabelKey               = "kubesphere.io/cluster"
-	NameLabelKey                      = "kubesphere.io/name"
-	WorkspaceLabelKey                 = "kubesphere.io/workspace"
-	NamespaceLabelKey                 = "kubesphere.io/namespace"
-	DisplayNameAnnotationKey          = "kubesphere.io/alias-name"
-	ChartRepoIdLabelKey               = "application.kubesphere.io/repo-id"
-	ChartApplicationIdLabelKey        = "application.kubesphere.io/app-id"
-	ChartApplicationVersionIdLabelKey = "application.kubesphere.io/app-version-id"
-	CategoryIdLabelKey                = "application.kubesphere.io/app-category-id"
-	DanglingAppCleanupKey             = "application.kubesphere.io/app-cleanup"
-	CreatorAnnotationKey              = "kubesphere.io/creator"
-	UsernameLabelKey                  = "kubesphere.io/username"
-	DevOpsProjectLabelKey             = "kubesphere.io/devopsproject"
-	KubefedManagedLabel               = "kubefed.io/managed"
+	ClusterNameLabelKey      = "kubesphere.io/cluster"
+	NameLabelKey             = "kubesphere.io/name"
+	WorkspaceLabelKey        = "kubesphere.io/workspace"
+	NamespaceLabelKey        = "kubesphere.io/namespace"
+	DisplayNameAnnotationKey = "kubesphere.io/alias-name"
+	DanglingAppCleanupKey    = "application.kubesphere.io/app-cleanup"
+	CreatorAnnotationKey     = "kubesphere.io/creator"
+	UsernameLabelKey         = "kubesphere.io/username"
+	KubefedManagedLabel      = "kubefed.io/managed"
 
 	UserNameHeader = "X-Token-Username"
 
@@ -55,36 +47,17 @@ const (
 	UserTag           = "User"
 	GroupTag          = "Group"
 
-	WorkspaceMemberTag     = "Workspace Member"
-	DevOpsProjectMemberTag = "DevOps Project Member"
-	NamespaceMemberTag     = "Namespace Member"
-	ClusterMemberTag       = "Cluster Member"
+	WorkspaceMemberTag = "Workspace Member"
+	NamespaceMemberTag = "Namespace Member"
+	ClusterMemberTag   = "Cluster Member"
 
-	GlobalRoleTag        = "Global Role"
-	ClusterRoleTag       = "Cluster Role"
-	WorkspaceRoleTag     = "Workspace Role"
-	DevOpsProjectRoleTag = "DevOps Project Role"
-	NamespaceRoleTag     = "Namespace Role"
-
-	OpenpitrixTag            = "OpenPitrix Resources"
-	OpenpitrixAppInstanceTag = "App Instance"
-	OpenpitrixAppTemplateTag = "App Template"
-	OpenpitrixCategoryTag    = "Category"
-	OpenpitrixAttachmentTag  = "Attachment"
-	OpenpitrixRepositoryTag  = "Repository"
-	OpenpitrixManagementTag  = "App Management"
-	// HelmRepoMinSyncPeriod min sync period in seconds
-	HelmRepoMinSyncPeriod = 180
+	GlobalRoleTag    = "Global Role"
+	ClusterRoleTag   = "Cluster Role"
+	WorkspaceRoleTag = "Workspace Role"
+	NamespaceRoleTag = "Namespace Role"
 
 	CleanupDanglingAppOngoing = "ongoing"
 	CleanupDanglingAppDone    = "done"
-
-	DevOpsCredentialTag  = "DevOps Credential"
-	DevOpsPipelineTag    = "DevOps Pipeline"
-	DevOpsWebhookTag     = "DevOps Webhook"
-	DevOpsJenkinsfileTag = "DevOps Jenkinsfile"
-	DevOpsScmTag         = "DevOps Scm"
-	DevOpsJenkinsTag     = "Jenkins"
 
 	ToolboxTag      = "Toolbox"
 	RegistryTag     = "Docker Registry"
@@ -92,10 +65,9 @@ const (
 	TerminalTag     = "Terminal"
 	MultiClusterTag = "Multi-cluster"
 
-	WorkspaceTag     = "Workspace"
-	NamespaceTag     = "Namespace"
-	DevOpsProjectTag = "DevOps Project"
-	UserResourceTag  = "User's Resources"
+	WorkspaceTag    = "Workspace"
+	NamespaceTag    = "Namespace"
+	UserResourceTag = "User's Resources"
 
 	NamespaceResourcesTag = "Namespace Resources"
 	ClusterResourcesTag   = "Cluster Resources"
@@ -135,15 +107,10 @@ const (
 
 	ApplicationName    = "app.kubernetes.io/name"
 	ApplicationVersion = "app.kubernetes.io/version"
-	AlertingTag        = "Alerting"
-
-	NotificationTag             = "Notification"
-	NotificationSecretNamespace = "kubesphere-monitoring-federated"
-	NotificationManagedLabel    = "notification.kubesphere.io/managed"
 
 	DashboardTag = "Dashboard"
 )
 
 var (
-	SystemNamespaces = []string{KubeSphereNamespace, KubeSphereLoggingNamespace, KubeSphereMonitoringNamespace, OpenPitrixNamespace, KubeSystemNamespace, IstioNamespace, KubesphereDevOpsNamespace, PorterNamespace}
+	SystemNamespaces = []string{KubeSphereNamespace, KubeSphereLoggingNamespace, KubeSystemNamespace, IstioNamespace, PorterNamespace}
 )

@@ -5,6 +5,8 @@ module kubesphere.io/utils
 go 1.19
 
 require (
+	code.cloudfoundry.org/bytefmt v0.0.0-20190710193110-1eb035ffe2b6
+	github.com/aws/aws-sdk-go v1.44.187
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.11.1
 	k8s.io/api v0.26.1
@@ -13,7 +15,9 @@ require (
 	k8s.io/client-go v0.26.1
 	k8s.io/klog/v2 v2.90.0
 	k8s.io/utils v0.0.0-20230202215443-34013725500c
+	kubesphere.io/api v0.0.0
 	sigs.k8s.io/kustomize/api v0.12.1
+	sigs.k8s.io/yaml v1.3.0
 )
 
 require (
@@ -68,12 +72,12 @@ require (
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
 	github.com/lib/pq v1.10.7 // indirect
@@ -94,6 +98,7 @@ require (
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/onsi/ginkgo/v2 v2.8.1 // indirect
 	github.com/onsi/gomega v1.27.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -104,6 +109,7 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.39.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
+	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/rubenv/sql-migrate v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
@@ -140,10 +146,13 @@ require (
 	k8s.io/kube-openapi v0.0.0-20230224204730-66828de6f33b // indirect
 	k8s.io/kubectl v0.26.1 // indirect
 	oras.land/oras-go v1.2.2 // indirect
+	sigs.k8s.io/controller-runtime v0.14.4 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/kyaml v0.13.9 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
-	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace kubesphere.io/utils => ../utils
+replace (
+	kubesphere.io/api => ../api
+	kubesphere.io/utils => ../utils
+)

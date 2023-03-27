@@ -44,7 +44,7 @@ type FakeClient struct {
 
 	ApiExtensionClient apiextensionsclient.Interface
 
-	prometheusClient promresourcesclient.Interface
+	//prometheusClient promresourcesclient.Interface
 
 	MasterURL string
 
@@ -63,7 +63,6 @@ func NewFakeClientSets(k8sClient kubernetes.Interface, discoveryClient *discover
 		IstioClient:        istioClient,
 		SnapshotClient:     snapshotClient,
 		ApiExtensionClient: apiextensionsclient,
-		prometheusClient:   prometheusClient,
 		MasterURL:          masterURL,
 		KubeConfig:         kubeConfig,
 	}
@@ -93,9 +92,9 @@ func (n *FakeClient) Discovery() discovery.DiscoveryInterface {
 	return n.DiscoveryClient
 }
 
-func (n *FakeClient) Prometheus() promresourcesclient.Interface {
-	return n.prometheusClient
-}
+//func (n *FakeClient) Prometheus() promresourcesclient.Interface {
+//	return n.prometheusClient
+//}
 
 func (n *FakeClient) Master() string {
 	return n.MasterURL

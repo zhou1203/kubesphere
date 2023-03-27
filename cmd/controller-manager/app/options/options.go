@@ -22,9 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"kubesphere.io/kubesphere/pkg/simple/client/alerting"
-	"kubesphere.io/kubesphere/pkg/simple/client/monitoring/prometheus"
-
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -38,30 +35,24 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
-	"kubesphere.io/kubesphere/pkg/simple/client/devops/jenkins"
 	"kubesphere.io/kubesphere/pkg/simple/client/gateway"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
 	"kubesphere.io/kubesphere/pkg/simple/client/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/network"
-	"kubesphere.io/kubesphere/pkg/simple/client/openpitrix"
 	"kubesphere.io/kubesphere/pkg/simple/client/s3"
 	"kubesphere.io/kubesphere/pkg/simple/client/servicemesh"
 )
 
 type KubeSphereControllerManagerOptions struct {
 	KubernetesOptions     *k8s.KubernetesOptions
-	DevopsOptions         *jenkins.Options
 	S3Options             *s3.Options
 	AuthenticationOptions *authentication.Options
 	LdapOptions           *ldapclient.Options
-	OpenPitrixOptions     *openpitrix.Options
 	NetworkOptions        *network.Options
 	MultiClusterOptions   *multicluster.Options
 	ServiceMeshOptions    *servicemesh.Options
 	GatewayOptions        *gateway.Options
-	MonitoringOptions     *prometheus.Options
-	AlertingOptions       *alerting.Options
 	LeaderElect           bool
 	LeaderElection        *leaderelection.LeaderElectionConfig
 	WebhookCertDir        string
@@ -92,16 +83,13 @@ type KubeSphereControllerManagerOptions struct {
 func NewKubeSphereControllerManagerOptions() *KubeSphereControllerManagerOptions {
 	s := &KubeSphereControllerManagerOptions{
 		KubernetesOptions:     k8s.NewKubernetesOptions(),
-		DevopsOptions:         jenkins.NewDevopsOptions(),
 		S3Options:             s3.NewS3Options(),
 		LdapOptions:           ldapclient.NewOptions(),
-		OpenPitrixOptions:     openpitrix.NewOptions(),
 		NetworkOptions:        network.NewNetworkOptions(),
 		MultiClusterOptions:   multicluster.NewOptions(),
 		ServiceMeshOptions:    servicemesh.NewServiceMeshOptions(),
 		AuthenticationOptions: authentication.NewOptions(),
 		GatewayOptions:        gateway.NewGatewayOptions(),
-		AlertingOptions:       alerting.NewAlertingOptions(),
 		LeaderElection: &leaderelection.LeaderElectionConfig{
 			LeaseDuration: 30 * time.Second,
 			RenewDeadline: 15 * time.Second,
@@ -120,16 +108,13 @@ func (s *KubeSphereControllerManagerOptions) Flags(allControllerNameSelectors []
 	fss := cliflag.NamedFlagSets{}
 
 	s.KubernetesOptions.AddFlags(fss.FlagSet("kubernetes"), s.KubernetesOptions)
-	s.DevopsOptions.AddFlags(fss.FlagSet("devops"), s.DevopsOptions)
 	s.S3Options.AddFlags(fss.FlagSet("s3"), s.S3Options)
 	s.AuthenticationOptions.AddFlags(fss.FlagSet("authentication"), s.AuthenticationOptions)
 	s.LdapOptions.AddFlags(fss.FlagSet("ldap"), s.LdapOptions)
-	s.OpenPitrixOptions.AddFlags(fss.FlagSet("openpitrix"), s.OpenPitrixOptions)
 	s.NetworkOptions.AddFlags(fss.FlagSet("network"), s.NetworkOptions)
 	s.MultiClusterOptions.AddFlags(fss.FlagSet("multicluster"), s.MultiClusterOptions)
 	s.ServiceMeshOptions.AddFlags(fss.FlagSet("servicemesh"), s.ServiceMeshOptions)
 	s.GatewayOptions.AddFlags(fss.FlagSet("gateway"), s.GatewayOptions)
-	s.AlertingOptions.AddFlags(fss.FlagSet("alerting"), s.AlertingOptions)
 	fs := fss.FlagSet("leaderelection")
 	s.bindLeaderElectionFlags(s.LeaderElection, fs)
 
@@ -168,14 +153,11 @@ func (s *KubeSphereControllerManagerOptions) Flags(allControllerNameSelectors []
 // Validate Options and Genetic Options
 func (o *KubeSphereControllerManagerOptions) Validate(allControllerNameSelectors []string) []error {
 	var errs []error
-	errs = append(errs, o.DevopsOptions.Validate()...)
 	errs = append(errs, o.KubernetesOptions.Validate()...)
 	errs = append(errs, o.S3Options.Validate()...)
-	errs = append(errs, o.OpenPitrixOptions.Validate()...)
 	errs = append(errs, o.NetworkOptions.Validate()...)
 	errs = append(errs, o.LdapOptions.Validate()...)
 	errs = append(errs, o.MultiClusterOptions.Validate()...)
-	errs = append(errs, o.AlertingOptions.Validate()...)
 
 	// genetic option: application-selector
 	if len(o.ApplicationSelector) != 0 {
@@ -238,15 +220,10 @@ func (s *KubeSphereControllerManagerOptions) bindLeaderElectionFlags(l *leaderel
 // When misconfigured, the app should just crash directly
 func (s *KubeSphereControllerManagerOptions) MergeConfig(cfg *controllerconfig.Config) {
 	s.KubernetesOptions = cfg.KubernetesOptions
-	s.DevopsOptions = cfg.DevopsOptions
 	s.S3Options = cfg.S3Options
 	s.AuthenticationOptions = cfg.AuthenticationOptions
 	s.LdapOptions = cfg.LdapOptions
-	s.OpenPitrixOptions = cfg.OpenPitrixOptions
 	s.NetworkOptions = cfg.NetworkOptions
 	s.MultiClusterOptions = cfg.MultiClusterOptions
 	s.ServiceMeshOptions = cfg.ServiceMeshOptions
-	s.GatewayOptions = cfg.GatewayOptions
-	s.MonitoringOptions = cfg.MonitoringOptions
-	s.AlertingOptions = cfg.AlertingOptions
 }

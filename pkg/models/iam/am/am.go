@@ -20,8 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"kubesphere.io/kubesphere/pkg/simple/client/devops"
-
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,7 +35,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-	devopslisters "kubesphere.io/kubesphere/pkg/client/listers/devops/v1alpha3"
 	"kubesphere.io/kubesphere/pkg/informers"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/clusterrole"
@@ -86,9 +83,7 @@ type AccessManagementInterface interface {
 	RemoveUserFromNamespace(username string, namespace string) error
 	CreateClusterRoleBinding(username string, role string) error
 	RemoveUserFromCluster(username string) error
-	GetDevOpsRelatedNamespace(devops string) (string, error)
 	GetNamespaceControlledWorkspace(namespace string) (string, error)
-	GetDevOpsControlledWorkspace(devops string) (string, error)
 	PatchNamespaceRole(namespace string, role *rbacv1.Role) (*rbacv1.Role, error)
 	PatchClusterRole(clusterRole *rbacv1.ClusterRole) (*rbacv1.ClusterRole, error)
 	ListGroupRoleBindings(workspace string, query *query.Query) ([]*rbacv1.RoleBinding, error)
@@ -108,13 +103,12 @@ type amOperator struct {
 	workspaceRoleGetter        resourcev1alpha3.Interface
 	clusterRoleGetter          resourcev1alpha3.Interface
 	roleGetter                 resourcev1alpha3.Interface
-	devopsProjectLister        devopslisters.DevOpsProjectLister
 	namespaceLister            listersv1.NamespaceLister
 	ksclient                   kubesphere.Interface
 	k8sclient                  kubernetes.Interface
 }
 
-func NewReadOnlyOperator(factory informers.InformerFactory, devopsClient devops.Interface) AccessManagementInterface {
+func NewReadOnlyOperator(factory informers.InformerFactory) AccessManagementInterface {
 	operator := &amOperator{
 		globalRoleBindingGetter:    globalrolebinding.New(factory.KubeSphereSharedInformerFactory()),
 		workspaceRoleBindingGetter: workspacerolebinding.New(factory.KubeSphereSharedInformerFactory()),
@@ -126,15 +120,12 @@ func NewReadOnlyOperator(factory informers.InformerFactory, devopsClient devops.
 		roleGetter:                 role.New(factory.KubernetesSharedInformerFactory()),
 		namespaceLister:            factory.KubernetesSharedInformerFactory().Core().V1().Namespaces().Lister(),
 	}
-	// no more CRDs of devopsprojects if the DevOps module was disabled
-	if devopsClient != nil {
-		operator.devopsProjectLister = factory.KubeSphereSharedInformerFactory().Devops().V1alpha3().DevOpsProjects().Lister()
-	}
+
 	return operator
 }
 
-func NewOperator(ksClient kubesphere.Interface, k8sClient kubernetes.Interface, factory informers.InformerFactory, devopsClient devops.Interface) AccessManagementInterface {
-	amOperator := NewReadOnlyOperator(factory, devopsClient).(*amOperator)
+func NewOperator(ksClient kubesphere.Interface, k8sClient kubernetes.Interface, factory informers.InformerFactory) AccessManagementInterface {
+	amOperator := NewReadOnlyOperator(factory).(*amOperator)
 	amOperator.ksclient = ksClient
 	amOperator.k8sclient = k8sClient
 	return amOperator
@@ -997,23 +988,6 @@ func (am *amOperator) GetClusterRole(name string) (*rbacv1.ClusterRole, error) {
 	}
 	return obj.(*rbacv1.ClusterRole), nil
 }
-func (am *amOperator) GetDevOpsRelatedNamespace(devops string) (string, error) {
-	devopsProject, err := am.devopsProjectLister.Get(devops)
-	if err != nil {
-		klog.Error(err)
-		return "", err
-	}
-	return devopsProject.Status.AdminNamespace, nil
-}
-
-func (am *amOperator) GetDevOpsControlledWorkspace(devops string) (string, error) {
-	devopsProject, err := am.devopsProjectLister.Get(devops)
-	if err != nil {
-		klog.Error(err)
-		return "", err
-	}
-	return devopsProject.Labels[tenantv1alpha1.WorkspaceLabel], nil
-}
 
 func (am *amOperator) GetNamespaceControlledWorkspace(namespace string) (string, error) {
 	ns, err := am.namespaceLister.Get(namespace)
@@ -1090,23 +1064,6 @@ func (am *amOperator) ListGroupRoleBindings(workspace string, query *query.Query
 		for _, obj := range roleBindings.Items {
 			roleBinding := obj.(*rbacv1.RoleBinding)
 			result = append(result, roleBinding)
-		}
-	}
-	if am.devopsProjectLister != nil {
-		devOpsProjects, err := am.devopsProjectLister.List(labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: workspace}))
-		if err != nil {
-			return nil, err
-		}
-		for _, devOpsProject := range devOpsProjects {
-			roleBindings, err := am.roleBindingGetter.List(devOpsProject.Name, query)
-			if err != nil {
-				klog.Error(err)
-				return nil, err
-			}
-			for _, obj := range roleBindings.Items {
-				roleBinding := obj.(*rbacv1.RoleBinding)
-				result = append(result, roleBinding)
-			}
 		}
 	}
 	return result, nil

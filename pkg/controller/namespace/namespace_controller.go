@@ -152,13 +152,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}
 		}
 	}
-	// Initialize roles for devops/project namespaces if created by kubesphere
-	_, hasDevOpsProjectLabel := namespace.Labels[constants.DevOpsProjectLabelKey]
-	if hasDevOpsProjectLabel || hasWorkspaceLabel {
-		if err := r.initRoles(rootCtx, logger, namespace); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
 
 	r.Recorder.Event(namespace, corev1.EventTypeNormal, controllerutils.SuccessSynced, controllerutils.MessageResourceSynced)
 	return ctrl.Result{}, nil
@@ -238,14 +231,9 @@ func (r *Reconciler) deleteGateway(ctx context.Context, logger logr.Logger, name
 func (r *Reconciler) initRoles(ctx context.Context, logger logr.Logger, namespace *corev1.Namespace) error {
 	var templates iamv1alpha2.RoleBaseList
 	var labelKey string
-	// filtering initial roles by label
-	if namespace.Labels[constants.DevOpsProjectLabelKey] != "" {
-		// scope.kubesphere.io/devops: ""
-		labelKey = fmt.Sprintf(iamv1alpha2.ScopeLabelFormat, iamv1alpha2.ScopeDevOps)
-	} else {
-		// scope.kubesphere.io/namespace: ""
-		labelKey = fmt.Sprintf(iamv1alpha2.ScopeLabelFormat, iamv1alpha2.ScopeNamespace)
-	}
+
+	// scope.kubesphere.io/namespace: ""
+	labelKey = fmt.Sprintf(iamv1alpha2.ScopeLabelFormat, iamv1alpha2.ScopeNamespace)
 
 	if err := r.List(ctx, &templates, client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{labelKey: ""})}); err != nil {
 		logger.Error(err, "list role bases failed")

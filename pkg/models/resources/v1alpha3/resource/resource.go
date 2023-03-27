@@ -33,10 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-	devopsv1alpha3 "kubesphere.io/api/devops/v1alpha3"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	networkv1alpha1 "kubesphere.io/api/network/v1alpha1"
-	notificationv2beta2 "kubesphere.io/api/notification/v2beta2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 	typesv1beta1 "kubesphere.io/api/types/v1beta1"
@@ -55,7 +53,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/daemonset"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/dashboard"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/deployment"
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/devops"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/federatedapplication"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/federatedconfigmap"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/federateddeployment"
@@ -76,7 +73,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/namespace"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/networkpolicy"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/node"
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/notification"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/persistentvolumeclaim"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/pod"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/role"
@@ -129,7 +125,6 @@ func NewResourceGetter(factory informers.InformerFactory, cache cache.Cache) *Re
 
 	// kubesphere resources
 	namespacedResourceGetters[networkv1alpha1.SchemeGroupVersion.WithResource(networkv1alpha1.ResourcePluralIPPool)] = ippool.New(factory.KubeSphereSharedInformerFactory(), factory.KubernetesSharedInformerFactory())
-	clusterResourceGetters[devopsv1alpha3.SchemeGroupVersion.WithResource(devopsv1alpha3.ResourcePluralDevOpsProject)] = devops.New(factory.KubeSphereSharedInformerFactory())
 	clusterResourceGetters[tenantv1alpha1.SchemeGroupVersion.WithResource(tenantv1alpha1.ResourcePluralWorkspace)] = workspace.New(factory.KubeSphereSharedInformerFactory())
 	clusterResourceGetters[tenantv1alpha1.SchemeGroupVersion.WithResource(tenantv1alpha2.ResourcePluralWorkspaceTemplate)] = workspacetemplate.New(factory.KubeSphereSharedInformerFactory())
 	clusterResourceGetters[iamv1alpha2.SchemeGroupVersion.WithResource(iamv1alpha2.ResourcesPluralGlobalRole)] = globalrole.New(factory.KubeSphereSharedInformerFactory())
@@ -143,11 +138,6 @@ func NewResourceGetter(factory informers.InformerFactory, cache cache.Cache) *Re
 	clusterResourceGetters[rbacv1.SchemeGroupVersion.WithResource(iamv1alpha2.ResourcesPluralClusterRole)] = clusterrole.New(factory.KubernetesSharedInformerFactory())
 	clusterResourceGetters[rbacv1.SchemeGroupVersion.WithResource(iamv1alpha2.ResourcesPluralClusterRoleBinding)] = clusterrolebinding.New(factory.KubernetesSharedInformerFactory())
 	clusterResourceGetters[clusterv1alpha1.SchemeGroupVersion.WithResource(clusterv1alpha1.ResourcesPluralCluster)] = cluster.New(factory.KubeSphereSharedInformerFactory())
-	clusterResourceGetters[notificationv2beta2.SchemeGroupVersion.WithResource(notificationv2beta2.ResourcesPluralNotificationManager)] = notification.NewNotificationManagerGetter(factory.KubeSphereSharedInformerFactory())
-	clusterResourceGetters[notificationv2beta2.SchemeGroupVersion.WithResource(notificationv2beta2.ResourcesPluralConfig)] = notification.NewNotificationConfigGetter(factory.KubeSphereSharedInformerFactory())
-	clusterResourceGetters[notificationv2beta2.SchemeGroupVersion.WithResource(notificationv2beta2.ResourcesPluralReceiver)] = notification.NewNotificationReceiverGetter(factory.KubeSphereSharedInformerFactory())
-	clusterResourceGetters[notificationv2beta2.SchemeGroupVersion.WithResource(notificationv2beta2.ResourcesPluralRouter)] = notification.NewNotificationRouterGetter(factory.KubeSphereSharedInformerFactory())
-	clusterResourceGetters[notificationv2beta2.SchemeGroupVersion.WithResource(notificationv2beta2.ResourcesPluralSilence)] = notification.NewNotificationSilenceGetter(factory.KubeSphereSharedInformerFactory())
 	clusterResourceGetters[monitoringdashboardv1alpha2.GroupVersion.WithResource("clusterdashboards")] = clusterdashboard.New(cache)
 
 	// federated resources
