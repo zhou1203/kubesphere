@@ -44,11 +44,7 @@ import (
 	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 
-	eventsclient "kubesphere.io/kubesphere/pkg/simple/client/events/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	esclient "kubesphere.io/kubesphere/pkg/simple/client/logging/elasticsearch"
-	"kubesphere.io/kubesphere/pkg/simple/client/s3"
-	fakes3 "kubesphere.io/kubesphere/pkg/simple/client/s3/fake"
 )
 
 type ServerRunOptions struct {
@@ -81,12 +77,7 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
 	s.KubernetesOptions.AddFlags(fss.FlagSet("kubernetes"), s.KubernetesOptions)
 	s.AuthenticationOptions.AddFlags(fss.FlagSet("authentication"), s.AuthenticationOptions)
 	s.AuthorizationOptions.AddFlags(fss.FlagSet("authorization"), s.AuthorizationOptions)
-	s.S3Options.AddFlags(fss.FlagSet("s3"), s.S3Options)
-	s.NetworkOptions.AddFlags(fss.FlagSet("network"), s.NetworkOptions)
-	s.ServiceMeshOptions.AddFlags(fss.FlagSet("servicemesh"), s.ServiceMeshOptions)
-	s.LoggingOptions.AddFlags(fss.FlagSet("logging"), s.LoggingOptions)
 	s.MultiClusterOptions.AddFlags(fss.FlagSet("multicluster"), s.MultiClusterOptions)
-	s.EventsOptions.AddFlags(fss.FlagSet("events"), s.EventsOptions)
 	s.AuditingOptions.AddFlags(fss.FlagSet("auditing"), s.AuditingOptions)
 
 	fs = fss.FlagSet("klog")
@@ -114,58 +105,22 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 	}
 	apiServer.KubernetesClient = kubernetesClient
 
-	informerFactory := informers.NewInformerFactories(kubernetesClient.Kubernetes(), kubernetesClient.KubeSphere(),
-		kubernetesClient.Istio(), kubernetesClient.Snapshot(), kubernetesClient.ApiExtensions())
+	informerFactory := informers.NewInformerFactories(kubernetesClient.Kubernetes(), kubernetesClient.KubeSphere(), kubernetesClient.ApiExtensions())
 	apiServer.InformerFactory = informerFactory
 
 	apiServer.ClusterClient = clusterclient.NewClusterClient(informerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
 
-	if s.LoggingOptions.Host != "" {
-		loggingClient, err := esclient.NewClient(s.LoggingOptions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to elasticsearch, please check elasticsearch status, error: %v", err)
-		}
-		apiServer.LoggingClient = loggingClient
-	}
-
-	if s.S3Options.Endpoint != "" {
-		if s.S3Options.Endpoint == fakeInterface && s.DebugMode {
-			apiServer.S3Client = fakes3.NewFakeS3()
-		} else {
-			s3Client, err := s3.NewS3Client(s.S3Options)
-			if err != nil {
-				return nil, fmt.Errorf("failed to connect to s3, please check s3 service status, error: %v", err)
-			}
-			apiServer.S3Client = s3Client
-		}
-	}
-
-	// If debug mode is on or CacheOptions is nil, will create a fake cache.
-	if s.CacheOptions.Type != "" {
-		if s.DebugMode {
-			s.CacheOptions.Type = cache.DefaultCacheType
-		}
-		cacheClient, err := cache.New(s.CacheOptions, stopCh)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create cache, error: %v", err)
-		}
-		apiServer.CacheClient = cacheClient
-	} else {
-		s.CacheOptions = &cache.Options{Type: cache.DefaultCacheType}
-		// fake cache has no error to return
-		cacheClient, _ := cache.New(s.CacheOptions, stopCh)
-		apiServer.CacheClient = cacheClient
+	// If CacheOptions is nil, will create a fake cache.
+	if s.CacheOptions.Type == "" {
+		s.CacheOptions.Type = cache.DefaultCacheType
 		klog.Warning("ks-apiserver starts without cache provided, it will use in memory cache. " +
 			"This may cause inconsistencies when running ks-apiserver with multiple replicas, and memory leak risk")
 	}
-
-	if s.EventsOptions.Host != "" {
-		eventsClient, err := eventsclient.NewClient(s.EventsOptions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to elasticsearch, please check elasticsearch status, error: %v", err)
-		}
-		apiServer.EventsClient = eventsClient
+	cacheClient, err := cache.New(s.CacheOptions, stopCh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cache, error: %v", err)
 	}
+	apiServer.CacheClient = cacheClient
 
 	if s.AuditingOptions.Host != "" {
 		auditingClient, err := auditingclient.NewClient(s.AuditingOptions)

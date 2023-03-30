@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -41,30 +40,22 @@ import (
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
-	typesv1beta1 "kubesphere.io/api/types/v1beta1"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	auditingv1alpha1 "kubesphere.io/kubesphere/pkg/api/auditing/v1alpha1"
-	eventsv1alpha1 "kubesphere.io/kubesphere/pkg/api/events/v1alpha1"
-	loggingv1alpha2 "kubesphere.io/kubesphere/pkg/api/logging/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/models/auditing"
-	"kubesphere.io/kubesphere/pkg/models/events"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
-	"kubesphere.io/kubesphere/pkg/models/logging"
 	resources "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3"
 	resourcesv1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
-	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
-	eventsclient "kubesphere.io/kubesphere/pkg/simple/client/events"
-	loggingclient "kubesphere.io/kubesphere/pkg/simple/client/logging"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	jsonpatchutil "kubesphere.io/kubesphere/pkg/utils/josnpatchutil"
 	"kubesphere.io/kubesphere/pkg/utils/stringutils"
@@ -82,12 +73,8 @@ type Interface interface {
 	PatchWorkspaceTemplate(user user.Info, workspace string, data json.RawMessage) (*tenantv1alpha2.WorkspaceTemplate, error)
 	DescribeWorkspaceTemplate(workspace string) (*tenantv1alpha2.WorkspaceTemplate, error)
 	ListNamespaces(user user.Info, workspace string, query *query.Query) (*api.ListResult, error)
-	ListFederatedNamespaces(info user.Info, workspace string, param *query.Query) (*api.ListResult, error)
 	CreateNamespace(workspace string, namespace *corev1.Namespace) (*corev1.Namespace, error)
 	ListWorkspaceClusters(workspace string) (*api.ListResult, error)
-	Events(user user.Info, queryParam *eventsv1alpha1.Query) (*eventsv1alpha1.APIResponse, error)
-	QueryLogs(user user.Info, query *loggingv1alpha2.Query) (*loggingv1alpha2.APIResponse, error)
-	ExportLogs(user user.Info, query *loggingv1alpha2.Query, writer io.Writer) error
 	Auditing(user user.Info, queryParam *auditingv1alpha1.Query) (*auditingv1alpha1.APIResponse, error)
 	DescribeNamespace(workspace, namespace string) (*corev1.Namespace, error)
 	DeleteNamespace(workspace, namespace string) error
@@ -107,25 +94,22 @@ type tenantOperator struct {
 	k8sclient      kubernetes.Interface
 	ksclient       kubesphere.Interface
 	resourceGetter *resourcesv1alpha3.ResourceGetter
-	events         events.Interface
-	lo             logging.LoggingOperator
 	auditing       auditing.Interface
 	clusterClient  clusterclient.ClusterClients
 }
 
-func New(informers informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface, evtsClient eventsclient.Client, loggingClient loggingclient.Client, auditingclient auditingclient.Client, am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer, resourceGetter *resourcev1alpha3.ResourceGetter) Interface {
+func New(informers informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface,
+	auditingclient auditingclient.Client, am am.AccessManagementInterface, im im.IdentityManagementInterface,
+	authorizer authorizer.Authorizer) Interface {
 	return &tenantOperator{
 		am:             am,
 		im:             im,
 		authorizer:     authorizer,
-		resourceGetter: resourcesv1alpha3.NewResourceGetter(informers, nil),
+		resourceGetter: resourcesv1alpha3.NewResourceGetter(informers),
 		k8sclient:      k8sclient,
 		ksclient:       ksclient,
-		events:         events.NewEventsOperator(evtsClient),
-		lo:             logging.NewLoggingOperator(loggingClient),
 		auditing:       auditing.NewEventsOperator(auditingclient),
-		//mo:             monitoring.NewMonitoringOperator(monitoringclient, nil, k8sclient, informers, resourceGetter),
-		clusterClient: clusterclient.NewClusterClient(informers.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters()),
+		clusterClient:  clusterclient.NewClusterClient(informers.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters()),
 	}
 }
 
@@ -260,75 +244,6 @@ func (t *tenantOperator) ListWorkspaceTemplates(user user.Info, queryParam *quer
 		return resources.DefaultObjectMetaCompare(left.(*tenantv1alpha2.WorkspaceTemplate).ObjectMeta, right.(*tenantv1alpha2.WorkspaceTemplate).ObjectMeta, field)
 	}, func(workspace runtime.Object, filter query.Filter) bool {
 		return resources.DefaultObjectMetaFilter(workspace.(*tenantv1alpha2.WorkspaceTemplate).ObjectMeta, filter)
-	})
-
-	return result, nil
-}
-
-func (t *tenantOperator) ListFederatedNamespaces(user user.Info, workspace string, queryParam *query.Query) (*api.ListResult, error) {
-
-	nsScope := request.ClusterScope
-	if workspace != "" {
-		nsScope = request.WorkspaceScope
-		// filter by workspace
-		queryParam.Filters[query.FieldLabel] = query.Value(fmt.Sprintf("%s=%s", tenantv1alpha1.WorkspaceLabel, workspace))
-	}
-
-	listNS := authorizer.AttributesRecord{
-		User:            user,
-		Verb:            "list",
-		Workspace:       workspace,
-		Resource:        "namespaces",
-		ResourceRequest: true,
-		ResourceScope:   nsScope,
-	}
-
-	decision, _, err := t.authorizer.Authorize(listNS)
-	if err != nil {
-		klog.Error(err)
-		return nil, err
-	}
-
-	// allowed to list all namespaces in the specified scope
-	if decision == authorizer.DecisionAllow {
-		result, err := t.resourceGetter.List(typesv1beta1.ResourcePluralFederatedNamespace, "", queryParam)
-		if err != nil {
-			klog.Error(err)
-			return nil, err
-		}
-		return result, nil
-	}
-
-	// retrieving associated resources through role binding
-	roleBindings, err := t.am.ListRoleBindings(user.GetName(), user.GetGroups(), "")
-	if err != nil {
-		klog.Error(err)
-		return nil, err
-	}
-
-	namespaces := make([]runtime.Object, 0)
-	for _, roleBinding := range roleBindings {
-		obj, err := t.resourceGetter.Get(typesv1beta1.ResourcePluralFederatedNamespace, roleBinding.Namespace, roleBinding.Namespace)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				continue
-			}
-			klog.Error(err)
-			return nil, err
-		}
-		namespace := obj.(*typesv1beta1.FederatedNamespace)
-		// label matching selector, remove duplicate entity
-		if queryParam.Selector().Matches(labels.Set(namespace.Labels)) &&
-			!contains(namespaces, namespace) {
-			namespaces = append(namespaces, namespace)
-		}
-	}
-
-	// use default pagination search logic
-	result := resources.DefaultList(namespaces, queryParam, func(left runtime.Object, right runtime.Object, field query.Field) bool {
-		return resources.DefaultObjectMetaCompare(left.(*typesv1beta1.FederatedNamespace).ObjectMeta, right.(*typesv1beta1.FederatedNamespace).ObjectMeta, field)
-	}, func(object runtime.Object, filter query.Filter) bool {
-		return resources.DefaultObjectMetaFilter(object.(*typesv1beta1.FederatedNamespace).ObjectMeta, filter)
 	})
 
 	return result, nil
@@ -504,13 +419,13 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 						clusterNames.Insert(cn)
 					}
 				} else if cluster := clusterValue["clusters"]; cluster != nil {
-					clusterRefrences := []typesv1beta1.GenericClusterReference{}
-					err := mapstructure.Decode(cluster, &clusterRefrences)
+					var clusterReferences []tenantv1alpha2.GenericClusterReference
+					err := mapstructure.Decode(cluster, &clusterReferences)
 					if err != nil {
 						klog.Error(err)
 						return nil, err
 					}
-					for _, v := range clusterRefrences {
+					for _, v := range clusterReferences {
 						clusterNames.Insert(v.Name)
 					}
 				}
@@ -789,256 +704,6 @@ func (t *tenantOperator) listIntersectedWorkspaces(workspaces, workspaceSubstrs 
 		iWorkspaces = append(iWorkspaces, ws)
 	}
 	return iWorkspaces, nil
-}
-
-func (t *tenantOperator) Events(user user.Info, queryParam *eventsv1alpha1.Query) (*eventsv1alpha1.APIResponse, error) {
-	iNamespaces, err := t.listIntersectedNamespaces(
-		stringutils.Split(queryParam.WorkspaceFilter, ","),
-		stringutils.Split(queryParam.WorkspaceSearch, ","),
-		stringutils.Split(queryParam.InvolvedObjectNamespaceFilter, ","),
-		stringutils.Split(queryParam.InvolvedObjectNamespaceSearch, ","))
-	if err != nil {
-		klog.Error(err)
-		return nil, err
-	}
-
-	namespaceCreateTimeMap := make(map[string]time.Time)
-
-	for _, ns := range iNamespaces {
-		listEvts := authorizer.AttributesRecord{
-			User:            user,
-			Verb:            "list",
-			APIGroup:        "",
-			APIVersion:      "v1",
-			Namespace:       ns.Name,
-			Resource:        "events",
-			ResourceRequest: true,
-			ResourceScope:   request.NamespaceScope,
-		}
-		decision, _, err := t.authorizer.Authorize(listEvts)
-		if err != nil {
-			klog.Error(err)
-			return nil, err
-		}
-		if decision == authorizer.DecisionAllow {
-			namespaceCreateTimeMap[ns.Name] = ns.CreationTimestamp.Time
-		}
-	}
-	// If there are no ns and ws query conditions,
-	// those events with empty `involvedObject.namespace` will also be listed when user can list all events
-	if len(queryParam.WorkspaceFilter) == 0 && len(queryParam.InvolvedObjectNamespaceFilter) == 0 &&
-		len(queryParam.WorkspaceSearch) == 0 && len(queryParam.InvolvedObjectNamespaceSearch) == 0 {
-		listEvts := authorizer.AttributesRecord{
-			User:            user,
-			Verb:            "list",
-			APIGroup:        "",
-			APIVersion:      "v1",
-			Resource:        "events",
-			ResourceRequest: true,
-			ResourceScope:   request.ClusterScope,
-		}
-		decision, _, err := t.authorizer.Authorize(listEvts)
-		if err != nil {
-			klog.Error(err)
-			return nil, err
-		}
-		if decision == authorizer.DecisionAllow {
-			namespaceCreateTimeMap[""] = time.Time{}
-		}
-	}
-
-	return t.events.Events(queryParam, func(filter *eventsclient.Filter) {
-		filter.InvolvedObjectNamespaceMap = namespaceCreateTimeMap
-	})
-}
-
-func (t *tenantOperator) QueryLogs(user user.Info, query *loggingv1alpha2.Query) (*loggingv1alpha2.APIResponse, error) {
-	iNamespaces, err := t.listIntersectedNamespaces(nil, nil,
-		stringutils.Split(query.NamespaceFilter, ","),
-		stringutils.Split(query.NamespaceSearch, ","))
-	if err != nil {
-		klog.Error(err)
-		return nil, err
-	}
-
-	namespaceCreateTimeMap := make(map[string]*time.Time)
-
-	var isGlobalAdmin bool
-
-	// If it is a global admin, the user can view logs from any namespace.
-	podLogs := authorizer.AttributesRecord{
-		User:            user,
-		Verb:            "get",
-		APIGroup:        "",
-		APIVersion:      "v1",
-		Resource:        "pods",
-		Subresource:     "log",
-		ResourceRequest: true,
-		ResourceScope:   request.ClusterScope,
-	}
-	decision, _, err := t.authorizer.Authorize(podLogs)
-	if err != nil {
-		klog.Error(err)
-		return nil, err
-	}
-	if decision == authorizer.DecisionAllow {
-		isGlobalAdmin = true
-		if query.NamespaceFilter != "" || query.NamespaceSearch != "" {
-			for _, ns := range iNamespaces {
-				namespaceCreateTimeMap[ns.Name] = nil
-			}
-		}
-	}
-
-	// If it is a regular user, this user can only view logs of namespaces the user belongs to.
-	if !isGlobalAdmin {
-		for _, ns := range iNamespaces {
-			podLogs := authorizer.AttributesRecord{
-				User:            user,
-				Verb:            "get",
-				APIGroup:        "",
-				APIVersion:      "v1",
-				Namespace:       ns.Name,
-				Resource:        "pods",
-				Subresource:     "log",
-				ResourceRequest: true,
-				ResourceScope:   request.NamespaceScope,
-			}
-			decision, _, err := t.authorizer.Authorize(podLogs)
-			if err != nil {
-				klog.Error(err)
-				return nil, err
-			}
-			if decision == authorizer.DecisionAllow {
-				namespaceCreateTimeMap[ns.Name] = &ns.CreationTimestamp.Time
-			}
-		}
-	}
-
-	sf := loggingclient.SearchFilter{
-		NamespaceFilter: namespaceCreateTimeMap,
-		WorkloadSearch:  stringutils.Split(query.WorkloadSearch, ","),
-		WorkloadFilter:  stringutils.Split(query.WorkloadFilter, ","),
-		PodSearch:       stringutils.Split(query.PodSearch, ","),
-		PodFilter:       stringutils.Split(query.PodFilter, ","),
-		ContainerSearch: stringutils.Split(query.ContainerSearch, ","),
-		ContainerFilter: stringutils.Split(query.ContainerFilter, ","),
-		LogSearch:       stringutils.Split(query.LogSearch, ","),
-		Starttime:       query.StartTime,
-		Endtime:         query.EndTime,
-	}
-
-	var ar loggingv1alpha2.APIResponse
-	noHit := !isGlobalAdmin && len(namespaceCreateTimeMap) == 0 ||
-		isGlobalAdmin && len(namespaceCreateTimeMap) == 0 && (query.NamespaceFilter != "" || query.NamespaceSearch != "")
-
-	switch query.Operation {
-	case loggingv1alpha2.OperationStatistics:
-		if noHit {
-			ar.Statistics = &loggingclient.Statistics{}
-		} else {
-			ar, err = t.lo.GetCurrentStats(sf)
-		}
-	case loggingv1alpha2.OperationHistogram:
-		if noHit {
-			ar.Histogram = &loggingclient.Histogram{}
-		} else {
-			ar, err = t.lo.CountLogsByInterval(sf, query.Interval)
-		}
-	default:
-		if noHit {
-			ar.Logs = &loggingclient.Logs{}
-		} else {
-			ar, err = t.lo.SearchLogs(sf, query.From, query.Size, query.Sort)
-		}
-	}
-	return &ar, err
-}
-
-func (t *tenantOperator) ExportLogs(user user.Info, query *loggingv1alpha2.Query, writer io.Writer) error {
-	iNamespaces, err := t.listIntersectedNamespaces(nil, nil,
-		stringutils.Split(query.NamespaceFilter, ","),
-		stringutils.Split(query.NamespaceSearch, ","))
-	if err != nil {
-		klog.Error(err)
-		return err
-	}
-
-	namespaceCreateTimeMap := make(map[string]*time.Time)
-
-	var isGlobalAdmin bool
-
-	// If it is a global admin, the user can view logs from any namespace.
-	podLogs := authorizer.AttributesRecord{
-		User:            user,
-		Verb:            "get",
-		APIGroup:        "",
-		APIVersion:      "v1",
-		Resource:        "pods",
-		Subresource:     "log",
-		ResourceRequest: true,
-		ResourceScope:   request.ClusterScope,
-	}
-	decision, _, err := t.authorizer.Authorize(podLogs)
-	if err != nil {
-		klog.Error(err)
-		return err
-	}
-	if decision == authorizer.DecisionAllow {
-		isGlobalAdmin = true
-		if query.NamespaceFilter != "" || query.NamespaceSearch != "" {
-			for _, ns := range iNamespaces {
-				namespaceCreateTimeMap[ns.Name] = nil
-			}
-		}
-	}
-
-	// If it is a regular user, this user can only view logs of namespaces the user belongs to.
-	if !isGlobalAdmin {
-		for _, ns := range iNamespaces {
-			podLogs := authorizer.AttributesRecord{
-				User:            user,
-				Verb:            "get",
-				APIGroup:        "",
-				APIVersion:      "v1",
-				Namespace:       ns.Name,
-				Resource:        "pods",
-				Subresource:     "log",
-				ResourceRequest: true,
-				ResourceScope:   request.NamespaceScope,
-			}
-			decision, _, err := t.authorizer.Authorize(podLogs)
-			if err != nil {
-				klog.Error(err)
-				return err
-			}
-			if decision == authorizer.DecisionAllow {
-				namespaceCreateTimeMap[ns.Name] = &ns.CreationTimestamp.Time
-			}
-		}
-	}
-
-	sf := loggingclient.SearchFilter{
-		NamespaceFilter: namespaceCreateTimeMap,
-		WorkloadSearch:  stringutils.Split(query.WorkloadSearch, ","),
-		WorkloadFilter:  stringutils.Split(query.WorkloadFilter, ","),
-		PodSearch:       stringutils.Split(query.PodSearch, ","),
-		PodFilter:       stringutils.Split(query.PodFilter, ","),
-		ContainerSearch: stringutils.Split(query.ContainerSearch, ","),
-		ContainerFilter: stringutils.Split(query.ContainerFilter, ","),
-		LogSearch:       stringutils.Split(query.LogSearch, ","),
-		Starttime:       query.StartTime,
-		Endtime:         query.EndTime,
-	}
-
-	noHit := !isGlobalAdmin && len(namespaceCreateTimeMap) == 0 ||
-		isGlobalAdmin && len(namespaceCreateTimeMap) == 0 && (query.NamespaceFilter != "" || query.NamespaceSearch != "")
-
-	if noHit {
-		return nil
-	} else {
-		return t.lo.ExportLogs(sf, writer)
-	}
 }
 
 func (t *tenantOperator) Auditing(user user.Info, queryParam *auditingv1alpha1.Query) (*auditingv1alpha1.APIResponse, error) {

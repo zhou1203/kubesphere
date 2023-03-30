@@ -23,12 +23,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
@@ -38,10 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/apis"
-
-	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 )
 
 func newUser(name string) *iamv1alpha2.User {
@@ -86,10 +81,8 @@ func TestDoNothing(t *testing.T) {
 	}
 
 	client := runtimefakeclient.NewClientBuilder().WithScheme(sch).WithRuntimeObjects(user).WithRuntimeObjects(loginRecords...).Build()
-	ldap := ldapclient.NewSimpleLdap()
 	c := &Reconciler{
 		Recorder:              &record.FakeRecorder{},
-		LdapClient:            ldap,
 		Logger:                ctrl.Log.WithName("controllers").WithName(controllerName),
 		Client:                client,
 		AuthenticationOptions: authenticateOptions,

@@ -35,24 +35,14 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
-	"kubesphere.io/kubesphere/pkg/simple/client/gateway"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
 	"kubesphere.io/kubesphere/pkg/simple/client/multicluster"
-	"kubesphere.io/kubesphere/pkg/simple/client/network"
-	"kubesphere.io/kubesphere/pkg/simple/client/s3"
-	"kubesphere.io/kubesphere/pkg/simple/client/servicemesh"
 )
 
 type KubeSphereControllerManagerOptions struct {
 	KubernetesOptions     *k8s.KubernetesOptions
-	S3Options             *s3.Options
 	AuthenticationOptions *authentication.Options
-	LdapOptions           *ldapclient.Options
-	NetworkOptions        *network.Options
 	MultiClusterOptions   *multicluster.Options
-	ServiceMeshOptions    *servicemesh.Options
-	GatewayOptions        *gateway.Options
 	LeaderElect           bool
 	LeaderElection        *leaderelection.LeaderElectionConfig
 	WebhookCertDir        string
@@ -83,13 +73,8 @@ type KubeSphereControllerManagerOptions struct {
 func NewKubeSphereControllerManagerOptions() *KubeSphereControllerManagerOptions {
 	s := &KubeSphereControllerManagerOptions{
 		KubernetesOptions:     k8s.NewKubernetesOptions(),
-		S3Options:             s3.NewS3Options(),
-		LdapOptions:           ldapclient.NewOptions(),
-		NetworkOptions:        network.NewNetworkOptions(),
 		MultiClusterOptions:   multicluster.NewOptions(),
-		ServiceMeshOptions:    servicemesh.NewServiceMeshOptions(),
 		AuthenticationOptions: authentication.NewOptions(),
-		GatewayOptions:        gateway.NewGatewayOptions(),
 		LeaderElection: &leaderelection.LeaderElectionConfig{
 			LeaseDuration: 30 * time.Second,
 			RenewDeadline: 15 * time.Second,
@@ -108,13 +93,8 @@ func (s *KubeSphereControllerManagerOptions) Flags(allControllerNameSelectors []
 	fss := cliflag.NamedFlagSets{}
 
 	s.KubernetesOptions.AddFlags(fss.FlagSet("kubernetes"), s.KubernetesOptions)
-	s.S3Options.AddFlags(fss.FlagSet("s3"), s.S3Options)
 	s.AuthenticationOptions.AddFlags(fss.FlagSet("authentication"), s.AuthenticationOptions)
-	s.LdapOptions.AddFlags(fss.FlagSet("ldap"), s.LdapOptions)
-	s.NetworkOptions.AddFlags(fss.FlagSet("network"), s.NetworkOptions)
 	s.MultiClusterOptions.AddFlags(fss.FlagSet("multicluster"), s.MultiClusterOptions)
-	s.ServiceMeshOptions.AddFlags(fss.FlagSet("servicemesh"), s.ServiceMeshOptions)
-	s.GatewayOptions.AddFlags(fss.FlagSet("gateway"), s.GatewayOptions)
 	fs := fss.FlagSet("leaderelection")
 	s.bindLeaderElectionFlags(s.LeaderElection, fs)
 
@@ -154,9 +134,6 @@ func (s *KubeSphereControllerManagerOptions) Flags(allControllerNameSelectors []
 func (o *KubeSphereControllerManagerOptions) Validate(allControllerNameSelectors []string) []error {
 	var errs []error
 	errs = append(errs, o.KubernetesOptions.Validate()...)
-	errs = append(errs, o.S3Options.Validate()...)
-	errs = append(errs, o.NetworkOptions.Validate()...)
-	errs = append(errs, o.LdapOptions.Validate()...)
 	errs = append(errs, o.MultiClusterOptions.Validate()...)
 
 	// genetic option: application-selector
@@ -220,10 +197,6 @@ func (s *KubeSphereControllerManagerOptions) bindLeaderElectionFlags(l *leaderel
 // When misconfigured, the app should just crash directly
 func (s *KubeSphereControllerManagerOptions) MergeConfig(cfg *controllerconfig.Config) {
 	s.KubernetesOptions = cfg.KubernetesOptions
-	s.S3Options = cfg.S3Options
 	s.AuthenticationOptions = cfg.AuthenticationOptions
-	s.LdapOptions = cfg.LdapOptions
-	s.NetworkOptions = cfg.NetworkOptions
 	s.MultiClusterOptions = cfg.MultiClusterOptions
-	s.ServiceMeshOptions = cfg.ServiceMeshOptions
 }

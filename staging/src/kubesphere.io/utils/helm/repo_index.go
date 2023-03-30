@@ -28,13 +28,11 @@ import (
 	helmrepo "helm.sh/helm/v3/pkg/repo"
 	"kubesphere.io/utils/s3"
 	"sigs.k8s.io/yaml"
-
-	"kubesphere.io/api/application/v1alpha1"
 )
 
 const IndexYaml = "index.yaml"
 
-func LoadRepoIndex(ctx context.Context, u string, cred *v1alpha1.HelmRepoCredential) (*helmrepo.IndexFile, error) {
+func LoadRepoIndex(ctx context.Context, u string, cred RepoCredential) (*helmrepo.IndexFile, error) {
 
 	if !strings.HasSuffix(u, "/") {
 		u = fmt.Sprintf("%s/%s", u, IndexYaml)
@@ -70,7 +68,7 @@ func loadIndex(data []byte) (*helmrepo.IndexFile, error) {
 	return i, nil
 }
 
-func loadData(ctx context.Context, u string, cred *v1alpha1.HelmRepoCredential) (*bytes.Buffer, error) {
+func loadData(ctx context.Context, u string, cred RepoCredential) (*bytes.Buffer, error) {
 	parsedURL, err := url.Parse(u)
 	if err != nil {
 		return nil, err
@@ -139,4 +137,26 @@ func parseS3Url(parse *url.URL) (region, endpoint, bucket, path string) {
 	}
 
 	return region, endpoint, bucket, path
+}
+
+type RepoCredential struct {
+	// chart repository username
+	Username string `json:"username,omitempty"`
+	// chart repository password
+	Password string `json:"password,omitempty"`
+	// identify HTTPS client using this SSL certificate file
+	CertFile string `json:"certFile,omitempty"`
+	// identify HTTPS client using this SSL key file
+	KeyFile string `json:"keyFile,omitempty"`
+	// verify certificates of HTTPS-enabled servers using this CA bundle
+	CAFile string `json:"caFile,omitempty"`
+	// skip tls certificate checks for the repository, default is ture
+	InsecureSkipTLSVerify *bool `json:"insecureSkipTLSVerify,omitempty"`
+
+	S3Config `json:",inline"`
+}
+
+type S3Config struct {
+	AccessKeyID     string `json:"accessKeyID,omitempty"`
+	SecretAccessKey string `json:"secretAccessKey,omitempty"`
 }

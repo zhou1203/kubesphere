@@ -17,12 +17,9 @@ limitations under the License.
 package persistentvolumeclaim
 
 import (
-	"strconv"
 	"strings"
 
-	snapshotinformers "github.com/kubernetes-csi/external-snapshotter/client/v4/informers/externalversions"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 
@@ -40,12 +37,11 @@ const (
 )
 
 type persistentVolumeClaimGetter struct {
-	informers         informers.SharedInformerFactory
-	snapshotInformers snapshotinformers.SharedInformerFactory
+	informers informers.SharedInformerFactory
 }
 
-func New(informer informers.SharedInformerFactory, snapshotInformer snapshotinformers.SharedInformerFactory) v1alpha3.Interface {
-	return &persistentVolumeClaimGetter{informers: informer, snapshotInformers: snapshotInformer}
+func New(informer informers.SharedInformerFactory) v1alpha3.Interface {
+	return &persistentVolumeClaimGetter{informers: informer}
 }
 
 func (p *persistentVolumeClaimGetter) Get(namespace, name string) (runtime.Object, error) {
@@ -55,7 +51,6 @@ func (p *persistentVolumeClaimGetter) Get(namespace, name string) (runtime.Objec
 	}
 	// we should never mutate the shared objects from informers
 	pvc = pvc.DeepCopy()
-	p.annotatePVC(pvc)
 	return pvc, nil
 }
 
@@ -68,7 +63,6 @@ func (p *persistentVolumeClaimGetter) List(namespace string, query *query.Query)
 	var result []runtime.Object
 	for _, pvc := range all {
 		pvc = pvc.DeepCopy()
-		p.annotatePVC(pvc)
 		result = append(result, pvc)
 	}
 	return v1alpha3.DefaultList(result, query, p.compare, p.filter), nil
@@ -100,45 +94,4 @@ func (p *persistentVolumeClaimGetter) filter(object runtime.Object, filter query
 	default:
 		return v1alpha3.DefaultObjectMetaFilter(pvc.ObjectMeta, filter)
 	}
-}
-
-func (p *persistentVolumeClaimGetter) annotatePVC(pvc *v1.PersistentVolumeClaim) {
-	inUse := p.countPods(pvc.Name, pvc.Namespace)
-	isSnapshotAllow := p.isSnapshotAllowed(pvc.GetAnnotations()[annotationStorageProvisioner])
-	if pvc.Annotations == nil {
-		pvc.Annotations = make(map[string]string)
-	}
-	pvc.Annotations[annotationInUse] = strconv.FormatBool(inUse)
-	pvc.Annotations[annotationAllowSnapshot] = strconv.FormatBool(isSnapshotAllow)
-}
-
-func (p *persistentVolumeClaimGetter) countPods(name, namespace string) bool {
-	pods, err := p.informers.Core().V1().Pods().Lister().Pods(namespace).List(labels.Everything())
-	if err != nil {
-		return false
-	}
-	for _, pod := range pods {
-		for _, pvc := range pod.Spec.Volumes {
-			if pvc.PersistentVolumeClaim != nil && pvc.PersistentVolumeClaim.ClaimName == name {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (p *persistentVolumeClaimGetter) isSnapshotAllowed(provisioner string) bool {
-	if len(provisioner) == 0 {
-		return false
-	}
-	volumeSnapshotClasses, err := p.snapshotInformers.Snapshot().V1().VolumeSnapshotClasses().Lister().List(labels.Everything())
-	if err != nil {
-		return false
-	}
-	for _, volumeSnapshotClass := range volumeSnapshotClasses {
-		if volumeSnapshotClass.Driver == provisioner {
-			return true
-		}
-	}
-	return false
 }

@@ -38,7 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"kubesphere.io/api/application/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 
 	"kubesphere.io/utils/helm"
@@ -270,7 +269,7 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 	newCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	// TODO support TLS and auth
-	index, err := helm.LoadRepoIndex(newCtx, url, &v1alpha1.HelmRepoCredential{})
+	index, err := helm.LoadRepoIndex(newCtx, url, helm.RepoCredential{})
 	if err != nil {
 		return err
 	}

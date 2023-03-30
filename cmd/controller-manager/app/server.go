@@ -37,12 +37,10 @@ import (
 	"kubesphere.io/kubesphere/pkg/apis"
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
-	"kubesphere.io/kubesphere/pkg/controller/network/webhooks"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/user"
 	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/simple/client/s3"
 	"kubesphere.io/kubesphere/pkg/utils/metrics"
 	"kubesphere.io/kubesphere/pkg/utils/term"
 	"kubesphere.io/kubesphere/pkg/version"
@@ -55,13 +53,8 @@ func NewControllerManagerCommand() *cobra.Command {
 		// make sure LeaderElection is not nil
 		s = &options.KubeSphereControllerManagerOptions{
 			KubernetesOptions:     conf.KubernetesOptions,
-			S3Options:             conf.S3Options,
 			AuthenticationOptions: conf.AuthenticationOptions,
-			LdapOptions:           conf.LdapOptions,
-			NetworkOptions:        conf.NetworkOptions,
 			MultiClusterOptions:   conf.MultiClusterOptions,
-			ServiceMeshOptions:    conf.ServiceMeshOptions,
-			GatewayOptions:        conf.GatewayOptions,
 			LeaderElection:        s.LeaderElection,
 			LeaderElect:           s.LeaderElect,
 			WebhookCertDir:        s.WebhookCertDir,
@@ -164,18 +157,9 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 		return err
 	}
 
-	if s.S3Options != nil && len(s.S3Options.Endpoint) != 0 {
-		_, err = s3.NewS3Client(s.S3Options)
-		if err != nil {
-			return fmt.Errorf("failed to connect to s3, please check s3 service status, error: %v", err)
-		}
-	}
-
 	informerFactory := informers.NewInformerFactories(
 		kubernetesClient.Kubernetes(),
 		kubernetesClient.KubeSphere(),
-		kubernetesClient.Istio(),
-		kubernetesClient.Snapshot(),
 		kubernetesClient.ApiExtensions())
 
 	mgrOptions := manager.Options{
@@ -234,16 +218,12 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 		hookServer.Register("/validate-cluster-kubesphere-io-v1alpha1", &webhook.Admission{Handler: &cluster.ValidatingHandler{Client: mgr.GetClient()}})
 	}
 	hookServer.Register("/validate-email-iam-kubesphere-io-v1alpha2", &webhook.Admission{Handler: &user.EmailValidator{Client: mgr.GetClient()}})
-	hookServer.Register("/validate-network-kubesphere-io-v1alpha1", &webhook.Admission{Handler: &webhooks.ValidatingHandler{C: mgr.GetClient()}})
-	hookServer.Register("/mutate-network-kubesphere-io-v1alpha1", &webhook.Admission{Handler: &webhooks.MutatingHandler{C: mgr.GetClient()}})
-	hookServer.Register("/persistentvolumeclaims", &webhook.Admission{Handler: &webhooks.AccessorHandler{C: mgr.GetClient()}})
 
 	resourceQuotaAdmission, err := quota.NewResourceQuotaAdmission(mgr.GetClient(), mgr.GetScheme())
 	if err != nil {
 		klog.Fatalf("unable to create resource quota admission: %v", err)
 	}
 	hookServer.Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
-
 	hookServer.Register("/convert", &conversion.Webhook{})
 
 	klog.V(2).Info("registering metrics to the webhook server")

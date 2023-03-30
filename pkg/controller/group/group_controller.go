@@ -19,7 +19,6 @@ package group
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
@@ -39,13 +38,10 @@ import (
 
 	iam1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
-	fedv1beta1types "kubesphere.io/api/types/v1beta1"
 
 	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 	iamv1alpha2informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/iam/v1alpha2"
-	fedv1beta1informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/types/v1beta1"
 	iamv1alpha1listers "kubesphere.io/kubesphere/pkg/client/listers/iam/v1alpha2"
-	fedv1beta1lister "kubesphere.io/kubesphere/pkg/client/listers/types/v1beta1"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/controller/utils/controller"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
@@ -61,17 +57,15 @@ const (
 
 type Controller struct {
 	controller.BaseController
-	k8sClient            kubernetes.Interface
-	ksClient             kubesphere.Interface
-	groupInformer        iamv1alpha2informers.GroupInformer
-	groupLister          iamv1alpha1listers.GroupLister
-	recorder             record.EventRecorder
-	federatedGroupLister fedv1beta1lister.FederatedGroupLister
+	k8sClient     kubernetes.Interface
+	ksClient      kubesphere.Interface
+	groupInformer iamv1alpha2informers.GroupInformer
+	groupLister   iamv1alpha1listers.GroupLister
+	recorder      record.EventRecorder
 }
 
 // NewController creates Group Controller instance
-func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface, groupInformer iamv1alpha2informers.GroupInformer,
-	federatedGroupInformer fedv1beta1informers.FederatedGroupInformer) *Controller {
+func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface, groupInformer iamv1alpha2informers.GroupInformer) *Controller {
 
 	klog.V(4).Info("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()
@@ -89,9 +83,6 @@ func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface
 		groupInformer: groupInformer,
 		groupLister:   groupInformer.Lister(),
 	}
-
-	ctl.federatedGroupLister = federatedGroupInformer.Lister()
-	ctl.Synced = append(ctl.Synced, federatedGroupInformer.Informer().HasSynced)
 
 	ctl.Handler = ctl.reconcile
 
@@ -219,12 +210,7 @@ func (c *Controller) reconcile(key string) error {
 		return nil
 	}
 
-	// synchronization through kubefed-controller when multi cluster is enabled
 	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
-	if err = c.multiClusterSync(group); err != nil {
-		klog.Error(err)
-		return err
-	}
 
 	c.recorder.Event(group, corev1.EventTypeNormal, successSynced, messageResourceSynced)
 	return nil
@@ -282,56 +268,5 @@ func (c *Controller) deleteRoleBindings(group *iam1alpha2.Group) error {
 		}
 	}
 
-	return nil
-}
-
-func (c *Controller) multiClusterSync(group *iam1alpha2.Group) error {
-
-	obj, err := c.federatedGroupLister.Get(group.Name)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return c.createFederatedGroup(group)
-		}
-		klog.Error(err)
-		return err
-	}
-
-	if !reflect.DeepEqual(obj.Spec.Template.Labels, group.Labels) {
-
-		obj.Spec.Template.Labels = group.Labels
-
-		if _, err = c.ksClient.TypesV1beta1().FederatedGroups().Update(context.Background(), obj, metav1.UpdateOptions{}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *Controller) createFederatedGroup(group *iam1alpha2.Group) error {
-	federatedGroup := &fedv1beta1types.FederatedGroup{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: group.Name,
-		},
-		Spec: fedv1beta1types.FederatedGroupSpec{
-			Template: fedv1beta1types.GroupTemplate{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: group.Labels,
-				},
-				Spec: group.Spec,
-			},
-			Placement: fedv1beta1types.GenericPlacementFields{
-				ClusterSelector: &metav1.LabelSelector{},
-			},
-		},
-	}
-
-	// must bind group lifecycle
-	err := controllerutil.SetControllerReference(group, federatedGroup, scheme.Scheme)
-	if err != nil {
-		return err
-	}
-	if _, err = c.ksClient.TypesV1beta1().FederatedGroups().Create(context.Background(), federatedGroup, metav1.CreateOptions{}); err != nil {
-		return err
-	}
 	return nil
 }

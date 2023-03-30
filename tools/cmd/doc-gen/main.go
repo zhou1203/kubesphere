@@ -37,12 +37,10 @@ import (
 	"kubesphere.io/kubesphere/pkg/informers"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	iamv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/iam/v1alpha2"
-	networkv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/network/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
 	resourcesv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha3"
-	metricsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/servicemesh/metrics/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha2"
 	tenantv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha3"
 	terminalv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/terminal/v1alpha2"
@@ -112,12 +110,10 @@ func generateSwaggerJson() []byte {
 	urlruntime.Must(iamv1alpha2.AddToContainer(container, nil, nil, group.New(informerFactory, clientsets.KubeSphere(), clientsets.Kubernetes()), nil))
 	urlruntime.Must(operationsv1alpha2.AddToContainer(container, clientsets.Kubernetes()))
 	urlruntime.Must(resourcesv1alpha2.AddToContainer(container, clientsets.Kubernetes(), informerFactory, ""))
-	urlruntime.Must(resourcesv1alpha3.AddToContainer(container, informerFactory, nil))
-	urlruntime.Must(tenantv1alpha2.AddToContainer(container, informerFactory, nil, nil, nil, nil, nil, nil, nil, nil, nil))
-	urlruntime.Must(tenantv1alpha3.AddToContainer(container, informerFactory, nil, nil, nil, nil, nil, nil, nil, nil, nil))
+	urlruntime.Must(resourcesv1alpha3.AddToContainer(container, informerFactory))
+	urlruntime.Must(tenantv1alpha2.AddToContainer(container, informerFactory, nil, nil, nil, nil, nil, nil))
+	urlruntime.Must(tenantv1alpha3.AddToContainer(container, informerFactory, nil, nil, nil, nil, nil, nil))
 	urlruntime.Must(terminalv1alpha2.AddToContainer(container, clientsets.Kubernetes(), nil, nil, nil))
-	urlruntime.Must(metricsv1alpha2.AddToContainer(nil, container, clientsets.Kubernetes(), nil))
-	urlruntime.Must(networkv1alpha2.AddToContainer(container, ""))
 
 	config := restfulspec.Config{
 		WebServices:                   container.RegisteredWebServices(),

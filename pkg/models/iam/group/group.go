@@ -60,7 +60,7 @@ type groupOperator struct {
 
 func New(informers informers.InformerFactory, ksclient kubesphere.Interface, k8sclient kubernetes.Interface) GroupOperator {
 	return &groupOperator{
-		resourceGetter: resourcesv1alpha3.NewResourceGetter(informers, nil),
+		resourceGetter: resourcesv1alpha3.NewResourceGetter(informers),
 		k8sclient:      k8sclient,
 		ksclient:       ksclient,
 	}

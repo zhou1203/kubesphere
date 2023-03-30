@@ -29,8 +29,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/google/go-cmp/cmp"
-	fakesnapshot "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned/fake"
-	fakeistio "istio.io/client-go/pkg/clientset/versioned/fake"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	fakeapiextensions "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
@@ -210,11 +208,9 @@ func prepare() (*Handler, error) {
 
 	ksClient := fakeks.NewSimpleClientset()
 	k8sClient := fakek8s.NewSimpleClientset()
-	istioClient := fakeistio.NewSimpleClientset()
-	snapshotClient := fakesnapshot.NewSimpleClientset()
 	apiextensionsClient := fakeapiextensions.NewSimpleClientset()
 
-	fakeInformerFactory := informers.NewInformerFactories(k8sClient, ksClient, istioClient, snapshotClient, apiextensionsClient)
+	fakeInformerFactory := informers.NewInformerFactories(k8sClient, ksClient, apiextensionsClient)
 
 	k8sInformerFactory := fakeInformerFactory.KubernetesSharedInformerFactory()
 
@@ -243,7 +239,7 @@ func prepare() (*Handler, error) {
 		}
 	}
 
-	handler := New(resourcev1alpha3.NewResourceGetter(fakeInformerFactory, nil), resourcev1alpha2.NewResourceGetter(fakeInformerFactory), components.NewComponentsGetter(fakeInformerFactory.KubernetesSharedInformerFactory()))
+	handler := New(resourcev1alpha3.NewResourceGetter(fakeInformerFactory), resourcev1alpha2.NewResourceGetter(fakeInformerFactory), components.NewComponentsGetter(fakeInformerFactory.KubernetesSharedInformerFactory()))
 
 	return handler, nil
 }

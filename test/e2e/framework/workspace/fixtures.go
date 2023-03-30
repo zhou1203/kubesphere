@@ -21,7 +21,6 @@ import (
 
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
-	fedb1 "kubesphere.io/api/types/v1beta1"
 
 	"context"
 
@@ -36,21 +35,21 @@ var URLOptions = client.URLOptions{
 // NewWorkspaceTemplate returns a WorkspaceTemplate spec with the specified argument.
 func NewWorkspaceTemplate(name string, manager string, hosts ...string) *tenantv1alpha2.WorkspaceTemplate {
 
-	clusters := []fedb1.GenericClusterReference{}
+	var clusters []tenantv1alpha2.GenericClusterReference
 
 	for _, h := range hosts {
-		clusters = append(clusters, fedb1.GenericClusterReference{Name: h})
+		clusters = append(clusters, tenantv1alpha2.GenericClusterReference{Name: h})
 	}
 
 	return &tenantv1alpha2.WorkspaceTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: fedb1.FederatedWorkspaceSpec{
-			Placement: fedb1.GenericPlacementFields{
+		Spec: tenantv1alpha2.FederatedWorkspaceSpec{
+			Placement: tenantv1alpha2.GenericPlacement{
 				Clusters: clusters,
 			},
-			Template: fedb1.WorkspaceTemplate{
+			Template: tenantv1alpha2.Template{
 				Spec: tenantv1alpha1.WorkspaceSpec{
 					Manager: manager,
 				},

@@ -19,8 +19,6 @@ package informers
 import (
 	"time"
 
-	snapshotinformer "github.com/kubernetes-csi/external-snapshotter/client/v4/informers/externalversions"
-	istioinformers "istio.io/client-go/pkg/informers/externalversions"
 	apiextensionsinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
@@ -53,14 +51,6 @@ func (n nullInformerFactory) KubernetesSharedInformerFactory() informers.SharedI
 
 func (n nullInformerFactory) KubeSphereSharedInformerFactory() ksinformers.SharedInformerFactory {
 	return n.fakeKsInformerFactory
-}
-
-func (n nullInformerFactory) IstioSharedInformerFactory() istioinformers.SharedInformerFactory {
-	return nil
-}
-
-func (n nullInformerFactory) SnapshotSharedInformerFactory() snapshotinformer.SharedInformerFactory {
-	return nil
 }
 
 func (n nullInformerFactory) ApiExtensionSharedInformerFactory() apiextensionsinformers.SharedInformerFactory {

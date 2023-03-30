@@ -33,8 +33,6 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/api"
 	auditingv1alpha1 "kubesphere.io/kubesphere/pkg/api/auditing/v1alpha1"
-	eventsv1alpha1 "kubesphere.io/kubesphere/pkg/api/events/v1alpha1"
-	loggingv1alpha2 "kubesphere.io/kubesphere/pkg/api/logging/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
@@ -42,25 +40,20 @@ import (
 	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
-	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 	"kubesphere.io/kubesphere/pkg/models/tenant"
 	servererr "kubesphere.io/kubesphere/pkg/server/errors"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
-	"kubesphere.io/kubesphere/pkg/simple/client/events"
-	"kubesphere.io/kubesphere/pkg/simple/client/logging"
 )
 
 type tenantHandler struct {
 	tenant tenant.Interface
 }
 
-func NewTenantHandler(factory informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface,
-	evtsClient events.Client, loggingClient logging.Client, auditingclient auditing.Client,
-	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer,
-	resourceGetter *resourcev1alpha3.ResourceGetter) *tenantHandler {
+func NewTenantHandler(factory informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface, auditingclient auditing.Client,
+	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer) *tenantHandler {
 
 	return &tenantHandler{
-		tenant: tenant.New(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, im, authorizer, resourceGetter),
+		tenant: tenant.New(factory, k8sclient, ksclient, auditingclient, am, im, authorizer),
 	}
 }
 
@@ -77,27 +70,6 @@ func (h *tenantHandler) ListWorkspaceTemplates(req *restful.Request, resp *restf
 
 	result, err := h.tenant.ListWorkspaceTemplates(user, queryParam)
 
-	if err != nil {
-		api.HandleInternalError(resp, nil, err)
-		return
-	}
-
-	resp.WriteEntity(result)
-}
-
-func (h *tenantHandler) ListFederatedNamespaces(req *restful.Request, resp *restful.Response) {
-	workspace := req.PathParameter("workspace")
-	queryParam := query.ParseQueryParameter(req)
-
-	workspaceMember, ok := request.UserFrom(req.Request.Context())
-	if !ok {
-		err := fmt.Errorf("cannot obtain user info")
-		klog.Errorln(err)
-		api.HandleForbidden(resp, nil, err)
-		return
-	}
-
-	result, err := h.tenant.ListFederatedNamespaces(workspaceMember, workspace, queryParam)
 	if err != nil {
 		api.HandleInternalError(resp, nil, err)
 		return
@@ -306,67 +278,6 @@ func (h *tenantHandler) ListWorkspaceClusters(request *restful.Request, response
 	}
 
 	response.WriteEntity(result)
-}
-
-func (h *tenantHandler) Events(req *restful.Request, resp *restful.Response) {
-	user, ok := request.UserFrom(req.Request.Context())
-	if !ok {
-		err := fmt.Errorf("cannot obtain user info")
-		klog.Errorln(err)
-		api.HandleForbidden(resp, req, err)
-		return
-	}
-	queryParam, err := eventsv1alpha1.ParseQueryParameter(req)
-	if err != nil {
-		klog.Errorln(err)
-		api.HandleInternalError(resp, req, err)
-		return
-	}
-
-	result, err := h.tenant.Events(user, queryParam)
-	if err != nil {
-		klog.Errorln(err)
-		api.HandleInternalError(resp, req, err)
-		return
-	}
-
-	resp.WriteEntity(result)
-
-}
-
-func (h *tenantHandler) QueryLogs(req *restful.Request, resp *restful.Response) {
-	user, ok := request.UserFrom(req.Request.Context())
-	if !ok {
-		err := fmt.Errorf("cannot obtain user info")
-		klog.Errorln(err)
-		api.HandleForbidden(resp, req, err)
-		return
-	}
-	queryParam, err := loggingv1alpha2.ParseQueryParameter(req)
-	if err != nil {
-		klog.Errorln(err)
-		api.HandleInternalError(resp, req, err)
-		return
-	}
-
-	if queryParam.Operation == loggingv1alpha2.OperationExport {
-		resp.Header().Set(restful.HEADER_ContentType, "text/plain")
-		resp.Header().Set("Content-Disposition", "attachment")
-		err := h.tenant.ExportLogs(user, queryParam, resp)
-		if err != nil {
-			klog.Errorln(err)
-			api.HandleInternalError(resp, req, err)
-			return
-		}
-	} else {
-		result, err := h.tenant.QueryLogs(user, queryParam)
-		if err != nil {
-			klog.Errorln(err)
-			api.HandleInternalError(resp, req, err)
-			return
-		}
-		resp.WriteAsJson(result)
-	}
 }
 
 func (h *tenantHandler) Auditing(req *restful.Request, resp *restful.Response) {

@@ -64,15 +64,12 @@ import (
 	"kubesphere.io/kubesphere/pkg/informers"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
-	gatewayv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha1"
 	iamapi "kubesphere.io/kubesphere/pkg/kapis/iam/v1alpha2"
-	networkv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/network/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
 	packagev1alpha1 "kubesphere.io/kubesphere/pkg/kapis/package/v1alpha1"
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha3"
-	servicemeshv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/servicemesh/metrics/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha2"
 	terminalv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/terminal/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/version"
@@ -86,10 +83,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/server/healthz"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
-	"kubesphere.io/kubesphere/pkg/simple/client/events"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/simple/client/logging"
-	"kubesphere.io/kubesphere/pkg/simple/client/s3"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/iputil"
 	"kubesphere.io/kubesphere/pkg/utils/metrics"
@@ -115,14 +109,8 @@ type APIServer struct {
 	// mainly for fast query
 	InformerFactory informers.InformerFactory
 
-	// cache is used for short lived objects, like session
+	// cache is used for short-lived objects, like session
 	CacheClient cache.Interface
-
-	LoggingClient logging.Client
-
-	S3Client s3.Interface
-
-	EventsClient events.Client
 
 	AuditingClient auditing.Client
 
@@ -195,14 +183,14 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 	rbacAuthorizer := rbac.NewRBACAuthorizer(amOperator)
 
 	urlruntime.Must(configv1alpha2.AddToContainer(s.container, s.Config))
-	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.InformerFactory, s.RuntimeCache))
+	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.InformerFactory))
 	urlruntime.Must(operationsv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes()))
 	urlruntime.Must(resourcesv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes(), s.InformerFactory,
 		s.KubernetesClient.Master()))
 	urlruntime.Must(tenantv1alpha2.AddToContainer(s.container, s.InformerFactory, s.KubernetesClient.Kubernetes(),
-		s.KubernetesClient.KubeSphere(), s.EventsClient, s.LoggingClient, s.AuditingClient, amOperator, imOperator, rbacAuthorizer, s.RuntimeCache))
+		s.KubernetesClient.KubeSphere(), s.AuditingClient, amOperator, imOperator, rbacAuthorizer))
 	urlruntime.Must(tenantv1alpha3.AddToContainer(s.container, s.InformerFactory, s.KubernetesClient.Kubernetes(),
-		s.KubernetesClient.KubeSphere(), s.EventsClient, s.LoggingClient, s.AuditingClient, amOperator, imOperator, rbacAuthorizer, s.RuntimeCache))
+		s.KubernetesClient.KubeSphere(), s.AuditingClient, amOperator, imOperator, rbacAuthorizer))
 	urlruntime.Must(terminalv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes(), rbacAuthorizer, s.KubernetesClient.Config(), s.Config.TerminalOptions))
 	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(s.container,
 		s.KubernetesClient.KubeSphere(),
@@ -222,10 +210,7 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 		auth.NewOAuthAuthenticator(s.KubernetesClient.KubeSphere(), userLister, s.Config.AuthenticationOptions),
 		auth.NewLoginRecorder(s.KubernetesClient.KubeSphere(), userLister),
 		s.Config.AuthenticationOptions))
-	urlruntime.Must(servicemeshv1alpha2.AddToContainer(s.Config.ServiceMeshOptions, s.container, s.KubernetesClient.Kubernetes(), s.CacheClient))
-	urlruntime.Must(networkv1alpha2.AddToContainer(s.container, s.Config.NetworkOptions.WeaveScopeHost))
 	urlruntime.Must(version.AddToContainer(s.container, s.KubernetesClient.Kubernetes().Discovery()))
-	urlruntime.Must(gatewayv1alpha1.AddToContainer(s.container, s.Config.GatewayOptions, s.RuntimeCache, s.RuntimeClient, s.InformerFactory, s.KubernetesClient.Kubernetes(), s.LoggingClient))
 	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
 }
 
@@ -446,17 +431,6 @@ func (s *APIServer) waitForResourceSync(ctx context.Context) error {
 		{Group: "cluster.kubesphere.io", Version: "v1alpha1"}: {
 			"clusters",
 		},
-		{Group: "network.kubesphere.io", Version: "v1alpha1"}: {
-			"ippools",
-		},
-	}
-
-	// skip caching servicemesh resources if servicemesh not enabled
-	if s.KubernetesClient.Istio() != nil {
-		ksGVRs[schema.GroupVersion{Group: "servicemesh.kubesphere.io", Version: "v1alpha2"}] = []string{
-			"strategies",
-			"servicepolicies",
-		}
 	}
 
 	if err := waitForCacheSync(s.KubernetesClient.Kubernetes().Discovery(),
@@ -465,22 +439,6 @@ func (s *APIServer) waitForResourceSync(ctx context.Context) error {
 			return s.InformerFactory.KubeSphereSharedInformerFactory().ForResource(resource)
 		},
 		ksGVRs, stopCh); err != nil {
-		return err
-	}
-
-	snapshotGVRs := map[schema.GroupVersion][]string{
-		{Group: "snapshot.storage.k8s.io", Version: "v1"}: {
-			"volumesnapshots",
-			"volumesnapshotcontents",
-			"volumesnapshotclasses",
-		},
-	}
-
-	if err := waitForCacheSync(s.KubernetesClient.Kubernetes().Discovery(),
-		s.InformerFactory.SnapshotSharedInformerFactory(), func(resource schema.GroupVersionResource) (interface{}, error) {
-			return s.InformerFactory.SnapshotSharedInformerFactory().ForResource(resource)
-		},
-		snapshotGVRs, stopCh); err != nil {
 		return err
 	}
 

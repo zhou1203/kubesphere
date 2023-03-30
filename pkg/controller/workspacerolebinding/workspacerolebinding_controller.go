@@ -18,15 +18,12 @@ package workspacerolebinding
 
 import (
 	"context"
-	"reflect"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,7 +32,6 @@ import (
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
-	typesv1beta1 "kubesphere.io/api/types/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	controllerutils "kubesphere.io/kubesphere/pkg/controller/utils/controller"
@@ -101,9 +97,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
-	// if err := r.multiClusterSync(rootCtx, logger, workspaceRoleBinding); err != nil {
-	// 	return ctrl.Result{}, err
-	// }
 
 	r.Recorder.Event(workspaceRoleBinding, corev1.EventTypeNormal, controllerutils.SuccessSynced, controllerutils.MessageResourceSynced)
 	return ctrl.Result{}, nil
@@ -129,87 +122,6 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 		logger.V(4).Info("update owner reference")
 		if err := r.Update(ctx, workspaceRoleBinding); err != nil {
 			logger.Error(err, "update owner reference failed")
-			return err
-		}
-	}
-	return nil
-}
-
-// nolint
-func (r *Reconciler) multiClusterSync(ctx context.Context, logger logr.Logger, workspaceRoleBinding *iamv1alpha2.WorkspaceRoleBinding) error {
-	if err := r.ensureNotControlledByKubefed(ctx, logger, workspaceRoleBinding); err != nil {
-		return err
-	}
-	federatedWorkspaceRoleBinding := &typesv1beta1.FederatedWorkspaceRoleBinding{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: workspaceRoleBinding.Name}, federatedWorkspaceRoleBinding); err != nil {
-		if errors.IsNotFound(err) {
-			if federatedWorkspaceRoleBinding, err := newFederatedWorkspaceRoleBinding(workspaceRoleBinding); err != nil {
-				logger.Error(err, "generate federated workspace role binding failed")
-				return err
-			} else {
-				if err := r.Create(ctx, federatedWorkspaceRoleBinding); err != nil {
-					logger.Error(err, "create federated workspace role binding failed")
-					return err
-				}
-				return nil
-			}
-		}
-		logger.Error(err, "get federated workspace role binding failed")
-		return err
-	}
-
-	if !reflect.DeepEqual(federatedWorkspaceRoleBinding.Spec.Template.RoleRef, workspaceRoleBinding.RoleRef) ||
-		!reflect.DeepEqual(federatedWorkspaceRoleBinding.Spec.Template.Subjects, workspaceRoleBinding.Subjects) ||
-		!reflect.DeepEqual(federatedWorkspaceRoleBinding.Spec.Template.Labels, workspaceRoleBinding.Labels) {
-
-		federatedWorkspaceRoleBinding.Spec.Template.RoleRef = workspaceRoleBinding.RoleRef
-		federatedWorkspaceRoleBinding.Spec.Template.Subjects = workspaceRoleBinding.Subjects
-		federatedWorkspaceRoleBinding.Spec.Template.Labels = workspaceRoleBinding.Labels
-
-		if err := r.Update(ctx, federatedWorkspaceRoleBinding); err != nil {
-			logger.Error(err, "update federated workspace role failed")
-			return err
-		}
-	}
-
-	return nil
-}
-
-// nolint
-func newFederatedWorkspaceRoleBinding(workspaceRoleBinding *iamv1alpha2.WorkspaceRoleBinding) (*typesv1beta1.FederatedWorkspaceRoleBinding, error) {
-	federatedWorkspaceRoleBinding := &typesv1beta1.FederatedWorkspaceRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: workspaceRoleBinding.Name,
-		},
-		Spec: typesv1beta1.FederatedWorkspaceRoleBindingSpec{
-			Template: typesv1beta1.WorkspaceRoleBindingTemplate{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: workspaceRoleBinding.Labels,
-				},
-				RoleRef:  workspaceRoleBinding.RoleRef,
-				Subjects: workspaceRoleBinding.Subjects,
-			},
-			Placement: typesv1beta1.GenericPlacementFields{
-				ClusterSelector: &metav1.LabelSelector{},
-			},
-		},
-	}
-	if err := controllerutil.SetControllerReference(workspaceRoleBinding, federatedWorkspaceRoleBinding, scheme.Scheme); err != nil {
-		return nil, err
-	}
-	return federatedWorkspaceRoleBinding, nil
-}
-
-// nolint
-func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, logger logr.Logger, workspaceRoleBinding *iamv1alpha2.WorkspaceRoleBinding) error {
-	if workspaceRoleBinding.Labels[constants.KubefedManagedLabel] != "false" {
-		if workspaceRoleBinding.Labels == nil {
-			workspaceRoleBinding.Labels = make(map[string]string)
-		}
-		workspaceRoleBinding.Labels[constants.KubefedManagedLabel] = "false"
-		logger.V(4).Info("update kubefed managed label")
-		if err := r.Update(ctx, workspaceRoleBinding); err != nil {
-			logger.Error(err, "update kubefed managed label failed")
 			return err
 		}
 	}

@@ -20,15 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -58,12 +55,10 @@ const (
 )
 
 type Controller struct {
-	k8sClient                           kubernetes.Interface
-	ksClient                            kubesphere.Interface
-	globalRoleBindingLister             iamv1alpha2listers.GlobalRoleBindingLister
-	globalRoleBindingSynced             cache.InformerSynced
-	fedGlobalRoleBindingCache           cache.Store
-	fedGlobalRoleBindingCacheController cache.Controller
+	k8sClient               kubernetes.Interface
+	ksClient                kubesphere.Interface
+	globalRoleBindingLister iamv1alpha2listers.GlobalRoleBindingLister
+	globalRoleBindingSynced cache.InformerSynced
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
 	// means we can ensure we only process a fixed amount of resources at a
@@ -76,8 +71,7 @@ type Controller struct {
 }
 
 func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface,
-	globalRoleBindingInformer iamv1alpha2informers.GlobalRoleBindingInformer,
-	fedGlobalRoleBindingCache cache.Store, fedGlobalRoleBindingCacheController cache.Controller) *Controller {
+	globalRoleBindingInformer iamv1alpha2informers.GlobalRoleBindingInformer) *Controller {
 	// Create event broadcaster
 	// Add sample-controller types to the default Kubernetes Scheme so Events can be
 	// logged for sample-controller types.
@@ -88,14 +82,12 @@ func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: k8sClient.CoreV1().Events("")})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerName})
 	ctl := &Controller{
-		k8sClient:                           k8sClient,
-		ksClient:                            ksClient,
-		globalRoleBindingLister:             globalRoleBindingInformer.Lister(),
-		globalRoleBindingSynced:             globalRoleBindingInformer.Informer().HasSynced,
-		fedGlobalRoleBindingCache:           fedGlobalRoleBindingCache,
-		fedGlobalRoleBindingCacheController: fedGlobalRoleBindingCacheController,
-		workqueue:                           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "GlobalRoleBinding"),
-		recorder:                            recorder,
+		k8sClient:               k8sClient,
+		ksClient:                ksClient,
+		globalRoleBindingLister: globalRoleBindingInformer.Lister(),
+		globalRoleBindingSynced: globalRoleBindingInformer.Informer().HasSynced,
+		workqueue:               workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "GlobalRoleBinding"),
+		recorder:                recorder,
 	}
 	klog.Info("Setting up event handlers")
 	globalRoleBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -241,48 +233,6 @@ func (c *Controller) reconcile(key string) error {
 
 func (c *Controller) Start(ctx context.Context) error {
 	return c.Run(4, ctx.Done())
-}
-
-// nolint
-func (c *Controller) multiClusterSync(globalRoleBinding *iamv1alpha2.GlobalRoleBinding) error {
-
-	if err := c.ensureNotControlledByKubefed(globalRoleBinding); err != nil {
-		klog.Error(err)
-		return err
-	}
-
-	obj, exist, err := c.fedGlobalRoleBindingCache.GetByKey(globalRoleBinding.Name)
-	if !exist {
-		return c.createFederatedGlobalRoleBinding(globalRoleBinding)
-	}
-	if err != nil {
-		klog.Error(err)
-		return err
-	}
-
-	var federatedGlobalRoleBinding iamv1alpha2.FederatedRoleBinding
-
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(obj.(*unstructured.Unstructured).Object, &federatedGlobalRoleBinding)
-
-	if err != nil {
-		klog.Error(err)
-		return err
-	}
-
-	if !reflect.DeepEqual(federatedGlobalRoleBinding.Spec.Template.Subjects, globalRoleBinding.Subjects) ||
-		!reflect.DeepEqual(federatedGlobalRoleBinding.Spec.Template.RoleRef, globalRoleBinding.RoleRef) ||
-		!reflect.DeepEqual(federatedGlobalRoleBinding.Spec.Template.Labels, globalRoleBinding.Labels) ||
-		!reflect.DeepEqual(federatedGlobalRoleBinding.Spec.Template.Annotations, globalRoleBinding.Annotations) {
-
-		federatedGlobalRoleBinding.Spec.Template.Subjects = globalRoleBinding.Subjects
-		federatedGlobalRoleBinding.Spec.Template.RoleRef = globalRoleBinding.RoleRef
-		federatedGlobalRoleBinding.Spec.Template.Annotations = globalRoleBinding.Annotations
-		federatedGlobalRoleBinding.Spec.Template.Labels = globalRoleBinding.Labels
-
-		return c.updateFederatedGlobalRoleBinding(&federatedGlobalRoleBinding)
-	}
-
-	return nil
 }
 
 func (c *Controller) assignClusterAdminRole(globalRoleBinding *iamv1alpha2.GlobalRoleBinding) error {

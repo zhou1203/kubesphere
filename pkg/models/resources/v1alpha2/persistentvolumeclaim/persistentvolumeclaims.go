@@ -17,9 +17,6 @@ limitations under the License.
 package persistentvolumeclaim
 
 import (
-	"strconv"
-
-	snapshotinformer "github.com/kubernetes-csi/external-snapshotter/client/v4/informers/externalversions"
 	"k8s.io/client-go/informers"
 
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha2"
@@ -39,14 +36,12 @@ const (
 )
 
 type persistentVolumeClaimSearcher struct {
-	informers         informers.SharedInformerFactory
-	snapshotInformers snapshotinformer.SharedInformerFactory
+	informers informers.SharedInformerFactory
 }
 
-func NewPersistentVolumeClaimSearcher(informers informers.SharedInformerFactory, snapshotInformer snapshotinformer.SharedInformerFactory) v1alpha2.Interface {
+func NewPersistentVolumeClaimSearcher(informers informers.SharedInformerFactory) v1alpha2.Interface {
 	return &persistentVolumeClaimSearcher{
-		informers:         informers,
-		snapshotInformers: snapshotInformer,
+		informers: informers,
 	}
 }
 
@@ -124,46 +119,7 @@ func (s *persistentVolumeClaimSearcher) Search(namespace string, conditions *par
 	r := make([]interface{}, 0)
 	for _, i := range result {
 		i = i.DeepCopy()
-		inUse := s.countPods(i.Name, i.Namespace)
-		isSnapshotAllow := s.isSnapshotAllowed(i.GetAnnotations()["volume.beta.kubernetes.io/storage-provisioner"])
-		if i.Annotations == nil {
-			i.Annotations = make(map[string]string)
-		}
-		i.Annotations["kubesphere.io/in-use"] = strconv.FormatBool(inUse)
-		i.Annotations["kubesphere.io/allow-snapshot"] = strconv.FormatBool(isSnapshotAllow)
 		r = append(r, i)
 	}
 	return r, nil
-}
-
-func (s *persistentVolumeClaimSearcher) countPods(name, namespace string) bool {
-	pods, err := s.informers.Core().V1().Pods().Lister().Pods(namespace).List(labels.Everything())
-	if err != nil {
-		return false
-	}
-	for _, pod := range pods {
-		for _, pvc := range pod.Spec.Volumes {
-			if pvc.PersistentVolumeClaim != nil && pvc.PersistentVolumeClaim.ClaimName == name {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-func (s *persistentVolumeClaimSearcher) isSnapshotAllowed(provisioner string) bool {
-	if len(provisioner) == 0 {
-		return false
-	}
-	volumeSnapshotClasses, err := s.snapshotInformers.Snapshot().V1beta1().VolumeSnapshotClasses().Lister().List(labels.Everything())
-	if err != nil {
-		return false
-	}
-	for _, volumeSnapshotClass := range volumeSnapshotClasses {
-		if volumeSnapshotClass.Driver == provisioner {
-			return true
-		}
-	}
-	return false
 }

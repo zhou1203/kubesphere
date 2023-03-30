@@ -18,52 +18,35 @@ package app
 
 import (
 	"fmt"
-	"time"
 
 	"kubesphere.io/kubesphere/pkg/controller/core"
 
-	"github.com/kubesphere/pvc-autoresizer/runners"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/kubefed/pkg/controller/util"
-
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
-	"kubesphere.io/kubesphere/pkg/controller/application"
-	"kubesphere.io/kubesphere/pkg/controller/namespace"
-	"kubesphere.io/kubesphere/pkg/controller/quota"
-	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
-	"kubesphere.io/kubesphere/pkg/controller/user"
-	"kubesphere.io/kubesphere/pkg/controller/workspace"
-	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
-	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
-	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
-	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
-
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/clusterrolebinding"
-	"kubesphere.io/kubesphere/pkg/controller/destinationrule"
 	"kubesphere.io/kubesphere/pkg/controller/globalrole"
 	"kubesphere.io/kubesphere/pkg/controller/globalrolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/group"
 	"kubesphere.io/kubesphere/pkg/controller/groupbinding"
 	"kubesphere.io/kubesphere/pkg/controller/job"
 	"kubesphere.io/kubesphere/pkg/controller/loginrecord"
-	"kubesphere.io/kubesphere/pkg/controller/network/ippool"
-	"kubesphere.io/kubesphere/pkg/controller/network/nsnetworkpolicy"
-	"kubesphere.io/kubesphere/pkg/controller/network/nsnetworkpolicy/provider"
+	"kubesphere.io/kubesphere/pkg/controller/namespace"
+	"kubesphere.io/kubesphere/pkg/controller/quota"
+	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/storage/capability"
-	"kubesphere.io/kubesphere/pkg/controller/virtualservice"
+	"kubesphere.io/kubesphere/pkg/controller/user"
+	"kubesphere.io/kubesphere/pkg/controller/workspace"
+	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
+	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
+	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
 	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	ippoolclient "kubesphere.io/kubesphere/pkg/simple/client/network/ippool"
 )
 
 var allControllers = []string{
@@ -100,11 +83,9 @@ var allControllers = []string{
 func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory informers.InformerFactory,
 	cmOptions *options.KubeSphereControllerManagerOptions,
 	stopCh <-chan struct{}) error {
-	var err error
 
 	// begin init necessary informers
 	kubernetesInformer := informerFactory.KubernetesSharedInformerFactory()
-	istioInformer := informerFactory.IstioSharedInformerFactory()
 	kubesphereInformer := informerFactory.KubeSphereSharedInformerFactory()
 	// end informers
 
@@ -115,20 +96,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	//	informerFactory.KubernetesSharedInformerFactory().Core().V1().ConfigMaps().Lister(),
 	//	client.Config())
 
-	var ldapClient ldapclient.Interface
-	// when there is no ldapOption, we set ldapClient as nil, which means we don't need to sync user info into ldap.
-	if cmOptions.LdapOptions != nil && len(cmOptions.LdapOptions.Host) != 0 {
-		if cmOptions.LdapOptions.Host == ldapclient.FAKE_HOST { // for debug only
-			ldapClient = ldapclient.NewSimpleLdap()
-		} else {
-			ldapClient, err = ldapclient.NewLdapClient(cmOptions.LdapOptions, stopCh)
-			if err != nil {
-				return fmt.Errorf("failed to connect to ldap service, please check ldap status, error: %v", err)
-			}
-		}
-	} else {
-		klog.Warning("ks-controller-manager starts without ldap provided, it will not sync user into ldap")
-	}
 	// end init clients
 
 	// begin init controller and add to manager one by one
@@ -137,7 +104,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	if cmOptions.IsControllerEnabled("user") {
 		userController := &user.Reconciler{
 			MaxConcurrentReconciles: 4,
-			LdapClient:              ldapClient,
 			AuthenticationOptions:   cmOptions.AuthenticationOptions,
 		}
 		addControllerWithSetup(mgr, "user", userController)
@@ -197,20 +163,8 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "namespace" controller
 	if cmOptions.IsControllerEnabled("namespace") {
-		namespaceReconciler := &namespace.Reconciler{GatewayOptions: cmOptions.GatewayOptions}
+		namespaceReconciler := &namespace.Reconciler{}
 		addControllerWithSetup(mgr, "namespace", namespaceReconciler)
-	}
-
-	// "application" controller
-	if cmOptions.IsControllerEnabled("application") {
-		selector, _ := labels.Parse(cmOptions.ApplicationSelector)
-		applicationReconciler := &application.ApplicationReconciler{
-			Scheme:              mgr.GetScheme(),
-			Client:              mgr.GetClient(),
-			Mapper:              mgr.GetRESTMapper(),
-			ApplicationSelector: selector,
-		}
-		addControllerWithSetup(mgr, "application", applicationReconciler)
 	}
 
 	// "serviceaccount" controller
@@ -229,33 +183,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		addControllerWithSetup(mgr, "resourcequota", resourceQuotaReconciler)
 	}
 
-	serviceMeshEnabled := cmOptions.ServiceMeshOptions != nil && len(cmOptions.ServiceMeshOptions.IstioPilotHost) != 0
-	if serviceMeshEnabled {
-		// "virtualservice" controller
-		if cmOptions.IsControllerEnabled("virtualservice") {
-			vsController := virtualservice.NewVirtualServiceController(kubernetesInformer.Core().V1().Services(),
-				istioInformer.Networking().V1alpha3().VirtualServices(),
-				istioInformer.Networking().V1alpha3().DestinationRules(),
-				kubesphereInformer.Servicemesh().V1alpha2().Strategies(),
-				client.Kubernetes(),
-				client.Istio(),
-				client.KubeSphere())
-			addController(mgr, "virtualservice", vsController)
-		}
-
-		// "destinationrule" controller
-		if cmOptions.IsControllerEnabled("destinationrule") {
-			drController := destinationrule.NewDestinationRuleController(kubernetesInformer.Apps().V1().Deployments(),
-				istioInformer.Networking().V1alpha3().DestinationRules(),
-				kubernetesInformer.Core().V1().Services(),
-				kubesphereInformer.Servicemesh().V1alpha2().ServicePolicies(),
-				client.Kubernetes(),
-				client.Istio(),
-				client.KubeSphere())
-			addController(mgr, "destinationrule", drController)
-		}
-	}
-
 	// "job" controller
 	if cmOptions.IsControllerEnabled("job") {
 		jobController := job.NewJobController(kubernetesInformer.Batch().V1().Jobs(), client.Kubernetes())
@@ -270,17 +197,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 			kubernetesInformer.Storage().V1().CSIDrivers(),
 		)
 		addController(mgr, "storagecapability", storageCapabilityController)
-	}
-
-	// "pvcworkloadrestarter" controller
-	if cmOptions.IsControllerEnabled("pvcworkloadrestarter") {
-		restarter := runners.NewRestarter(
-			mgr.GetClient(),
-			ctrl.Log.WithName("pvcworkloadrestarter"),
-			1*time.Minute,
-			mgr.GetEventRecorderFor("pvcworkloadrestarter"),
-		)
-		addController(mgr, "pvcworkloadrestarter", restarter)
 	}
 
 	// "loginrecord" controller
@@ -314,62 +230,31 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		addController(mgr, "clusterrolebinding", clusterRoleBindingController)
 	}
 
-	// "fedglobalrolecache" controller
-	var fedGlobalRoleCache cache.Store
-	var fedGlobalRoleCacheController cache.Controller
-	if cmOptions.IsControllerEnabled("fedglobalrolecache") {
-		fedGlobalRoleClient, err := util.NewResourceClient(client.Config(), &iamv1alpha2.FedGlobalRoleResource)
-		if err != nil {
-			klog.Fatalf("Unable to create FedGlobalRole controller: %v", err)
-		}
-		fedGlobalRoleCache, fedGlobalRoleCacheController = util.NewResourceInformer(fedGlobalRoleClient, "",
-			&iamv1alpha2.FedGlobalRoleResource, func(object runtimeclient.Object) {})
-		go fedGlobalRoleCacheController.Run(stopCh)
-		addSuccessfullyControllers.Insert("fedglobalrolecache")
-	}
-
 	// "globalrole" controller
 	if cmOptions.IsControllerEnabled("globalrole") {
 		globalRoleController := globalrole.NewController(client.Kubernetes(), client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().GlobalRoles(), fedGlobalRoleCache, fedGlobalRoleCacheController)
+			kubesphereInformer.Iam().V1alpha2().GlobalRoles())
 		addController(mgr, "globalrole", globalRoleController)
-	}
-
-	// "fedglobalrolebindingcache" controller
-	var fedGlobalRoleBindingCache cache.Store
-	var fedGlobalRoleBindingCacheController cache.Controller
-	if cmOptions.IsControllerEnabled("fedglobalrolebindingcache") {
-		fedGlobalRoleBindingClient, err := util.NewResourceClient(client.Config(), &iamv1alpha2.FedGlobalRoleBindingResource)
-		if err != nil {
-			klog.Fatalf("Unable to create FedGlobalRoleBinding controller: %v", err)
-		}
-		fedGlobalRoleBindingCache, fedGlobalRoleBindingCacheController = util.NewResourceInformer(fedGlobalRoleBindingClient, "",
-			&iamv1alpha2.FedGlobalRoleBindingResource, func(object runtimeclient.Object) {})
-		go fedGlobalRoleBindingCacheController.Run(stopCh)
-		addSuccessfullyControllers.Insert("fedglobalrolebindingcache")
 	}
 
 	// "globalrolebinding" controller
 	if cmOptions.IsControllerEnabled("globalrolebinding") {
 		globalRoleBindingController := globalrolebinding.NewController(client.Kubernetes(), client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().GlobalRoleBindings(),
-			fedGlobalRoleBindingCache, fedGlobalRoleBindingCacheController)
+			kubesphereInformer.Iam().V1alpha2().GlobalRoleBindings())
 		addController(mgr, "globalrolebinding", globalRoleBindingController)
 	}
 
 	// "groupbinding" controller
 	if cmOptions.IsControllerEnabled("groupbinding") {
 		groupBindingController := groupbinding.NewController(client.Kubernetes(), client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().GroupBindings(),
-			kubesphereInformer.Types().V1beta1().FederatedGroupBindings())
+			kubesphereInformer.Iam().V1alpha2().GroupBindings())
 		addController(mgr, "groupbinding", groupBindingController)
 	}
 
 	// "group" controller
 	if cmOptions.IsControllerEnabled("group") {
 		groupController := group.NewController(client.Kubernetes(), client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().Groups(),
-			kubesphereInformer.Types().V1beta1().FederatedGroups())
+			kubesphereInformer.Iam().V1alpha2().Groups())
 		addController(mgr, "group", groupController)
 	}
 
@@ -383,36 +268,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		addControllerWithSetup(mgr, "cluster", clusterReconciler)
 		// Register timed tasker
 		addController(mgr, "cluster", clusterReconciler)
-	}
-
-	// "nsnp" controller
-	if cmOptions.IsControllerEnabled("nsnp") {
-		if cmOptions.NetworkOptions.EnableNetworkPolicy {
-			nsnpProvider, err := provider.NewNsNetworkPolicyProvider(client.Kubernetes(), kubernetesInformer.Networking().V1().NetworkPolicies())
-			if err != nil {
-				klog.Fatalf("Unable to create NSNetworkPolicy controller: %v", err)
-			}
-
-			nsnpController := nsnetworkpolicy.NewNSNetworkPolicyController(client.Kubernetes(),
-				client.KubeSphere().NetworkV1alpha1(),
-				kubesphereInformer.Network().V1alpha1().NamespaceNetworkPolicies(),
-				kubernetesInformer.Core().V1().Services(),
-				kubernetesInformer.Core().V1().Nodes(),
-				kubesphereInformer.Tenant().V1alpha1().Workspaces(),
-				kubernetesInformer.Core().V1().Namespaces(), nsnpProvider, cmOptions.NetworkOptions.NSNPOptions)
-			addController(mgr, "nsnp", nsnpController)
-		}
-	}
-
-	// "ippool" controller
-	if cmOptions.IsControllerEnabled("ippool") {
-		ippoolProvider := ippoolclient.NewProvider(kubernetesInformer, client.KubeSphere(), client.Kubernetes(),
-			cmOptions.NetworkOptions.IPPoolType, cmOptions.KubernetesOptions)
-		if ippoolProvider != nil {
-			ippoolController := ippool.NewIPPoolController(kubesphereInformer, kubernetesInformer, client.Kubernetes(),
-				client.KubeSphere(), ippoolProvider)
-			addController(mgr, "ippool", ippoolController)
-		}
 	}
 
 	// log all controllers process result

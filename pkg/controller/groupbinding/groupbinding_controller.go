@@ -19,7 +19,6 @@ package groupbinding
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -32,17 +31,12 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
-	fedv1beta1types "kubesphere.io/api/types/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 	iamv1alpha2informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/iam/v1alpha2"
-	fedv1beta1informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/types/v1beta1"
 	iamv1alpha2listers "kubesphere.io/kubesphere/pkg/client/listers/iam/v1alpha2"
-	fedv1beta1lister "kubesphere.io/kubesphere/pkg/client/listers/types/v1beta1"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/controller/utils/controller"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
@@ -57,17 +51,15 @@ const (
 
 type Controller struct {
 	controller.BaseController
-	k8sClient                   kubernetes.Interface
-	ksClient                    kubesphere.Interface
-	groupBindingLister          iamv1alpha2listers.GroupBindingLister
-	recorder                    record.EventRecorder
-	federatedGroupBindingLister fedv1beta1lister.FederatedGroupBindingLister
+	k8sClient          kubernetes.Interface
+	ksClient           kubesphere.Interface
+	groupBindingLister iamv1alpha2listers.GroupBindingLister
+	recorder           record.EventRecorder
 }
 
 // NewController creates GroupBinding Controller instance
 func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface,
-	groupBindingInformer iamv1alpha2informers.GroupBindingInformer,
-	federatedGroupBindingInformer fedv1beta1informers.FederatedGroupBindingInformer) *Controller {
+	groupBindingInformer iamv1alpha2informers.GroupBindingInformer) *Controller {
 	klog.V(4).Info("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -85,8 +77,6 @@ func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface
 		recorder:           recorder,
 	}
 	ctl.Handler = ctl.reconcile
-	ctl.federatedGroupBindingLister = federatedGroupBindingInformer.Lister()
-	ctl.Synced = append(ctl.Synced, federatedGroupBindingInformer.Informer().HasSynced)
 	klog.Info("Setting up event handlers")
 	groupBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: ctl.Enqueue,
@@ -161,12 +151,7 @@ func (c *Controller) reconcile(key string) error {
 		return err
 	}
 
-	// synchronization through kubefed-controller when multi cluster is enabled
 	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
-	if err = c.multiClusterSync(groupBinding); err != nil {
-		klog.Error(err)
-		return err
-	}
 
 	c.recorder.Event(groupBinding, corev1.EventTypeNormal, successSynced, messageResourceSynced)
 	return nil
@@ -235,68 +220,6 @@ func (c *Controller) patchUser(user *iamv1alpha2.User, groups []string) error {
 	patchData, _ := patch.Data(newUser)
 	if _, err := c.ksClient.IamV1alpha2().Users().
 		Patch(context.Background(), user.Name, patch.Type(), patchData, metav1.PatchOptions{}); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *Controller) multiClusterSync(groupBinding *iamv1alpha2.GroupBinding) error {
-
-	fedGroupBinding, err := c.federatedGroupBindingLister.Get(groupBinding.Name)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return c.createFederatedGroupBinding(groupBinding)
-		}
-		klog.Error(err)
-		return err
-	}
-
-	if !reflect.DeepEqual(fedGroupBinding.Spec.Template.GroupRef, groupBinding.GroupRef) ||
-		!reflect.DeepEqual(fedGroupBinding.Spec.Template.Users, groupBinding.Users) ||
-		!reflect.DeepEqual(fedGroupBinding.Spec.Template.Labels, groupBinding.Labels) {
-
-		fedGroupBinding.Spec.Template.GroupRef = groupBinding.GroupRef
-		fedGroupBinding.Spec.Template.Users = groupBinding.Users
-		fedGroupBinding.Spec.Template.Labels = groupBinding.Labels
-
-		if _, err = c.ksClient.TypesV1beta1().FederatedGroupBindings().Update(context.Background(), fedGroupBinding, metav1.UpdateOptions{}); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (c *Controller) createFederatedGroupBinding(groupBinding *iamv1alpha2.GroupBinding) error {
-	federatedGroup := &fedv1beta1types.FederatedGroupBinding{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       fedv1beta1types.FederatedGroupBindingKind,
-			APIVersion: fedv1beta1types.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: groupBinding.Name,
-		},
-		Spec: fedv1beta1types.FederatedGroupBindingSpec{
-			Template: fedv1beta1types.GroupBindingTemplate{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: groupBinding.Labels,
-				},
-				GroupRef: groupBinding.GroupRef,
-				Users:    groupBinding.Users,
-			},
-			Placement: fedv1beta1types.GenericPlacementFields{
-				ClusterSelector: &metav1.LabelSelector{},
-			},
-		},
-	}
-
-	// must bind groupBinding lifecycle
-	err := controllerutil.SetControllerReference(groupBinding, federatedGroup, scheme.Scheme)
-	if err != nil {
-		return err
-	}
-	if _, err = c.ksClient.TypesV1beta1().FederatedGroupBindings().Create(context.Background(), federatedGroup, metav1.CreateOptions{}); err != nil {
 		return err
 	}
 	return nil

@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	fakeistio "istio.io/client-go/pkg/clientset/versioned/fake"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -493,8 +492,7 @@ var (
 func prepare() Interface {
 	ksClient := fakeks.NewSimpleClientset([]runtime.Object{testWorkspace, systemWorkspace}...)
 	k8sClient := fakek8s.NewSimpleClientset([]runtime.Object{testNamespace, kubesphereSystem}...)
-	istioClient := fakeistio.NewSimpleClientset()
-	fakeInformerFactory := informers.NewInformerFactories(k8sClient, ksClient, istioClient, nil, nil)
+	fakeInformerFactory := informers.NewInformerFactories(k8sClient, ksClient, nil)
 
 	for _, workspace := range workspaces {
 		fakeInformerFactory.KubeSphereSharedInformerFactory().Tenant().V1alpha1().
@@ -544,5 +542,5 @@ func prepare() Interface {
 	amOperator := am.NewOperator(ksClient, k8sClient, fakeInformerFactory)
 	authorizer := rbac.NewRBACAuthorizer(amOperator)
 
-	return New(fakeInformerFactory, k8sClient, ksClient, nil, nil, nil, amOperator, nil, authorizer, nil)
+	return New(fakeInformerFactory, k8sClient, ksClient, nil, amOperator, nil, authorizer)
 }

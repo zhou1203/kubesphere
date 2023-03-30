@@ -19,13 +19,10 @@ package user
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/types"
-	typesv1beta1 "kubesphere.io/api/types/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -35,23 +32,16 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
-	utilwait "k8s.io/apimachinery/pkg/util/wait"
-
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
-	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
@@ -73,7 +63,6 @@ const (
 type Reconciler struct {
 	client.Client
 	KubeconfigClient        kubeconfig.Interface
-	LdapClient              ldapclient.Interface
 	AuthenticationOptions   *authentication.Options
 	Logger                  logr.Logger
 	Scheme                  *runtime.Scheme
@@ -127,14 +116,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	} else {
 		// The object is being deleted
 		if sliceutil.HasString(user.ObjectMeta.Finalizers, finalizer) {
-			// we do not need to delete the user from ldapServer when ldapClient is nil
-			if r.LdapClient != nil {
-				if err = r.waitForDeleteFromLDAP(user.Name); err != nil {
-					// ignore timeout error
-					r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
-				}
-			}
-
 			if err = r.deleteRoleBindings(ctx, user); err != nil {
 				r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
@@ -172,15 +153,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// 	r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
 	// 	return ctrl.Result{}, err
 	// }
-
-	// we do not need to sync ldap info when ldapClient is nil
-	if r.LdapClient != nil {
-		// ignore errors if timeout
-		if err = r.waitForSyncToLDAP(user); err != nil {
-			// ignore timeout error
-			r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
-		}
-	}
 
 	// update user status if not managed by kubefed
 	managedByKubefed := user.Labels[constants.KubefedManagedLabel] == "true"
@@ -254,112 +226,6 @@ func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, user *iam
 		}
 	}
 	return nil
-}
-
-// nolint
-func (r *Reconciler) multiClusterSync(ctx context.Context, user *iamv1alpha2.User) error {
-	if err := r.ensureNotControlledByKubefed(ctx, user); err != nil {
-		klog.Error(err)
-		return err
-	}
-
-	federatedUser := &typesv1beta1.FederatedUser{}
-	err := r.Get(ctx, types.NamespacedName{Name: user.Name}, federatedUser)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return r.createFederatedUser(ctx, user)
-		}
-		return err
-	}
-
-	if !reflect.DeepEqual(federatedUser.Spec.Template.Spec, user.Spec) ||
-		!reflect.DeepEqual(federatedUser.Spec.Template.Status, user.Status) ||
-		!reflect.DeepEqual(federatedUser.Spec.Template.Labels, user.Labels) {
-
-		federatedUser.Spec.Template.Labels = user.Labels
-		federatedUser.Spec.Template.Spec = user.Spec
-		federatedUser.Spec.Template.Status = user.Status
-		return r.Update(ctx, federatedUser, &client.UpdateOptions{})
-	}
-
-	return nil
-}
-
-// nolint
-func (r *Reconciler) createFederatedUser(ctx context.Context, user *iamv1alpha2.User) error {
-	federatedUser := &typesv1beta1.FederatedUser{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: user.Name,
-		},
-		Spec: typesv1beta1.FederatedUserSpec{
-			Template: typesv1beta1.UserTemplate{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: user.Labels,
-				},
-				Spec:   user.Spec,
-				Status: user.Status,
-			},
-			Placement: typesv1beta1.GenericPlacementFields{
-				ClusterSelector: &metav1.LabelSelector{},
-			},
-		},
-	}
-
-	// must bind user lifecycle
-	err := controllerutil.SetControllerReference(user, federatedUser, scheme.Scheme)
-	if err != nil {
-		return err
-	}
-
-	err = r.Create(ctx, federatedUser, &client.CreateOptions{})
-	if err != nil {
-		if errors.IsAlreadyExists(err) {
-			return nil
-		}
-		return err
-	}
-
-	return nil
-}
-
-func (r *Reconciler) waitForSyncToLDAP(user *iamv1alpha2.User) error {
-	if isEncrypted(user.Spec.EncryptedPassword) {
-		return nil
-	}
-	err := utilwait.PollImmediate(interval, timeout, func() (done bool, err error) {
-		_, err = r.LdapClient.Get(user.Name)
-		if err != nil {
-			if err == ldapclient.ErrUserNotExists {
-				err = r.LdapClient.Create(user)
-				if err != nil {
-					klog.Error(err)
-					return false, err
-				}
-				return true, nil
-			}
-			klog.Error(err)
-			return false, err
-		}
-		err = r.LdapClient.Update(user)
-		if err != nil {
-			klog.Error(err)
-			return false, err
-		}
-		return true, nil
-	})
-	return err
-}
-
-func (r *Reconciler) waitForDeleteFromLDAP(username string) error {
-	err := utilwait.PollImmediate(interval, timeout, func() (done bool, err error) {
-		err = r.LdapClient.Delete(username)
-		if err != nil && err != ldapclient.ErrUserNotExists {
-			klog.Error(err)
-			return false, err
-		}
-		return true, nil
-	})
-	return err
 }
 
 func (r *Reconciler) deleteGroupBindings(ctx context.Context, user *iamv1alpha2.User) error {

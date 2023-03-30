@@ -24,8 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/api"
@@ -38,11 +36,8 @@ import (
 	"kubesphere.io/kubesphere/pkg/models"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
-	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
-	"kubesphere.io/kubesphere/pkg/simple/client/events"
-	"kubesphere.io/kubesphere/pkg/simple/client/logging"
 )
 
 const (
@@ -56,14 +51,13 @@ func Resource(resource string) schema.GroupResource {
 }
 
 func AddToContainer(c *restful.Container, factory informers.InformerFactory, k8sclient kubernetes.Interface,
-	ksclient kubesphere.Interface, evtsClient events.Client, loggingClient logging.Client,
-	auditingclient auditing.Client, am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer,
-	cache cache.Cache) error {
+	ksclient kubesphere.Interface, auditingclient auditing.Client, am am.AccessManagementInterface,
+	im im.IdentityManagementInterface, authorizer authorizer.Authorizer) error {
 	mimePatch := []string{restful.MIME_JSON, runtime.MimeMergePatchJson, runtime.MimeJsonPatchJson}
 
 	ws := runtime.NewWebService(GroupVersion)
-	v1alpha2Handler := v1alpha2.NewTenantHandler(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, im, authorizer, resourcev1alpha3.NewResourceGetter(factory, cache))
-	handler := newTenantHandler(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, im, authorizer, resourcev1alpha3.NewResourceGetter(factory, cache))
+	v1alpha2Handler := v1alpha2.NewTenantHandler(factory, k8sclient, ksclient, auditingclient, am, im, authorizer)
+	handler := newTenantHandler(factory, k8sclient, ksclient, auditingclient, am, im, authorizer)
 
 	ws.Route(ws.POST("/workspacetemplates").
 		To(v1alpha2Handler.CreateWorkspaceTemplate).

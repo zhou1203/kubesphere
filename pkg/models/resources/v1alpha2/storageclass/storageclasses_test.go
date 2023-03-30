@@ -90,7 +90,7 @@ func prepare() (v1alpha2.Interface, error) {
 		}
 	}
 
-	return NewStorageClassesSearcher(informer, nil), nil
+	return NewStorageClassesSearcher(informer), nil
 }
 
 func TestSearch(t *testing.T) {

@@ -27,7 +27,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
@@ -36,23 +35,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"kubesphere.io/api/application/v1alpha1"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
-	typesv1beta1 "kubesphere.io/api/types/v1beta1"
 
-	"kubesphere.io/kubesphere/pkg/constants"
 	controllerutils "kubesphere.io/kubesphere/pkg/controller/utils/controller"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
-	controllerName                  = "workspacetemplate-controller"
-	workspaceTemplateFinalizer      = "finalizers.workspacetemplate.kubesphere.io"
-	orphanFinalizer                 = "orphan.finalizers.kubesphere.io"
-	orphanDeleteOptionAnnotationKey = "kubefed.io/deleteoption"
-	orphanDeleteOptionAnnotation    = "{\"propagationPolicy\":\"Orphan\"}"
+	controllerName             = "workspacetemplate-controller"
+	workspaceTemplateFinalizer = "finalizers.workspacetemplate.kubesphere.io"
+	orphanFinalizer            = "orphan.finalizers.kubesphere.io"
 )
 
 // Reconciler reconciles a WorkspaceRoleBinding object
@@ -108,11 +102,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// The object is being deleted
 		if sliceutil.HasString(workspaceTemplate.ObjectMeta.Finalizers, workspaceTemplateFinalizer) ||
 			sliceutil.HasString(workspaceTemplate.ObjectMeta.Finalizers, orphanFinalizer) {
-			if err := r.deleteOpenPitrixResourcesInWorkspace(ctx, workspaceTemplate.Name); err != nil {
-				logger.Error(err, "failed to delete related openpitrix resource")
-				return ctrl.Result{}, err
-			}
-
 			// remove our finalizer from the list and update it.
 			workspaceTemplate.ObjectMeta.Finalizers = sliceutil.RemoveString(workspaceTemplate.ObjectMeta.Finalizers, func(item string) bool {
 				return item == workspaceTemplateFinalizer || item == orphanFinalizer
@@ -128,10 +117,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	// // TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
-	// if err := r.multiClusterSync(ctx, logger, workspaceTemplate); err != nil {
-	// 	return ctrl.Result{}, err
-	// }
+	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
 
 	if err := r.initWorkspaceRoles(ctx, logger, workspaceTemplate); err != nil {
 		return ctrl.Result{}, err
@@ -141,119 +127,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	r.Recorder.Event(workspaceTemplate, corev1.EventTypeNormal, controllerutils.SuccessSynced, controllerutils.MessageResourceSynced)
 	return ctrl.Result{}, nil
-}
-
-// nolint
-func (r *Reconciler) singleClusterSync(ctx context.Context, logger logr.Logger, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
-	workspace := &tenantv1alpha1.Workspace{}
-	if err := r.Get(ctx, types.NamespacedName{Name: workspaceTemplate.Name}, workspace); err != nil {
-		if errors.IsNotFound(err) {
-			if workspace, err := newWorkspace(workspaceTemplate); err != nil {
-				logger.Error(err, "generate workspace failed")
-				return err
-			} else {
-				if err := r.Create(ctx, workspace); err != nil {
-					logger.Error(err, "create workspace failed")
-					return err
-				}
-				return nil
-			}
-		}
-		logger.Error(err, "get workspace failed")
-		return err
-	}
-	if !reflect.DeepEqual(workspace.Spec, workspaceTemplate.Spec.Template.Spec) ||
-		!reflect.DeepEqual(workspace.Labels, workspaceTemplate.Spec.Template.Labels) {
-
-		workspace = workspace.DeepCopy()
-		workspace.Spec = workspaceTemplate.Spec.Template.Spec
-		workspace.Labels = workspaceTemplate.Spec.Template.Labels
-
-		if err := r.Update(ctx, workspace); err != nil {
-			logger.Error(err, "update workspace failed")
-			return err
-		}
-	}
-	return nil
-}
-
-// nolint
-func (r *Reconciler) multiClusterSync(ctx context.Context, logger logr.Logger, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
-	if err := r.ensureNotControlledByKubefed(ctx, logger, workspaceTemplate); err != nil {
-		return err
-	}
-	federatedWorkspace := &typesv1beta1.FederatedWorkspace{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: workspaceTemplate.Name}, federatedWorkspace); err != nil {
-		if errors.IsNotFound(err) {
-			if federatedWorkspace, err := newFederatedWorkspace(workspaceTemplate); err != nil {
-				logger.Error(err, "generate federated workspace failed")
-				return err
-			} else {
-				if err := r.Create(ctx, federatedWorkspace); err != nil {
-					logger.Error(err, "create federated workspace failed")
-					return err
-				}
-				return nil
-			}
-		}
-		logger.Error(err, "get federated workspace failed")
-		return err
-	}
-
-	if !reflect.DeepEqual(federatedWorkspace.Spec, workspaceTemplate.Spec) ||
-		!reflect.DeepEqual(federatedWorkspace.Labels, workspaceTemplate.Labels) {
-
-		federatedWorkspace.Spec = workspaceTemplate.Spec
-		federatedWorkspace.Labels = workspaceTemplate.Labels
-
-		if err := r.Update(ctx, federatedWorkspace); err != nil {
-			logger.Error(err, "update federated workspace failed")
-			return err
-		}
-	}
-
-	return nil
-}
-
-// nolint
-func newFederatedWorkspace(template *tenantv1alpha2.WorkspaceTemplate) (*typesv1beta1.FederatedWorkspace, error) {
-	federatedWorkspace := &typesv1beta1.FederatedWorkspace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   template.Name,
-			Labels: template.Labels,
-		},
-		Spec: template.Spec,
-	}
-	return federatedWorkspace, nil
-}
-
-// nolint
-func newWorkspace(template *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha1.Workspace, error) {
-	workspace := &tenantv1alpha1.Workspace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   template.Name,
-			Labels: template.Spec.Template.Labels,
-		},
-		Spec: template.Spec.Template.Spec,
-	}
-
-	return workspace, nil
-}
-
-// nolint
-func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, logger logr.Logger, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
-	if workspaceTemplate.Labels[constants.KubefedManagedLabel] != "false" {
-		if workspaceTemplate.Labels == nil {
-			workspaceTemplate.Labels = make(map[string]string)
-		}
-		workspaceTemplate.Labels[constants.KubefedManagedLabel] = "false"
-		logger.V(4).Info("update kubefed managed label")
-		if err := r.Update(ctx, workspaceTemplate); err != nil {
-			logger.Error(err, "update kubefed managed label failed")
-			return err
-		}
-	}
-	return nil
 }
 
 func (r *Reconciler) initWorkspaceRoles(ctx context.Context, logger logr.Logger, workspace *tenantv1alpha2.WorkspaceTemplate) error {
@@ -332,86 +205,6 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, logger logr.Log
 	}
 
 	return nil
-}
-func (r *Reconciler) deleteOpenPitrixResourcesInWorkspace(ctx context.Context, ws string) error {
-	if len(ws) == 0 {
-		return nil
-	}
-
-	var err error
-	// helm release, apps and appVersion only exist in host cluster. Delete these resource in workspace template controller
-	if err = r.deleteHelmReleases(ctx, ws); err != nil {
-		return err
-	}
-
-	if err = r.deleteHelmApps(ctx, ws); err != nil {
-		return err
-	}
-
-	if err = r.deleteHelmRepos(ctx, ws); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *Reconciler) deleteHelmApps(ctx context.Context, ws string) error {
-	if len(ws) == 0 {
-		return nil
-	}
-
-	apps := v1alpha1.HelmApplicationList{}
-	err := r.List(ctx, &apps, &client.ListOptions{LabelSelector: labels.SelectorFromSet(map[string]string{
-		constants.WorkspaceLabelKey: ws}),
-	})
-	if err != nil {
-		return err
-	}
-	for _, app := range apps.Items {
-		if app.Annotations == nil {
-			app.Annotations = map[string]string{}
-		}
-		if _, exists := app.Annotations[constants.DanglingAppCleanupKey]; !exists {
-			// Mark the app, the cleanup is in the application controller.
-			appCopy := app.DeepCopy()
-			appCopy.Annotations[constants.DanglingAppCleanupKey] = constants.CleanupDanglingAppOngoing
-			appPatch := client.MergeFrom(&app)
-			err = r.Patch(ctx, appCopy, appPatch)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// Delete all helm releases in the workspace ws
-func (r *Reconciler) deleteHelmReleases(ctx context.Context, ws string) error {
-	if len(ws) == 0 {
-		return nil
-	}
-	rls := &v1alpha1.HelmRelease{}
-	err := r.DeleteAllOf(ctx, rls, &client.DeleteAllOfOptions{
-		ListOptions: client.ListOptions{LabelSelector: labels.SelectorFromSet(map[string]string{
-			constants.WorkspaceLabelKey: ws,
-		}),
-		}})
-	return err
-}
-
-func (r *Reconciler) deleteHelmRepos(ctx context.Context, ws string) error {
-	if len(ws) == 0 {
-		return nil
-	}
-	rls := &v1alpha1.HelmRepo{}
-	err := r.DeleteAllOf(ctx, rls, &client.DeleteAllOfOptions{
-		ListOptions: client.ListOptions{LabelSelector: labels.SelectorFromSet(map[string]string{
-			constants.WorkspaceLabelKey: ws,
-		}),
-		}})
-
-	return err
 }
 
 // deleteNamespacesInWorkspace Deletes the namespace associated with the workspace, which match the workspace label selector

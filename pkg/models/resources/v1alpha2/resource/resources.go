@@ -68,7 +68,7 @@ func NewResourceGetter(factory informers.InformerFactory) *ResourceGetter {
 	resourceGetters[v1alpha2.Deployments] = deployment.NewDeploymentSetSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.Ingresses] = ingress.NewIngressSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.Jobs] = job.NewJobSearcher(factory.KubernetesSharedInformerFactory())
-	resourceGetters[v1alpha2.PersistentVolumeClaims] = persistentvolumeclaim.NewPersistentVolumeClaimSearcher(factory.KubernetesSharedInformerFactory(), factory.SnapshotSharedInformerFactory())
+	resourceGetters[v1alpha2.PersistentVolumeClaims] = persistentvolumeclaim.NewPersistentVolumeClaimSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.Secrets] = secret.NewSecretSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.Services] = service.NewServiceSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.StatefulSets] = statefulset.NewStatefulSetSearcher(factory.KubernetesSharedInformerFactory())
@@ -78,7 +78,7 @@ func NewResourceGetter(factory informers.InformerFactory) *ResourceGetter {
 	resourceGetters[v1alpha2.Nodes] = node.NewNodeSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.Namespaces] = namespace.NewNamespaceSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.ClusterRoles] = clusterrole.NewClusterRoleSearcher(factory.KubernetesSharedInformerFactory())
-	resourceGetters[v1alpha2.StorageClasses] = storageclass.NewStorageClassesSearcher(factory.KubernetesSharedInformerFactory(), factory.SnapshotSharedInformerFactory())
+	resourceGetters[v1alpha2.StorageClasses] = storageclass.NewStorageClassesSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.HorizontalPodAutoscalers] = hpa.NewHpaSearcher(factory.KubernetesSharedInformerFactory())
 	resourceGetters[v1alpha2.Workspaces] = workspace.NewWorkspaceSearcher(factory.KubeSphereSharedInformerFactory())
 

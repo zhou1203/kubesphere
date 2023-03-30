@@ -21,7 +21,6 @@ import (
 	restfulspec "github.com/emicklei/go-restful-openapi"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/api/resource/v1alpha2"
@@ -52,10 +51,10 @@ func Resource(resource string) schema.GroupResource {
 	return GroupVersion.WithResource(resource).GroupResource()
 }
 
-func AddToContainer(c *restful.Container, informerFactory informers.InformerFactory, cache cache.Cache) error {
+func AddToContainer(c *restful.Container, informerFactory informers.InformerFactory) error {
 
 	webservice := runtime.NewWebService(GroupVersion)
-	handler := New(resourcev1alpha3.NewResourceGetter(informerFactory, cache), resourcev1alpha2.NewResourceGetter(informerFactory), components.NewComponentsGetter(informerFactory.KubernetesSharedInformerFactory()))
+	handler := New(resourcev1alpha3.NewResourceGetter(informerFactory), resourcev1alpha2.NewResourceGetter(informerFactory), components.NewComponentsGetter(informerFactory.KubernetesSharedInformerFactory()))
 
 	webservice.Route(webservice.GET("/{resources}").
 		To(handler.handleListResources).

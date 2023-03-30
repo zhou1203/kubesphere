@@ -27,9 +27,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -44,7 +42,6 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	controllerutils "kubesphere.io/kubesphere/pkg/controller/utils/controller"
-	"kubesphere.io/kubesphere/pkg/simple/client/gateway"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
@@ -59,7 +56,6 @@ type Reconciler struct {
 	Logger                  logr.Logger
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
-	GatewayOptions          *gateway.Options
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -120,9 +116,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	} else {
 		// The object is being deleted
 		if sliceutil.HasString(namespace.ObjectMeta.Finalizers, finalizer) {
-			if err := r.deleteGateway(rootCtx, logger, namespace.Name); err != nil {
-				return ctrl.Result{}, err
-			}
 			// remove our finalizer from the list and update it.
 			namespace.ObjectMeta.Finalizers = sliceutil.RemoveString(namespace.ObjectMeta.Finalizers, func(item string) bool {
 				return item == finalizer
@@ -206,25 +199,6 @@ func (r *Reconciler) unbindWorkspace(ctx context.Context, logger logr.Logger, na
 			return err
 		}
 	}
-	return nil
-}
-
-// delete gateway
-func (r *Reconciler) deleteGateway(ctx context.Context, logger logr.Logger, namespace string) error {
-	gatewayName := constants.IngressControllerPrefix + namespace
-	if r.GatewayOptions.Namespace != "" {
-		namespace = r.GatewayOptions.Namespace
-	}
-	gateway := unstructured.Unstructured{}
-	gateway.SetGroupVersionKind(schema.GroupVersionKind{Group: "gateway.kubesphere.io", Version: "v1alpha1", Kind: "Gateway"})
-	gateway.SetName(gatewayName)
-	gateway.SetNamespace(namespace)
-	logger.V(4).Info("deleting gateway", "namespace", namespace, "name", gatewayName)
-	err := r.Delete(ctx, &gateway)
-	if err != nil {
-		return client.IgnoreNotFound(err)
-	}
-
 	return nil
 }
 

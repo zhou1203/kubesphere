@@ -20,7 +20,6 @@ import (
 	"sort"
 	"strconv"
 
-	snapshotinformer "github.com/kubernetes-csi/external-snapshotter/client/v4/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -31,14 +30,12 @@ import (
 )
 
 type storageClassesSearcher struct {
-	informers         informers.SharedInformerFactory
-	snapshotInformers snapshotinformer.SharedInformerFactory
+	informers informers.SharedInformerFactory
 }
 
-func NewStorageClassesSearcher(informers informers.SharedInformerFactory, snapshotInformer snapshotinformer.SharedInformerFactory) v1alpha2.Interface {
+func NewStorageClassesSearcher(informers informers.SharedInformerFactory) v1alpha2.Interface {
 	return &storageClassesSearcher{
-		informers:         informers,
-		snapshotInformers: snapshotInformer,
+		informers: informers,
 	}
 }
 
