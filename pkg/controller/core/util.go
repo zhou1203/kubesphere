@@ -21,8 +21,11 @@ import (
 	goerrors "errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/Masterminds/semver/v3"
 	"helm.sh/helm/v3/pkg/chart/loader"
@@ -190,4 +193,13 @@ func hasCluster(clusters []clusterv1alpha1.Cluster, clusterName string) bool {
 		}
 	}
 	return false
+}
+
+func isServerSideError(err error) bool {
+	return errors.IsTimeout(err) ||
+		errors.IsServerTimeout(err) ||
+		errors.IsServiceUnavailable(err) ||
+		errors.IsInternalError(err) ||
+		errors.IsUnexpectedServerError(err) ||
+		os.IsTimeout(err)
 }

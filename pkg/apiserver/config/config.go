@@ -141,7 +141,7 @@ type Config struct {
 	TerminalOptions       *terminal.Options       `json:"terminal,omitempty" yaml:"terminal,omitempty" mapstructure:"terminal"`
 }
 
-// newConfig creates a default non-empty Config
+// New config creates a default non-empty Config
 func New() *Config {
 	return &Config{
 		KubernetesOptions:     k8s.NewKubernetesOptions(),
@@ -150,6 +150,7 @@ func New() *Config {
 		AuthorizationOptions:  authorization.NewOptions(),
 		MultiClusterOptions:   multicluster.NewOptions(),
 		TerminalOptions:       terminal.NewTerminalOptions(),
+		AuditingOptions:       auditing.NewAuditingOptions(),
 	}
 }
 
@@ -164,7 +165,7 @@ func WatchConfigChange() <-chan Config {
 	return _config.watchConfig()
 }
 
-// GetFromConfigMap returns KubeSphere ruuning config by the given ConfigMap.
+// GetFromConfigMap returns KubeSphere running config by the given ConfigMap.
 func GetFromConfigMap(cm *corev1.ConfigMap) (*Config, error) {
 	c := &Config{}
 	value, ok := cm.Data[constants.KubeSphereConfigMapDataKey]

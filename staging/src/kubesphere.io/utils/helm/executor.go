@@ -87,32 +87,20 @@ type executor struct {
 	releaseName string
 	helmImage   string
 	jobLabels   map[string]string
-	// add labels to helm chart
-	labels map[string]string
-	// add annotations to helm chart
-	annotations map[string]string
 }
 
 type ExecutorOption func(*executor)
-
-// SetAnnotations sets extra annotations added to all resources in chart.
-func SetAnnotations(annotations map[string]string) ExecutorOption {
-	return func(e *executor) {
-		e.annotations = annotations
-	}
-}
-
-// SetLabels sets extra labels added to all resources in chart.
-func SetLabels(labels map[string]string) ExecutorOption {
-	return func(e *executor) {
-		e.labels = labels
-	}
-}
 
 // SetHelmImage sets the helmImage option.
 func SetHelmImage(helmImage string) ExecutorOption {
 	return func(e *executor) {
 		e.helmImage = helmImage
+	}
+}
+
+func SetJobLabels(jobLabels map[string]string) ExecutorOption {
+	return func(o *executor) {
+		o.jobLabels = jobLabels
 	}
 }
 
@@ -159,10 +147,14 @@ func NewExecutor(kubeConfig, namespace, releaseName string, options ...ExecutorO
 }
 
 type helmOption struct {
-	kubeConfig      string
-	debug           bool
-	kubeAsUser      string
-	kubeAsGroup     string
+	kubeConfig  string
+	debug       bool
+	kubeAsUser  string
+	kubeAsGroup string
+	// add labels to helm chart
+	labels map[string]string
+	// add annotations to helm chart
+	annotations     map[string]string
 	overrides       []string
 	createNamespace bool
 	install         bool
@@ -178,6 +170,20 @@ type HelmOption func(*helmOption)
 func SetHelmKubeConfig(kubeConfig string) HelmOption {
 	return func(o *helmOption) {
 		o.kubeConfig = kubeConfig
+	}
+}
+
+// SetAnnotations sets extra annotations added to all resources in chart.
+func SetAnnotations(annotations map[string]string) HelmOption {
+	return func(e *helmOption) {
+		e.annotations = annotations
+	}
+}
+
+// SetLabels sets extra labels added to all resources in chart.
+func SetLabels(labels map[string]string) HelmOption {
+	return func(e *helmOption) {
+		e.labels = labels
 	}
 }
 
@@ -206,12 +212,6 @@ func SetInstall(install bool) HelmOption {
 func SetDryRun(dryRun bool) HelmOption {
 	return func(e *helmOption) {
 		e.dryRun = dryRun
-	}
-}
-
-func SetHelmJobLabels(jobLabels map[string]string) ExecutorOption {
-	return func(o *executor) {
-		o.jobLabels = jobLabels
 	}
 }
 
@@ -284,17 +284,16 @@ func (e *executor) chartPath(chartName string) string {
 	return fmt.Sprintf("%s.tgz", chartName)
 }
 
-func (e *executor) setupChartData(kubeConfig, chartName string, chartData, values []byte) (map[string][]byte, error) {
+func (e *executor) setupChartData(kubeConfig, chartName string, chartData, values []byte, labels, annotations map[string]string) (map[string][]byte, error) {
 	kustomizationConfig := types.Kustomization{
 		Resources:         []string{"./.local-helm-output.yaml"},
-		CommonAnnotations: e.annotations,                    // add extra annotations to output
-		Labels:            []types.Label{{Pairs: e.labels}}, // Labels to add to all objects but not selectors.
+		CommonAnnotations: annotations,                    // add extra annotations to output
+		Labels:            []types.Label{{Pairs: labels}}, // Labels to add to all objects but not selectors.
 	}
 	kustomizationData, err := yaml.Marshal(kustomizationConfig)
 	if err != nil {
 		return nil, err
 	}
-
 	data := map[string][]byte{
 		postRenderExecFile:     []byte(kustomizeBuild),
 		kustomizationFile:      kustomizationData,
@@ -311,8 +310,8 @@ func generateName(name string) string {
 	return fmt.Sprintf("helm-executor-%s-%s", name, rand.String(6))
 }
 
-func (e *executor) createConfigMap(ctx context.Context, kubeConfig, chartName string, chartData, values []byte) (string, error) {
-	data, err := e.setupChartData(kubeConfig, chartName, chartData, values)
+func (e *executor) createConfigMap(ctx context.Context, kubeConfig, chartName string, chartData, values []byte, labels, annotations map[string]string) (string, error) {
+	data, err := e.setupChartData(kubeConfig, chartName, chartData, values, labels, annotations)
 	if err != nil {
 		return "", err
 	}
@@ -362,7 +361,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 	}
 
 	// Post render, add annotations or labels to resources
-	if len(e.labels) > 0 || len(e.annotations) > 0 {
+	if len(helmOptions.labels) > 0 || len(helmOptions.annotations) > 0 {
 		args = append(args, "--post-renderer", filepath.Join(workspaceBase, postRenderExecFile))
 	}
 
@@ -387,7 +386,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 		args = append(args, "--kube-as-group", helmOptions.kubeAsGroup)
 	}
 
-	name, err := e.createConfigMap(ctx, helmOptions.kubeConfig, chartName, chartData, values)
+	name, err := e.createConfigMap(ctx, helmOptions.kubeConfig, chartName, chartData, values, helmOptions.labels, helmOptions.annotations)
 	if err != nil {
 		return "", err
 	}
