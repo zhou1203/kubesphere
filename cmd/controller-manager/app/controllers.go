@@ -19,8 +19,6 @@ package app
 import (
 	"fmt"
 
-	"kubesphere.io/kubesphere/pkg/controller/core"
-
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,6 +28,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/clusterrolebinding"
+	"kubesphere.io/kubesphere/pkg/controller/core"
 	"kubesphere.io/kubesphere/pkg/controller/globalrole"
 	"kubesphere.io/kubesphere/pkg/controller/globalrolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/group"
@@ -286,7 +285,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	return nil
 }
 
-var addSuccessfullyControllers = sets.NewString()
+var addSuccessfullyControllers = sets.New[string]()
 
 type setupableController interface {
 	SetupWithManager(mgr ctrl.Manager) error

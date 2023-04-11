@@ -22,19 +22,15 @@ import (
 	"strings"
 	"time"
 
-	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
-
-	"k8s.io/apimachinery/pkg/util/sets"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-
-	"k8s.io/apimachinery/pkg/labels"
-
 	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/leaderelection"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
+	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/simple/client/multicluster"
 )
@@ -145,7 +141,7 @@ func (o *KubeSphereControllerManagerOptions) Validate(allControllerNameSelectors
 	}
 
 	// genetic option: controllers, check all selectors are valid
-	allControllersNameSet := sets.NewString(allControllerNameSelectors...)
+	allControllersNameSet := sets.New(allControllerNameSelectors...)
 	for _, selector := range o.ControllerGates {
 		if selector == "*" {
 			continue
