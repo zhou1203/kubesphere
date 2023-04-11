@@ -812,18 +812,21 @@ func (r *SubscriptionReconciler) syncSubscriptionStatus(ctx context.Context, sub
 
 	// TODO upgrade after configuration changes
 
-	if release.Info.Status == helmrelease.StatusDeployed && sub.Status.State != corev1alpha1.StateInstalled {
-		updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
-		return r.updateSubscription(ctx, sub)
-	}
-
-	if sub.Status.State == corev1alpha1.StateInstalled {
-		if err := syncExtendedAPIStatus(ctx, r.Client, sub); err != nil {
+	if sub.Status.State != corev1alpha1.StateInstalled {
+		switch release.Info.Status {
+		case helmrelease.StatusFailed:
+			updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, release.Info.Description)
+			return r.updateSubscription(ctx, sub)
+		case helmrelease.StatusDeployed:
+			updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
+			return r.updateSubscription(ctx, sub)
+		}
+	} else {
+		if err = syncExtendedAPIStatus(ctx, r.Client, sub); err != nil {
 			return err
 		}
 		return r.syncExtensionStatus(ctx, sub)
 	}
-
 	return nil
 }
 
