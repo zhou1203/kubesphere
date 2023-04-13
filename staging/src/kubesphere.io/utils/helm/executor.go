@@ -161,6 +161,12 @@ type helmOption struct {
 	dryRun          bool
 }
 
+func newHelmOption() *helmOption {
+	return &helmOption{
+		debug: true,
+	}
+}
+
 type HelmOption func(*helmOption)
 
 // SetHelmKubeConfig sets the kube config data of the target cluster used by helm installation.
@@ -188,6 +194,7 @@ func SetLabels(labels map[string]string) HelmOption {
 }
 
 // SetHelmDebug adds `--debug` argument to helm command.
+// The default value is true.
 func SetHelmDebug(debug bool) HelmOption {
 	return func(o *helmOption) {
 		o.debug = debug
@@ -201,7 +208,7 @@ func SetCreateNamespace(createNamespace bool) HelmOption {
 	}
 }
 
-// SetCreateNamespace sets the createNamespace option.
+// SetInstall adds `--install` argument to helm command.
 func SetInstall(install bool) HelmOption {
 	return func(e *helmOption) {
 		e.install = install
@@ -244,7 +251,7 @@ func InitHelmConf(kubeConfig, namespace string) (*action.Configuration, error) {
 
 // Install installs the specified chart, returns the name of the Job that executed the task.
 func (e *executor) Install(ctx context.Context, chartName string, chartData, values []byte, options ...HelmOption) (string, error) {
-	helmOptions := &helmOption{}
+	helmOptions := newHelmOption()
 	for _, f := range options {
 		f(helmOptions)
 	}
@@ -272,7 +279,7 @@ func (e *executor) Install(ctx context.Context, chartName string, chartData, val
 
 // Upgrade upgrades the specified chart, returns the name of the Job that executed the task.
 func (e *executor) Upgrade(ctx context.Context, chartName string, chartData, values []byte, options ...HelmOption) (string, error) {
-	helmOptions := &helmOption{}
+	helmOptions := newHelmOption()
 	for _, f := range options {
 		f(helmOptions)
 	}
@@ -344,7 +351,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 		args = append(args, "--install")
 	}
 
-	args = append(args, "--wait", e.releaseName, e.chartPath(chartName), "--namespace", e.namespace)
+	args = append(args, e.releaseName, e.chartPath(chartName), "--namespace", e.namespace)
 
 	if len(values) > 0 {
 		args = append(args, "--values", "values.yaml")
@@ -430,7 +437,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 									LocalObjectReference: corev1.LocalObjectReference{
 										Name: name,
 									},
-									DefaultMode: pointer.Int32Ptr(0755),
+									DefaultMode: pointer.Int32(0755),
 								},
 							},
 						},
@@ -456,7 +463,7 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 
 // Uninstall uninstalls the specified chart, returns the name of the Job that executed the task.
 func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string, error) {
-	helmOptions := &helmOption{}
+	helmOptions := newHelmOption()
 	for _, f := range options {
 		f(helmOptions)
 	}
@@ -511,7 +518,7 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 			Labels:    e.jobLabels,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: pointer.Int32Ptr(1),
+			BackoffLimit: pointer.Int32(1),
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -539,7 +546,7 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: name,
 						},
-						DefaultMode: pointer.Int32Ptr(0755),
+						DefaultMode: pointer.Int32(0755),
 					},
 				},
 			},
@@ -560,8 +567,8 @@ func (e *executor) Uninstall(ctx context.Context, options ...HelmOption) (string
 
 // ForceDelete forcibly deletes all resources of the chart.
 // The current implementation still uses the helm command to force deletion.
-func (e *executor) ForceDelete(ctx context.Context, options ...HelmOption) error {
-	helmOptions := &helmOption{}
+func (e *executor) ForceDelete(_ context.Context, options ...HelmOption) error {
+	helmOptions := newHelmOption()
 	for _, f := range options {
 		f(helmOptions)
 	}
@@ -586,7 +593,7 @@ func (e *executor) ForceDelete(ctx context.Context, options ...HelmOption) error
 
 // Release returns the helm release
 func (e *executor) Release(options ...HelmOption) (*helmrelease.Release, error) {
-	helmOptions := &helmOption{}
+	helmOptions := newHelmOption()
 	for _, f := range options {
 		f(helmOptions)
 	}
@@ -607,7 +614,7 @@ func (e *executor) Release(options ...HelmOption) (*helmrelease.Release, error) 
 
 // IsReleaseReady checks if the helm release is ready.
 func (e *executor) IsReleaseReady(timeout time.Duration, options ...HelmOption) (bool, error) {
-	helmOptions := &helmOption{}
+	helmOptions := newHelmOption()
 	for _, f := range options {
 		f(helmOptions)
 	}
