@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,6 +40,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/klog/v2"
+
+	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 const (
@@ -326,11 +329,24 @@ func isValidShell(validShells []string, shell string) bool {
 	return false
 }
 
+func (t *terminaler) cleanupKubectlPod(namespace, name string) {
+	// This Pod is not a kubectl pod, do not clean up
+	if !strings.HasPrefix(name, constants.KubectlPodNamePrefix) || namespace != constants.KubeSphereNamespace {
+		return
+	}
+	if err := t.client.CoreV1().Pods(namespace).Delete(context.Background(), name, metav1.DeleteOptions{}); err != nil {
+		klog.Warning(err)
+		return
+	}
+}
+
 func (t *terminaler) HandleSession(shell, namespace, podName, containerName string, conn *websocket.Conn) {
 	var err error
 	validShells := []string{"bash", "sh"}
 
 	session := &TerminalSession{conn: conn, sizeChan: make(chan remotecommand.TerminalSize)}
+
+	defer t.cleanupKubectlPod(namespace, podName)
 
 	if isValidShell(validShells, shell) {
 		cmd := []string{shell}

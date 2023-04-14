@@ -30,6 +30,7 @@ const (
 	IngressControllerPrefix    = "kubesphere-router-"
 	KubeSphereConfigName       = "kubesphere-config"
 	KubeSphereConfigMapDataKey = "kubesphere.yaml"
+	KubectlPodNamePrefix       = "ks-managed-kubectl"
 
 	ClusterNameLabelKey      = "kubesphere.io/cluster"
 	NameLabelKey             = "kubesphere.io/name"

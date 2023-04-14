@@ -27,7 +27,6 @@ import (
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
-	"kubesphere.io/kubesphere/pkg/controller/clusterrolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/core"
 	"kubesphere.io/kubesphere/pkg/controller/globalrole"
 	"kubesphere.io/kubesphere/pkg/controller/globalrolebinding"
@@ -65,7 +64,6 @@ var allControllers = []string{
 	"nsnp",
 	"ippool",
 	"csr",
-	"clusterrolebinding",
 	"globalrole",
 	"globalrolebinding",
 	"groupbinding",
@@ -216,17 +214,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 			kubernetesInformer.Certificates().V1().CertificateSigningRequests(),
 			kubernetesInformer.Core().V1().ConfigMaps(), client.Config())
 		addController(mgr, "csr", csrController)
-	}
-
-	// "clusterrolebinding" controller
-	if cmOptions.IsControllerEnabled("clusterrolebinding") {
-		clusterRoleBindingController := clusterrolebinding.NewController(client.Kubernetes(),
-			kubernetesInformer.Rbac().V1().ClusterRoleBindings(),
-			kubernetesInformer.Apps().V1().Deployments(),
-			kubernetesInformer.Core().V1().Pods(),
-			kubesphereInformer.Iam().V1alpha2().Users(),
-			cmOptions.AuthenticationOptions.KubectlImage)
-		addController(mgr, "clusterrolebinding", clusterRoleBindingController)
 	}
 
 	// "globalrole" controller

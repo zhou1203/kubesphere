@@ -56,8 +56,7 @@ type resourceHandler struct {
 	kubectlOperator     kubectl.Interface
 }
 
-func newResourceHandler(k8sClient kubernetes.Interface, factory informers.InformerFactory, masterURL string) *resourceHandler {
-
+func newResourceHandler(k8sClient kubernetes.Interface, factory informers.InformerFactory, masterURL, kubectlImage string) *resourceHandler {
 	return &resourceHandler{
 		resourcesGetter:     resource.NewResourceGetter(factory),
 		componentsGetter:    components.NewComponentsGetter(factory.KubernetesSharedInformerFactory()),
@@ -67,9 +66,8 @@ func newResourceHandler(k8sClient kubernetes.Interface, factory informers.Inform
 		gitVerifier:         git.NewGitVerifier(factory.KubernetesSharedInformerFactory()),
 		registryGetter:      registries.NewRegistryGetter(factory.KubernetesSharedInformerFactory()),
 		kubeconfigOperator:  kubeconfig.NewReadOnlyOperator(factory.KubernetesSharedInformerFactory().Core().V1().ConfigMaps().Lister(), masterURL),
-		kubectlOperator: kubectl.NewOperator(nil, factory.KubernetesSharedInformerFactory().Apps().V1().Deployments(),
-			factory.KubernetesSharedInformerFactory().Core().V1().Pods(),
-			factory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users(), ""),
+		kubectlOperator: kubectl.NewOperator(k8sClient, factory.KubernetesSharedInformerFactory().Core().V1().Pods(),
+			factory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users(), kubectlImage),
 	}
 }
 
@@ -363,14 +361,10 @@ func (r *resourceHandler) handleGetNamespacedAbnormalWorkloads(request *restful.
 	}
 
 	response.WriteAsJson(result)
-
 }
 
 func (r *resourceHandler) GetKubectlPod(request *restful.Request, response *restful.Response) {
-	user := request.PathParameter("user")
-
-	kubectlPod, err := r.kubectlOperator.GetKubectlPod(user)
-
+	kubectlPod, err := r.kubectlOperator.GetKubectlPod(request.PathParameter("user"))
 	if err != nil {
 		klog.Errorln(err)
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, errors.Wrap(err))
