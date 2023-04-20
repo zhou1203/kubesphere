@@ -210,10 +210,8 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "csr" controller
 	if cmOptions.IsControllerEnabled("csr") {
-		csrController := certificatesigningrequest.NewController(client.Kubernetes(),
-			kubernetesInformer.Certificates().V1().CertificateSigningRequests(),
-			kubernetesInformer.Core().V1().ConfigMaps(), client.Config())
-		addController(mgr, "csr", csrController)
+		csrController := certificatesigningrequest.NewReconciler(client.Kubernetes(), kubernetesInformer.Core().V1().ConfigMaps().Lister(), client.Config())
+		addControllerWithSetup(mgr, "csr", csrController)
 	}
 
 	// "globalrole" controller
