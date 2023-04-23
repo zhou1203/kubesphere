@@ -38,11 +38,12 @@ const (
 	// ConditionTypeState indicates that this condition is recording Subscription state changes.
 	ConditionTypeState = "State"
 
-	ExtensionReferenceLabel    = "kubesphere.io/extension-ref"
-	RepositoryReferenceLabel   = "kubesphere.io/repository-ref"
-	SubscriptionReferenceLabel = "kubesphere.io/subscription-ref"
-	DisplayNameAnnotation      = "kubesphere.io/display-name"
-	ForceDeleteAnnotation      = "kubesphere.io/force-delete"
-	KSVersionAnnotation        = "kubesphere.io/ks-version"
-	InstallationModeAnnotation = "kubesphere.io/installation-mode"
+	ExtensionReferenceLabel          = "kubesphere.io/extension-ref"
+	RepositoryReferenceLabel         = "kubesphere.io/repository-ref"
+	SubscriptionReferenceLabel       = "kubesphere.io/subscription-ref"
+	DisplayNameAnnotation            = "kubesphere.io/display-name"
+	ForceDeleteAnnotation            = "kubesphere.io/force-delete"
+	KSVersionAnnotation              = "kubesphere.io/ks-version"
+	InstallationModeAnnotation       = "kubesphere.io/installation-mode"
+	SubscriptionConfigHashAnnotation = "kubesphere.io/config-hash"
 )

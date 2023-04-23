@@ -793,41 +793,45 @@ func (r *SubscriptionReconciler) syncSubscriptionStatus(ctx context.Context, sub
 		return err
 	}
 
-	release, err := executor.Release()
-	if isReleaseNotFoundError(err) {
-		switch sub.Status.State {
-		case "":
+	switch sub.Status.State {
+	case "": // Install the Subscription
+		// Check if the target helm release exists.
+		// If it does, there is no need to execute the installation process again.
+		release, err := executor.Release()
+		if err == nil {
+			// Has been installed successfully or failed
+			switch release.Info.Status {
+			case helmrelease.StatusFailed:
+				updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, release.Info.Description)
+				return r.updateSubscription(ctx, sub)
+			case helmrelease.StatusDeployed:
+				updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
+				return r.updateSubscription(ctx, sub)
+			default:
+				return nil
+			}
+		}
+
+		if !isReleaseNotFoundError(err) {
+			logger.Error(err, "failed to get helm release status")
+			return err
+		}
+		return r.installOrUpgradeExtension(ctx, sub, executor)
+	case corev1alpha1.StateInstalling:
+		return r.syncExtensionInstallationStatus(ctx, sub)
+	case corev1alpha1.StateInstalled:
+		// upgrade after configuration changes
+		if configChanged(sub) {
 			return r.installOrUpgradeExtension(ctx, sub, executor)
-		case corev1alpha1.StateInstalling:
-			return r.syncExtensionInstallationStatus(ctx, sub)
-		default: // InstallFailed
-			return nil
 		}
-	}
 
-	if err != nil {
-		logger.Error(err, "failed to get helm release status")
-		return err
-	}
-
-	// TODO upgrade after configuration changes
-
-	if sub.Status.State != corev1alpha1.StateInstalled {
-		switch release.Info.Status {
-		case helmrelease.StatusFailed:
-			updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, release.Info.Description)
-			return r.updateSubscription(ctx, sub)
-		case helmrelease.StatusDeployed:
-			updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
-			return r.updateSubscription(ctx, sub)
-		}
-	} else {
 		if err = syncExtendedAPIStatus(ctx, r.Client, sub); err != nil {
 			return err
 		}
 		return r.syncExtensionStatus(ctx, sub)
+	default: // InstallFailed
+		return nil
 	}
-	return nil
 }
 
 func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *corev1alpha1.Subscription, cluster clusterv1alpha1.Cluster) error {
@@ -852,37 +856,40 @@ func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *cor
 		return err
 	}
 
-	release, err := executor.Release(helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)))
-	if isReleaseNotFoundError(err) {
-		switch clusterSchedulingStatus.State {
-		case "":
+	switch clusterSchedulingStatus.State {
+	case "":
+		release, err := executor.Release(helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)))
+		if err == nil {
+			// Has been installed successfully or failed
+			switch release.Info.Status {
+			case helmrelease.StatusFailed:
+				updateClusterSchedulingStateAndCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstallFailed, release.Info.Description)
+				return r.updateSubscription(ctx, sub)
+			case helmrelease.StatusDeployed:
+				updateClusterSchedulingStateAndCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstalled, "")
+				return r.updateSubscription(ctx, sub)
+			default:
+				return nil
+			}
+		}
+
+		if !isReleaseNotFoundError(err) {
+			logger.Error(err, "failed to get helm release status")
+			return err
+		}
+		return r.installOrUpgradeClusterAgent(ctx, sub, cluster, clusterClient, &clusterSchedulingStatus, executor)
+	case corev1alpha1.StateInstalling:
+		return r.syncClusterAgentInstallationStatus(ctx, sub, cluster, &clusterSchedulingStatus)
+	case corev1alpha1.StateInstalled:
+		// upgrade after configuration changes
+		if configChanged(sub) {
 			return r.installOrUpgradeClusterAgent(ctx, sub, cluster, clusterClient, &clusterSchedulingStatus, executor)
-		case corev1alpha1.StateInstalling:
-			return r.syncClusterAgentInstallationStatus(ctx, sub, cluster, &clusterSchedulingStatus)
-		default: // InstallFailed
-			return nil
 		}
-	}
 
-	if err != nil {
-		logger.Error(err, "failed to get helm release status")
-		return err
+		return syncExtendedAPIStatus(ctx, clusterClient, sub)
+	default: // InstallFailed
+		return nil
 	}
-
-	if release.Info.Status == helmrelease.StatusDeployed && clusterSchedulingStatus.State != corev1alpha1.StateInstalled {
-		updateClusterSchedulingStateAndCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstalled, "")
-		if err := r.updateSubscription(ctx, sub); err != nil {
-			return err
-		}
-	}
-
-	if clusterSchedulingStatus.State == corev1alpha1.StateInstalled {
-		if err := syncExtendedAPIStatus(ctx, clusterClient, sub); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, sub *corev1alpha1.Subscription, executor helm.Executor) error {
@@ -934,6 +941,7 @@ func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, 
 		return err
 	}
 
+	setConfigHash(sub, sub.Spec.Config)
 	sub.Status.ReleaseName = releaseName
 	sub.Status.TargetNamespace = targetNamespace
 	sub.Status.JobName = jobName
@@ -976,6 +984,7 @@ func (r *SubscriptionReconciler) installOrUpgradeClusterAgent(ctx context.Contex
 		return err
 	}
 
+	setConfigHash(sub, clusterConfig(sub, cluster.Name))
 	clusterSchedulingStatus.ReleaseName = releaseName
 	clusterSchedulingStatus.TargetNamespace = targetNamespace
 	clusterSchedulingStatus.JobName = jobName

@@ -18,21 +18,23 @@ package core
 
 import (
 	"bytes"
+	"encoding/hex"
 	goerrors "errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"sort"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-
 	"github.com/Masterminds/semver/v3"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/storage/driver"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
+
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 
@@ -156,7 +158,7 @@ func usesPermissions(chartData []byte) (rbacv1.ClusterRole, rbacv1.Role) {
 	}
 	for _, file := range files {
 		if file.Name == permissionDefinitionFile {
-			//decoder := yaml.NewDecoder(bytes.NewReader(file.Data))
+			// decoder := yaml.NewDecoder(bytes.NewReader(file.Data))
 			decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(file.Data), 1024)
 			for {
 				result := new(rbacv1.Role)
@@ -202,4 +204,25 @@ func isServerSideError(err error) bool {
 		errors.IsInternalError(err) ||
 		errors.IsUnexpectedServerError(err) ||
 		os.IsTimeout(err)
+}
+
+func fnvString(text string) string {
+	h := fnv.New64a()
+	h.Write([]byte(text))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func configChanged(sub *corev1alpha1.Subscription) bool {
+	return fnvString(sub.Spec.Config) != sub.Annotations[corev1alpha1.SubscriptionConfigHashAnnotation]
+}
+
+func setConfigHash(sub *corev1alpha1.Subscription, config string) {
+	configHash := fnvString(config)
+	if sub.Annotations == nil {
+		sub.Annotations = map[string]string{
+			corev1alpha1.SubscriptionConfigHashAnnotation: configHash,
+		}
+	} else {
+		sub.Annotations[corev1alpha1.SubscriptionConfigHashAnnotation] = configHash
+	}
 }
