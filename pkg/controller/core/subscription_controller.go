@@ -193,7 +193,8 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 	if len(sub.Status.ClusterSchedulingStatuses) > 0 {
 		for clusterName, clusterSchedulingStatus := range sub.Status.ClusterSchedulingStatuses {
 			if err := r.uninstallClusterAgent(ctx, sub, clusterName); err != nil {
-				updateClusterSchedulingStateAndCondition(sub, clusterName, &clusterSchedulingStatus, corev1alpha1.StateUninstalled, err.Error())
+				updateClusterSchedulingState(sub, clusterName, &clusterSchedulingStatus, corev1alpha1.StateUninstalled)
+				updateClusterSchedulingCondition(sub, clusterName, &clusterSchedulingStatus, corev1alpha1.ConditionTypeUninstalled, err.Error(), metav1.ConditionFalse)
 				if err = r.updateSubscription(ctx, sub); err != nil {
 					logger.Error(err, "failed to update scheduling state and conditions")
 					return ctrl.Result{}, err
@@ -223,14 +224,15 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 		jobName, err := helmExecutor.Uninstall(ctx)
 		if err != nil {
 			logger.Error(err, "failed to delete helm release")
-			updateStateAndCondition(sub, corev1alpha1.StateFailed, err.Error())
+			updateState(sub, corev1alpha1.StateFailed)
+			updateCondition(sub, corev1alpha1.ConditionTypeUninstalled, err.Error(), metav1.ConditionFalse)
 			if err := r.updateSubscription(ctx, sub); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, nil
 		}
 		sub.Status.JobName = jobName
-		updateStateAndCondition(sub, corev1alpha1.StateUninstalling, "")
+		updateState(sub, corev1alpha1.StateUninstalling)
 		if err := r.updateSubscription(ctx, sub); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -261,7 +263,8 @@ func (r *SubscriptionReconciler) reconcileDelete(ctx context.Context, sub *corev
 				return ctrl.Result{}, err
 			}
 		} else if failed {
-			updateStateAndCondition(sub, corev1alpha1.StateFailed, latestJobCondition(job).Message)
+			updateState(sub, corev1alpha1.StateFailed)
+			updateCondition(sub, corev1alpha1.ConditionTypeUninstalled, latestJobCondition(job).Message, metav1.ConditionFalse)
 			if err := r.updateSubscription(ctx, sub); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -322,93 +325,119 @@ func (r *SubscriptionReconciler) loadChartData(ctx context.Context, ref *corev1a
 	return nil, extensionVersion, fmt.Errorf("unable to load chart data")
 }
 
-func updateStateAndCondition(sub *corev1alpha1.Subscription, state string, message string) {
+func updateState(sub *corev1alpha1.Subscription, state string) {
 	sub.Status.State = state
 
-	newCondition := metav1.Condition{
-		Type:               corev1alpha1.ConditionTypeState,
-		Status:             metav1.ConditionTrue,
+	newState := corev1alpha1.SubscriptionState{
 		LastTransitionTime: metav1.Now(),
-		Reason:             state,
-		Message:            message,
+		State:              state,
 	}
 
-	if sub.Status.Conditions == nil {
-		sub.Status.Conditions = []metav1.Condition{newCondition}
+	if sub.Status.StateHistory == nil {
+		sub.Status.StateHistory = []corev1alpha1.SubscriptionState{newState}
 		return
 	}
 
-	// We need to limit the number of Condition with type State, and if the limit is exceeded, delete the oldest one.
-	stateConditions := make([]metav1.Condition, 0, 1)
-	otherConditions := make([]metav1.Condition, 0, 1)
-	for _, condition := range sub.Status.Conditions {
-		if condition.Type == corev1alpha1.ConditionTypeState {
-			stateConditions = append(stateConditions, condition)
-		} else {
-			otherConditions = append(otherConditions, condition)
-		}
-	}
+	// We need to limit the number of StateHistory, and if the limit is exceeded, delete the oldest one.
 
-	// Not exceeding the limit, we can just append it to original Conditions.
-	if len(stateConditions) < corev1alpha1.MaxStateConditionNum {
-		sub.Status.Conditions = append(sub.Status.Conditions, newCondition)
+	// Not exceeding the limit
+	if len(sub.Status.StateHistory) < corev1alpha1.MaxStateNum {
+		sub.Status.StateHistory = append(sub.Status.StateHistory, newState)
 		return
 	}
 
-	sort.Slice(stateConditions, func(i, j int) bool {
-		return stateConditions[i].LastTransitionTime.After(stateConditions[j].LastTransitionTime.Time)
+	sort.Slice(sub.Status.StateHistory, func(i, j int) bool {
+		return sub.Status.StateHistory[i].LastTransitionTime.After(sub.Status.StateHistory[j].LastTransitionTime.Time)
 	})
-	stateConditions = stateConditions[:corev1alpha1.MaxStateConditionNum-1]
-	stateConditions = append(stateConditions, newCondition)
-	sub.Status.Conditions = append(otherConditions, stateConditions...)
+	sub.Status.StateHistory = append(sub.Status.StateHistory[:corev1alpha1.MaxStateNum-1], newState)
 }
 
-func updateClusterSchedulingStateAndCondition(sub *corev1alpha1.Subscription, clusterName string, clusterSchedulingStatus *corev1alpha1.InstallationStatus, state, message string) {
+func updateCondition(sub *corev1alpha1.Subscription, conditionType, message string, status metav1.ConditionStatus) {
+	conditions := []metav1.Condition{
+		{
+			Type:               conditionType,
+			Reason:             conditionType,
+			Status:             status,
+			LastTransitionTime: metav1.Now(),
+			Message:            message,
+		},
+	}
+	if len(sub.Status.Conditions) == 0 {
+		sub.Status.Conditions = conditions
+		return
+	}
+
+	for _, c := range sub.Status.Conditions {
+		if c.Type != conditionType {
+			conditions = append(conditions, c)
+		}
+	}
+	sub.Status.Conditions = conditions
+}
+
+func updateClusterSchedulingState(sub *corev1alpha1.Subscription, clusterName string, clusterSchedulingStatus *corev1alpha1.InstallationStatus, state string) {
 	clusterSchedulingStatus.State = state
 
-	newCondition := metav1.Condition{
-		Type:               corev1alpha1.ConditionTypeState,
-		Status:             metav1.ConditionTrue,
+	newState := corev1alpha1.SubscriptionState{
 		LastTransitionTime: metav1.Now(),
-		Reason:             state,
-		Message:            message,
+		State:              state,
 	}
 
 	if sub.Status.ClusterSchedulingStatuses == nil {
 		sub.Status.ClusterSchedulingStatuses = make(map[string]corev1alpha1.InstallationStatus)
 	}
 
-	if clusterSchedulingStatus.Conditions == nil {
-		clusterSchedulingStatus.Conditions = []metav1.Condition{newCondition}
+	if clusterSchedulingStatus.StateHistory == nil {
+		clusterSchedulingStatus.StateHistory = []corev1alpha1.SubscriptionState{newState}
 		sub.Status.ClusterSchedulingStatuses[clusterName] = *clusterSchedulingStatus
 		return
 	}
 
-	// We need to limit the number of Condition with type State, and if the limit is exceeded, delete the oldest one.
-	stateConditions := make([]metav1.Condition, 0, 1)
-	otherConditions := make([]metav1.Condition, 0, 1)
-	for _, condition := range clusterSchedulingStatus.Conditions {
-		if condition.Type == corev1alpha1.ConditionTypeState {
-			stateConditions = append(stateConditions, condition)
-		} else {
-			otherConditions = append(otherConditions, condition)
+	// We need to limit the number of StateHistory, and if the limit is exceeded, delete the oldest one.
+
+	// Not exceeding the limit
+	if len(clusterSchedulingStatus.StateHistory) < corev1alpha1.MaxStateNum {
+		clusterSchedulingStatus.StateHistory = append(clusterSchedulingStatus.StateHistory, newState)
+		sub.Status.ClusterSchedulingStatuses[clusterName] = *clusterSchedulingStatus
+		return
+	}
+
+	sort.Slice(clusterSchedulingStatus.StateHistory, func(i, j int) bool {
+		return clusterSchedulingStatus.StateHistory[i].LastTransitionTime.After(clusterSchedulingStatus.StateHistory[j].LastTransitionTime.Time)
+	})
+	clusterSchedulingStatus.StateHistory = append(clusterSchedulingStatus.StateHistory[:corev1alpha1.MaxStateNum-1], newState)
+	sub.Status.ClusterSchedulingStatuses[clusterName] = *clusterSchedulingStatus
+}
+
+func updateClusterSchedulingCondition(
+	sub *corev1alpha1.Subscription, clusterName string, clusterSchedulingStatus *corev1alpha1.InstallationStatus,
+	conditionType, message string, status metav1.ConditionStatus,
+) {
+	if sub.Status.ClusterSchedulingStatuses == nil {
+		sub.Status.ClusterSchedulingStatuses = make(map[string]corev1alpha1.InstallationStatus)
+	}
+
+	conditions := []metav1.Condition{
+		{
+			Type:               conditionType,
+			Reason:             conditionType,
+			Status:             status,
+			LastTransitionTime: metav1.Now(),
+			Message:            message,
+		},
+	}
+	if len(clusterSchedulingStatus.Conditions) == 0 {
+		clusterSchedulingStatus.Conditions = conditions
+		sub.Status.ClusterSchedulingStatuses[clusterName] = *clusterSchedulingStatus
+		return
+	}
+
+	for _, c := range clusterSchedulingStatus.Conditions {
+		if c.Type != conditionType {
+			conditions = append(conditions, c)
 		}
 	}
-
-	// Not exceeding the limit, we can just append it to original Conditions.
-	if len(stateConditions) < corev1alpha1.MaxStateConditionNum {
-		clusterSchedulingStatus.Conditions = append(clusterSchedulingStatus.Conditions, newCondition)
-		sub.Status.ClusterSchedulingStatuses[clusterName] = *clusterSchedulingStatus
-		return
-	}
-
-	sort.Slice(stateConditions, func(i, j int) bool {
-		return stateConditions[i].LastTransitionTime.After(stateConditions[j].LastTransitionTime.Time)
-	})
-	stateConditions = stateConditions[:corev1alpha1.MaxStateConditionNum-1]
-	stateConditions = append(stateConditions, newCondition)
-	clusterSchedulingStatus.Conditions = append(otherConditions, stateConditions...)
-
+	clusterSchedulingStatus.Conditions = conditions
 	sub.Status.ClusterSchedulingStatuses[clusterName] = *clusterSchedulingStatus
 }
 
@@ -428,6 +457,7 @@ func (r *SubscriptionReconciler) postRemove(ctx context.Context, sub *corev1alph
 	// Remove the finalizer from the subscription and update it.
 	controllerutil.RemoveFinalizer(sub, subscriptionFinalizer)
 	sub.Status.State = corev1alpha1.StateUninstalled
+	updateCondition(sub, corev1alpha1.ConditionTypeUninstalled, "", metav1.ConditionTrue)
 	return r.updateSubscription(ctx, sub)
 }
 
@@ -802,10 +832,12 @@ func (r *SubscriptionReconciler) syncSubscriptionStatus(ctx context.Context, sub
 			// Has been installed successfully or failed
 			switch release.Info.Status {
 			case helmrelease.StatusFailed:
-				updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, release.Info.Description)
+				updateState(sub, corev1alpha1.StateInstallFailed)
+				updateCondition(sub, corev1alpha1.ConditionTypeInstalled, release.Info.Description, metav1.ConditionFalse)
 				return r.updateSubscription(ctx, sub)
 			case helmrelease.StatusDeployed:
-				updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
+				updateState(sub, corev1alpha1.StateInstalled)
+				updateCondition(sub, corev1alpha1.ConditionTypeInstalled, "", metav1.ConditionTrue)
 				return r.updateSubscription(ctx, sub)
 			default:
 				return nil
@@ -828,10 +860,41 @@ func (r *SubscriptionReconciler) syncSubscriptionStatus(ctx context.Context, sub
 		if err = syncExtendedAPIStatus(ctx, r.Client, sub); err != nil {
 			return err
 		}
-		return r.syncExtensionStatus(ctx, sub)
+		if err = r.syncExtensionStatus(ctx, sub); err != nil {
+			return err
+		}
+		return r.updateReadyCondition(ctx, sub, executor)
 	default: // InstallFailed
 		return nil
 	}
+}
+
+func needUpdateReadyCondition(conditions []metav1.Condition, ready bool) bool {
+	for _, condition := range conditions {
+		if condition.Type != corev1alpha1.ConditionTypeReady {
+			continue
+		}
+		// Status does not need to be updated
+		if (ready && condition.Status == metav1.ConditionTrue) || (!ready && condition.Status == metav1.ConditionFalse) {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *SubscriptionReconciler) updateReadyCondition(ctx context.Context, sub *corev1alpha1.Subscription, executor helm.Executor) error {
+	ready, err := executor.IsReleaseReady(time.Second * 30)
+
+	if !needUpdateReadyCondition(sub.Status.Conditions, ready) {
+		return nil
+	}
+
+	if ready {
+		updateCondition(sub, corev1alpha1.ConditionTypeReady, "", metav1.ConditionTrue)
+	} else {
+		updateCondition(sub, corev1alpha1.ConditionTypeReady, err.Error(), metav1.ConditionFalse)
+	}
+	return r.updateSubscription(ctx, sub)
 }
 
 func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *corev1alpha1.Subscription, cluster clusterv1alpha1.Cluster) error {
@@ -863,10 +926,12 @@ func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *cor
 			// Has been installed successfully or failed
 			switch release.Info.Status {
 			case helmrelease.StatusFailed:
-				updateClusterSchedulingStateAndCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstallFailed, release.Info.Description)
+				updateClusterSchedulingState(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstallFailed)
+				updateClusterSchedulingCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled, release.Info.Description, metav1.ConditionFalse)
 				return r.updateSubscription(ctx, sub)
 			case helmrelease.StatusDeployed:
-				updateClusterSchedulingStateAndCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstalled, "")
+				updateClusterSchedulingState(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstalled)
+				updateClusterSchedulingCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled, "", metav1.ConditionTrue)
 				return r.updateSubscription(ctx, sub)
 			default:
 				return nil
@@ -886,16 +951,35 @@ func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *cor
 			return r.installOrUpgradeClusterAgent(ctx, sub, cluster, clusterClient, &clusterSchedulingStatus, executor)
 		}
 
-		return syncExtendedAPIStatus(ctx, clusterClient, sub)
+		if err = syncExtendedAPIStatus(ctx, clusterClient, sub); err != nil {
+			return err
+		}
+		return r.updateClusterReadyCondition(ctx, sub, executor, cluster.Name, &clusterSchedulingStatus)
 	default: // InstallFailed
 		return nil
 	}
 }
 
+func (r *SubscriptionReconciler) updateClusterReadyCondition(ctx context.Context, sub *corev1alpha1.Subscription, executor helm.Executor, clusterName string, clusterSchedulingStatus *corev1alpha1.InstallationStatus) error {
+	ready, err := executor.IsReleaseReady(time.Second * 30)
+
+	if !needUpdateReadyCondition(clusterSchedulingStatus.Conditions, ready) {
+		return nil
+	}
+
+	if ready {
+		updateClusterSchedulingCondition(sub, clusterName, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, "", metav1.ConditionTrue)
+	} else {
+		updateClusterSchedulingCondition(sub, clusterName, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, err.Error(), metav1.ConditionFalse)
+	}
+	return r.updateSubscription(ctx, sub)
+}
+
 func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, sub *corev1alpha1.Subscription, executor helm.Executor) error {
 	logger := klog.FromContext(ctx)
 
-	updateStateAndCondition(sub, corev1alpha1.StatePreparing, "")
+	updateState(sub, corev1alpha1.StatePreparing)
+	updateCondition(sub, corev1alpha1.ConditionTypeInitialized, "", metav1.ConditionTrue)
 	if err := r.updateSubscription(ctx, sub); err != nil {
 		return err
 	}
@@ -904,7 +988,8 @@ func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, 
 	if err != nil {
 		logger.Error(err, "failed to load chart data")
 		if !isServerSideError(err) {
-			updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, "")
+			updateState(sub, corev1alpha1.StateInstallFailed)
+			updateCondition(sub, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
 			return r.updateSubscription(ctx, sub)
 		}
 		return err
@@ -917,7 +1002,8 @@ func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, 
 	if err := initTargetNamespace(ctx, r.Client, targetNamespace, clusterRole, role); err != nil {
 		logger.Error(err, "failed to init target namespace", "namespace", targetNamespace)
 		if !isServerSideError(err) {
-			updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, "")
+			updateState(sub, corev1alpha1.StateInstallFailed)
+			updateCondition(sub, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
 			return r.updateSubscription(ctx, sub)
 		}
 		return err
@@ -935,7 +1021,8 @@ func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, 
 	if err != nil {
 		logger.Error(err, "failed to create executor job", "namespace", targetNamespace)
 		if !isServerSideError(err) {
-			updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, "")
+			updateState(sub, corev1alpha1.StateInstallFailed)
+			updateCondition(sub, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
 			return r.updateSubscription(ctx, sub)
 		}
 		return err
@@ -945,7 +1032,7 @@ func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, 
 	sub.Status.ReleaseName = releaseName
 	sub.Status.TargetNamespace = targetNamespace
 	sub.Status.JobName = jobName
-	updateStateAndCondition(sub, corev1alpha1.StateInstalling, "")
+	updateState(sub, corev1alpha1.StateInstalling)
 	return r.updateSubscription(ctx, sub)
 }
 
@@ -953,7 +1040,8 @@ func (r *SubscriptionReconciler) installOrUpgradeClusterAgent(ctx context.Contex
 	cluster clusterv1alpha1.Cluster, clusterClient client.Client, clusterSchedulingStatus *corev1alpha1.InstallationStatus, executor helm.Executor) error {
 	logger := klog.FromContext(ctx)
 
-	updateClusterSchedulingStateAndCondition(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.StatePreparing, "")
+	updateClusterSchedulingState(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.StatePreparing)
+	updateClusterSchedulingCondition(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeInitialized, "", metav1.ConditionTrue)
 	if err := r.updateSubscription(ctx, sub); err != nil {
 		return err
 	}
@@ -988,7 +1076,7 @@ func (r *SubscriptionReconciler) installOrUpgradeClusterAgent(ctx context.Contex
 	clusterSchedulingStatus.ReleaseName = releaseName
 	clusterSchedulingStatus.TargetNamespace = targetNamespace
 	clusterSchedulingStatus.JobName = jobName
-	updateClusterSchedulingStateAndCondition(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstalling, "")
+	updateClusterSchedulingState(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstalling)
 	return r.updateSubscription(ctx, sub)
 }
 
@@ -1021,8 +1109,11 @@ func (r *SubscriptionReconciler) uninstallClusterAgent(ctx context.Context, sub 
 		jobActive, _, jobFailed = jobStatus(job)
 
 		if jobFailed && clusterSchedulingStatus.State != corev1alpha1.StateFailed {
-			updateClusterSchedulingStateAndCondition(sub, clusterName,
-				&clusterSchedulingStatus, corev1alpha1.StateFailed, latestJobCondition(job).Message)
+			updateClusterSchedulingState(sub, clusterName, &clusterSchedulingStatus, corev1alpha1.StateFailed)
+			updateClusterSchedulingCondition(
+				sub, clusterName, &clusterSchedulingStatus, corev1alpha1.ConditionTypeUninstalled,
+				latestJobCondition(job).Message, metav1.ConditionFalse,
+			)
 			if err := r.updateSubscription(ctx, sub); err != nil {
 				return err
 			}
@@ -1065,7 +1156,7 @@ func (r *SubscriptionReconciler) uninstallClusterAgent(ctx context.Context, sub 
 		}
 
 		clusterSchedulingStatus.JobName = jobName
-		updateClusterSchedulingStateAndCondition(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateUninstalling, "")
+		updateClusterSchedulingState(sub, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateUninstalling)
 		if err := r.updateSubscription(ctx, sub); err != nil {
 			logger.Error(err, "failed to update scheduling state and conditions")
 			return err
@@ -1084,7 +1175,8 @@ func (r *SubscriptionReconciler) syncExtensionInstallationStatus(ctx context.Con
 	lastExecutorJob := batchv1.Job{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: sub.Status.TargetNamespace, Name: sub.Status.JobName}, &lastExecutorJob); err != nil {
 		if errors.IsNotFound(err) {
-			updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, fmt.Sprintf("helm executor job not found: %s", err))
+			updateState(sub, corev1alpha1.StateInstallFailed)
+			updateCondition(sub, corev1alpha1.ConditionTypeInstalled, fmt.Sprintf("helm executor job not found: %s", err.Error()), metav1.ConditionFalse)
 			return r.updateSubscription(ctx, sub)
 		}
 		logger.Error(err, "failed to get job", "namespace", sub.Status.TargetNamespace, "job", sub.Status.JobName)
@@ -1097,12 +1189,14 @@ func (r *SubscriptionReconciler) syncExtensionInstallationStatus(ctx context.Con
 	}
 
 	if jobCompleted {
-		updateStateAndCondition(sub, corev1alpha1.StateInstalled, "")
+		updateState(sub, corev1alpha1.StateInstalled)
+		updateCondition(sub, corev1alpha1.ConditionTypeInstalled, "", metav1.ConditionTrue)
 		return r.updateSubscription(ctx, sub)
 	}
 
 	if jobFailed {
-		updateStateAndCondition(sub, corev1alpha1.StateInstallFailed, latestJobCondition(lastExecutorJob).Message)
+		updateState(sub, corev1alpha1.StateInstallFailed)
+		updateCondition(sub, corev1alpha1.ConditionTypeInstalled, latestJobCondition(lastExecutorJob).Message, metav1.ConditionFalse)
 		return r.updateSubscription(ctx, sub)
 	}
 
@@ -1119,8 +1213,11 @@ func (r *SubscriptionReconciler) syncClusterAgentInstallationStatus(ctx context.
 	lastExecutorJob := batchv1.Job{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: clusterSchedulingStatus.TargetNamespace, Name: clusterSchedulingStatus.JobName}, &lastExecutorJob); err != nil {
 		if errors.IsNotFound(err) {
-			updateClusterSchedulingStateAndCondition(sub, cluster.Name, clusterSchedulingStatus,
-				corev1alpha1.StateUninstalled, fmt.Sprintf("helm executor job not found: %s", err))
+			updateClusterSchedulingState(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstallFailed)
+			updateClusterSchedulingCondition(
+				sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled,
+				fmt.Sprintf("helm executor job not found: %s", err.Error()), metav1.ConditionFalse,
+			)
 			return r.updateSubscription(ctx, sub)
 		}
 		logger.Error(err, "failed to get job", "namespace", clusterSchedulingStatus.TargetNamespace, "job", clusterSchedulingStatus.JobName)
@@ -1134,14 +1231,17 @@ func (r *SubscriptionReconciler) syncClusterAgentInstallationStatus(ctx context.
 	}
 
 	if jobCompleted {
-		updateClusterSchedulingStateAndCondition(sub, cluster.Name, clusterSchedulingStatus,
-			corev1alpha1.StateInstalled, "")
+		updateClusterSchedulingState(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstalled)
+		updateClusterSchedulingCondition(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled, "", metav1.ConditionTrue)
 		return r.updateSubscription(ctx, sub)
 	}
 
 	if jobFailed {
-		updateClusterSchedulingStateAndCondition(sub, cluster.Name, clusterSchedulingStatus,
-			corev1alpha1.StateInstallFailed, latestJobCondition(lastExecutorJob).Message)
+		updateClusterSchedulingState(sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstallFailed)
+		updateClusterSchedulingCondition(
+			sub, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled,
+			latestJobCondition(lastExecutorJob).Message, metav1.ConditionFalse,
+		)
 		return r.updateSubscription(ctx, sub)
 	}
 

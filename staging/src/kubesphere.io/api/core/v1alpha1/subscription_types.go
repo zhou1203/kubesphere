@@ -26,6 +26,8 @@ const (
 )
 
 type Placement struct {
+	// +listType=set
+	// +optional
 	Clusters        []string              `json:"clusters,omitempty"`
 	ClusterSelector *metav1.LabelSelector `json:"clusterSelector,omitempty"`
 }
@@ -35,20 +37,26 @@ type ClusterScheduling struct {
 	Overrides map[string]string `json:"overrides,omitempty"`
 }
 
-type UpgradeStrategy string
+type SubscriptionState struct {
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+	State              string      `json:"state"`
+}
 
 type InstallationStatus struct {
-	State           string             `json:"state,omitempty"`
-	ReleaseName     string             `json:"releaseName,omitempty"`
-	TargetNamespace string             `json:"targetNamespace,omitempty"`
-	JobName         string             `json:"jobName,omitempty"`
-	Conditions      []metav1.Condition `json:"conditions,omitempty"`
+	State           string              `json:"state,omitempty"`
+	ReleaseName     string              `json:"releaseName,omitempty"`
+	TargetNamespace string              `json:"targetNamespace,omitempty"`
+	JobName         string              `json:"jobName,omitempty"`
+	Conditions      []metav1.Condition  `json:"conditions,omitempty"`
+	StateHistory    []SubscriptionState `json:"stateHistory,omitempty"`
 }
 
 type ExtensionRef struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
+
+type UpgradeStrategy string
 
 type SubscriptionSpec struct {
 	Extension ExtensionRef `json:"extension"`
