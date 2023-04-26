@@ -20,11 +20,10 @@ const (
 	StateEnabled         = "Enabled"
 	StateDisabled        = "Disabled"
 	StateInstalling      = "Installing"
-	StateUpgrading       = "Upgrading"
-	StateInstalled       = "Installed"
 	StateInstallFailed   = "InstallFailed"
-	StateFailed          = "Failed"
+	StateUpgrading       = "Upgrading"
 	StateUpgradeFailed   = "UpgradeFailed"
+	StateInstalled       = "Installed"
 	StateUninstalling    = "Uninstalling"
 	StateUninstalled     = "Uninstalled"
 	StateUninstallFailed = "UninstallFailed"
@@ -37,6 +36,7 @@ const (
 
 	ConditionTypeInitialized = "Initialized"
 	ConditionTypeInstalled   = "Installed"
+	ConditionTypeUpgraded    = "Upgraded"
 	ConditionTypeUninstalled = "Uninstalled"
 	ConditionTypeReady       = "Ready"
 
