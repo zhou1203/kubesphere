@@ -182,8 +182,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "job" controller
 	if cmOptions.IsControllerEnabled("job") {
-		jobController := job.NewJobController(kubernetesInformer.Batch().V1().Jobs(), client.Kubernetes())
-		addController(mgr, "job", jobController)
+		addControllerWithSetup(mgr, "job", &job.Reconciler{})
 	}
 
 	// "storagecapability" controller
