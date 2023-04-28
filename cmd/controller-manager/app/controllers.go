@@ -198,14 +198,10 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "loginrecord" controller
 	if cmOptions.IsControllerEnabled("loginrecord") {
-		loginRecordController := loginrecord.NewLoginRecordController(
-			client.Kubernetes(),
-			client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().LoginRecords(),
-			kubesphereInformer.Iam().V1alpha2().Users(),
-			cmOptions.AuthenticationOptions.LoginHistoryRetentionPeriod,
-			cmOptions.AuthenticationOptions.LoginHistoryMaximumEntries)
-		addController(mgr, "loginrecord", loginRecordController)
+		loginRecordController := loginrecord.NewReconciler(
+			cmOptions.AuthenticationOptions.LoginHistoryRetentionPeriod, cmOptions.AuthenticationOptions.LoginHistoryMaximumEntries,
+		)
+		addControllerWithSetup(mgr, "loginrecord", loginRecordController)
 	}
 
 	// "csr" controller

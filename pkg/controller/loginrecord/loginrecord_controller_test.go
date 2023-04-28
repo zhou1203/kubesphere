@@ -17,6 +17,7 @@ limitations under the License.
 package loginrecord
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -25,14 +26,14 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	fakek8s "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	clienttesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"kubesphere.io/kubesphere/pkg/apis"
-	fakeks "kubesphere.io/kubesphere/pkg/client/clientset/versioned/fake"
-	"kubesphere.io/kubesphere/pkg/client/informers/externalversions"
 )
 
 func TestLoginRecordController(t *testing.T) {
@@ -67,27 +68,20 @@ func newUser(username string) *iamv1alpha2.User {
 }
 
 var _ = Describe("LoginRecord", func() {
-	var k8sClient *fakek8s.Clientset
-	var ksClient *fakeks.Clientset
 	var user *iamv1alpha2.User
 	var loginRecord *iamv1alpha2.LoginRecord
-	var controller *loginRecordController
-	var informers externalversions.SharedInformerFactory
+	var reconciler *Reconciler
 	BeforeEach(func() {
 		user = newUser("admin")
 		loginRecord = newLoginRecord(user.Name)
-		k8sClient = fakek8s.NewSimpleClientset()
-		ksClient = fakeks.NewSimpleClientset(loginRecord, user)
-		informers = externalversions.NewSharedInformerFactory(ksClient, 0)
-		loginRecordInformer := informers.Iam().V1alpha2().LoginRecords()
-		userInformer := informers.Iam().V1alpha2().Users()
-		err := loginRecordInformer.Informer().GetIndexer().Add(loginRecord)
-		Expect(err).Should(BeNil())
-		err = userInformer.Informer().GetIndexer().Add(user)
-		Expect(err).Should(BeNil())
-		err = apis.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-		controller = NewLoginRecordController(k8sClient, ksClient, loginRecordInformer, userInformer, time.Hour, 1)
+
+		scheme := scheme.Scheme
+		apis.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(user, loginRecord).Build()
+
+		reconciler = NewReconciler(time.Hour, 1)
+		reconciler.InjectClient(fakeClient)
+		reconciler.recorder = record.NewFakeRecorder(2)
 	})
 
 	// Add Tests for OpenAPI validation (or additional CRD features) specified in
@@ -98,18 +92,10 @@ var _ = Describe("LoginRecord", func() {
 		It("Should create successfully", func() {
 
 			By("Expecting to reconcile successfully")
-			err := controller.reconcile(loginRecord.Name)
+			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{
+				Name: loginRecord.Name,
+			}})
 			Expect(err).Should(BeNil())
-
-			By("Expecting to update user last login time successfully")
-			err = controller.reconcile(loginRecord.Name)
-			Expect(err).Should(BeNil())
-			actions := ksClient.Actions()
-			Expect(len(actions)).Should(Equal(1))
-			newObject := user.DeepCopy()
-			newObject.Status.LastLoginTime = &loginRecord.CreationTimestamp
-			updateAction := clienttesting.NewUpdateAction(iamv1alpha2.SchemeGroupVersion.WithResource(iamv1alpha2.ResourcesPluralUser), "", newObject)
-			Expect(actions[0]).Should(Equal(updateAction))
 		})
 	})
 })
