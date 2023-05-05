@@ -22,36 +22,29 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/crypto/bcrypt"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-
-	"k8s.io/apimachinery/pkg/util/validation"
-
-	"golang.org/x/crypto/bcrypt"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/klog/v2"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
-	// SuccessSynced is used as part of the Event 'reason' when a Foo is synced
-	successSynced = "Synced"
-	failedSynced  = "FailedSync"
-	// is synced successfully
-	messageResourceSynced = "User synced successfully"
-	controllerName        = "user-controller"
+	controllerName = "user-controller"
 	// user finalizer
 	finalizer       = "finalizers.kubesphere.io/users"
 	interval        = time.Second
@@ -117,17 +110,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// The object is being deleted
 		if sliceutil.HasString(user.ObjectMeta.Finalizers, finalizer) {
 			if err = r.deleteRoleBindings(ctx, user); err != nil {
-				r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+				r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
 			if err = r.deleteGroupBindings(ctx, user); err != nil {
-				r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+				r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
 			if err = r.deleteLoginRecords(ctx, user); err != nil {
-				r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+				r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
@@ -138,7 +131,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 			if err = r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
 				klog.Error(err)
-				r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+				r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 		}
@@ -159,12 +152,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	if !managedByKubefed {
 		if err = r.encryptPassword(ctx, user); err != nil {
 			klog.Error(err)
-			r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+			r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 			return ctrl.Result{}, err
 		}
 		if err = r.syncUserStatus(ctx, user); err != nil {
 			klog.Error(err)
-			r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+			r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 			return ctrl.Result{}, err
 		}
 	}
@@ -173,12 +166,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// ensure user KubeconfigClient configmap is created
 		if err = r.KubeconfigClient.CreateKubeConfig(user); err != nil {
 			klog.Error(err)
-			r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+			r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 			return ctrl.Result{}, err
 		}
 	}
 
-	r.Recorder.Event(user, corev1.EventTypeNormal, successSynced, messageResourceSynced)
+	r.Recorder.Event(user, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 
 	// block user for AuthenticateRateLimiterDuration duration, after that put it back to the queue to unblock
 	if user.Status.State == iamv1alpha2.UserAuthLimitExceeded {

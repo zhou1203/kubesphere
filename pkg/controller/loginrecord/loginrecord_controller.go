@@ -33,15 +33,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+
+	"kubesphere.io/kubesphere/pkg/constants"
 )
 
-const (
-	// SuccessSynced is used as part of the Event 'reason' when a Foo is synced
-	successSynced = "Synced"
-	// is synced successfully
-	messageResourceSynced = "LoginRecord synced successfully"
-	controllerName        = "loginrecord-controller"
-)
+const controllerName = "loginrecord-controller"
 
 type Reconciler struct {
 	client.Client
@@ -104,7 +100,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			RequeueAfter: loginRecord.CreationTimestamp.Add(r.loginHistoryRetentionPeriod).Sub(now),
 		}
 	}
-	r.recorder.Event(loginRecord, corev1.EventTypeNormal, successSynced, messageResourceSynced)
+	r.recorder.Event(loginRecord, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return result, nil
 }
 

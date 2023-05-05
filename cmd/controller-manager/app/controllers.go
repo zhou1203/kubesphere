@@ -225,16 +225,12 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "groupbinding" controller
 	if cmOptions.IsControllerEnabled("groupbinding") {
-		groupBindingController := groupbinding.NewController(client.Kubernetes(), client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().GroupBindings())
-		addController(mgr, "groupbinding", groupBindingController)
+		addControllerWithSetup(mgr, "groupbinding", &groupbinding.Reconciler{})
 	}
 
 	// "group" controller
 	if cmOptions.IsControllerEnabled("group") {
-		groupController := group.NewController(client.Kubernetes(), client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().Groups())
-		addController(mgr, "group", groupController)
+		addControllerWithSetup(mgr, "group", &group.Reconciler{})
 	}
 
 	// "cluster" controller

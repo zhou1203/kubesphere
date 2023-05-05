@@ -47,11 +47,7 @@ import (
 )
 
 const (
-	// SuccessSynced is used as part of the Event 'reason' when a Foo is synced
-	successSynced = "Synced"
-	// is synced successfully
-	messageResourceSynced = "GlobalRoleBinding synced successfully"
-	controllerName        = "globalrolebinding-controller"
+	controllerName = "globalrolebinding-controller"
 )
 
 type Controller struct {
@@ -227,7 +223,7 @@ func (c *Controller) reconcile(key string) error {
 	// 	return err
 	// }
 
-	c.recorder.Event(globalRoleBinding, corev1.EventTypeNormal, successSynced, messageResourceSynced)
+	c.recorder.Event(globalRoleBinding, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return nil
 }
 

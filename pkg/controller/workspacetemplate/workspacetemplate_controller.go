@@ -39,7 +39,7 @@ import (
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
-	controllerutils "kubesphere.io/kubesphere/pkg/controller/utils/controller"
+	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
@@ -82,6 +82,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:groups=iam.kubesphere.io,resources=workspacerolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=types.kubefed.io,resources=federatedworkspacerolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=tenant.kubesphere.io,resources=workspaces,verbs=get;list;watch;
+
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Logger.WithValues("workspacetemplate", req.NamespacedName)
 	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
@@ -125,7 +126,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := r.initManagerRoleBinding(ctx, logger, workspaceTemplate); err != nil {
 		return ctrl.Result{}, err
 	}
-	r.Recorder.Event(workspaceTemplate, corev1.EventTypeNormal, controllerutils.SuccessSynced, controllerutils.MessageResourceSynced)
+	r.Recorder.Event(workspaceTemplate, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 

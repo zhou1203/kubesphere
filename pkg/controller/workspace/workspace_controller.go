@@ -32,7 +32,6 @@ import (
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
-	controllerutils "kubesphere.io/kubesphere/pkg/controller/utils/controller"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
@@ -77,6 +76,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:groups=iam.kubesphere.io,resources=rolebases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=iam.kubesphere.io,resources=workspaceroles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=iam.kubesphere.io,resources=workspacerolebindings,verbs=get;list;watch;create;update;patch;delete
+
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Logger.WithValues("workspace", req.NamespacedName)
 	rootCtx := context.Background()
@@ -134,7 +134,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	r.Recorder.Event(workspace, corev1.EventTypeNormal, controllerutils.SuccessSynced, controllerutils.MessageResourceSynced)
+	r.Recorder.Event(workspace, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 

@@ -33,7 +33,7 @@ import (
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
-	controllerutils "kubesphere.io/kubesphere/pkg/controller/utils/controller"
+	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 const (
@@ -70,6 +70,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.logger.WithValues("serivceaccount", req.NamespacedName)
 	// ctx := context.Background()
@@ -80,10 +81,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	if _, ok := sa.Annotations[iamv1alpha2.RoleAnnotation]; ok && sa.ObjectMeta.DeletionTimestamp.IsZero() {
 		if err := r.CreateOrUpdateRoleBinding(ctx, logger, sa); err != nil {
-			r.recorder.Event(sa, corev1.EventTypeWarning, controllerutils.FailedSynced, err.Error())
+			r.recorder.Event(sa, corev1.EventTypeWarning, constants.FailedSynced, err.Error())
 			return ctrl.Result{}, err
 		}
-		r.recorder.Event(sa, corev1.EventTypeNormal, controllerutils.SuccessSynced, controllerutils.MessageResourceSynced)
+		r.recorder.Event(sa, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	}
 	return ctrl.Result{}, nil
 }

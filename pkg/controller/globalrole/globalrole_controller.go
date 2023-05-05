@@ -36,15 +36,10 @@ import (
 	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 	iamv1alpha2informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/iam/v1alpha2"
 	iamv1alpha2listers "kubesphere.io/kubesphere/pkg/client/listers/iam/v1alpha2"
+	"kubesphere.io/kubesphere/pkg/constants"
 )
 
-const (
-	// SuccessSynced is used as part of the Event 'reason' when a Foo is synced
-	successSynced = "Synced"
-	// is synced successfully
-	messageResourceSynced = "GlobalRole synced successfully"
-	controllerName        = "globalrole-controller"
-)
+const controllerName = "globalrole-controller"
 
 type Controller struct {
 	k8sClient          kubernetes.Interface
@@ -210,7 +205,7 @@ func (c *Controller) reconcile(key string) error {
 	// 	return err
 	// }
 
-	c.recorder.Event(globalRole, corev1.EventTypeNormal, successSynced, messageResourceSynced)
+	c.recorder.Event(globalRole, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return nil
 }
 

@@ -18,88 +18,40 @@ package groupbinding
 
 import (
 	"context"
-	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-	iamv1alpha2informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/iam/v1alpha2"
-	iamv1alpha2listers "kubesphere.io/kubesphere/pkg/client/listers/iam/v1alpha2"
+	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+
 	"kubesphere.io/kubesphere/pkg/constants"
-	"kubesphere.io/kubesphere/pkg/controller/utils/controller"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
-	successSynced         = "Synced"
-	messageResourceSynced = "GroupBinding synced successfully"
-	controllerName        = "groupbinding-controller"
-	finalizer             = "finalizers.kubesphere.io/groupsbindings"
+	controllerName = "groupbinding-controller"
+	finalizer      = "finalizers.kubesphere.io/groupsbindings"
 )
 
-type Controller struct {
-	controller.BaseController
-	k8sClient          kubernetes.Interface
-	ksClient           kubesphere.Interface
-	groupBindingLister iamv1alpha2listers.GroupBindingLister
-	recorder           record.EventRecorder
+type Reconciler struct {
+	client.Client
+
+	recorder record.EventRecorder
 }
 
-// NewController creates GroupBinding Controller instance
-func NewController(k8sClient kubernetes.Interface, ksClient kubesphere.Interface,
-	groupBindingInformer iamv1alpha2informers.GroupBindingInformer) *Controller {
-	klog.V(4).Info("Creating event broadcaster")
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(klog.Infof)
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: k8sClient.CoreV1().Events("")})
-	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerName})
-	ctl := &Controller{
-		BaseController: controller.BaseController{
-			Workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "GroupBinding"),
-			Synced:    []cache.InformerSynced{groupBindingInformer.Informer().HasSynced},
-			Name:      controllerName,
-		},
-		k8sClient:          k8sClient,
-		ksClient:           ksClient,
-		groupBindingLister: groupBindingInformer.Lister(),
-		recorder:           recorder,
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	groupBinding := &iamv1alpha2.GroupBinding{}
+	if err := r.Get(ctx, req.NamespacedName, groupBinding); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	ctl.Handler = ctl.reconcile
-	klog.Info("Setting up event handlers")
-	groupBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: ctl.Enqueue,
-		UpdateFunc: func(old, new interface{}) {
-			ctl.Enqueue(new)
-		},
-		DeleteFunc: ctl.Enqueue,
-	})
-	return ctl
-}
 
-// reconcile handles GroupBinding informer events, it updates user's Groups property with the current GroupBinding.
-func (c *Controller) reconcile(key string) error {
-
-	groupBinding, err := c.groupBindingLister.Get(key)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			utilruntime.HandleError(fmt.Errorf("groupbinding '%s' in work queue no longer exists", key))
-			return nil
-		}
-		klog.Error(err)
-		return err
-	}
 	if groupBinding.ObjectMeta.DeletionTimestamp.IsZero() {
 		var g *iamv1alpha2.GroupBinding
 		if !sliceutil.HasString(groupBinding.Finalizers, finalizer) {
@@ -120,49 +72,36 @@ func (c *Controller) reconcile(key string) error {
 		}
 
 		if g != nil {
-			if _, err = c.ksClient.IamV1alpha2().GroupBindings().Update(context.Background(), g, metav1.UpdateOptions{}); err != nil {
-				return err
-			}
-			// Skip reconcile when group is updated.
-			return nil
+			return ctrl.Result{}, r.Update(ctx, g)
 		}
-
 	} else {
 		// The object is being deleted
 		if sliceutil.HasString(groupBinding.ObjectMeta.Finalizers, finalizer) {
-			if err = c.unbindUser(groupBinding); err != nil {
-				klog.Error(err)
-				return err
+			if err := r.unbindUser(ctx, groupBinding); err != nil {
+				return ctrl.Result{}, err
 			}
 
 			groupBinding.Finalizers = sliceutil.RemoveString(groupBinding.ObjectMeta.Finalizers, func(item string) bool {
 				return item == finalizer
 			})
 
-			if _, err = c.ksClient.IamV1alpha2().GroupBindings().Update(context.Background(), groupBinding, metav1.UpdateOptions{}); err != nil {
-				return err
-			}
+			return ctrl.Result{}, r.Update(ctx, groupBinding)
 		}
-		return nil
+		return ctrl.Result{}, nil
 	}
 
-	if err = c.bindUser(groupBinding); err != nil {
-		klog.Error(err)
-		return err
+	if err := r.bindUser(ctx, groupBinding); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
 
-	c.recorder.Event(groupBinding, corev1.EventTypeNormal, successSynced, messageResourceSynced)
-	return nil
+	r.recorder.Event(groupBinding, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
+	return ctrl.Result{}, nil
 }
 
-func (c *Controller) Start(ctx context.Context) error {
-	return c.Run(2, ctx.Done())
-}
-
-func (c *Controller) unbindUser(groupBinding *iamv1alpha2.GroupBinding) error {
-	return c.updateUserGroups(groupBinding, func(groups []string, group string) (bool, []string) {
+func (r *Reconciler) unbindUser(ctx context.Context, groupBinding *iamv1alpha2.GroupBinding) error {
+	return r.updateUserGroups(ctx, groupBinding, func(groups []string, group string) (bool, []string) {
 		// remove a group from the groups
 		if sliceutil.HasString(groups, group) {
 			groups := sliceutil.RemoveString(groups, func(item string) bool {
@@ -174,8 +113,8 @@ func (c *Controller) unbindUser(groupBinding *iamv1alpha2.GroupBinding) error {
 	})
 }
 
-func (c *Controller) bindUser(groupBinding *iamv1alpha2.GroupBinding) error {
-	return c.updateUserGroups(groupBinding, func(groups []string, group string) (bool, []string) {
+func (r *Reconciler) bindUser(ctx context.Context, groupBinding *iamv1alpha2.GroupBinding) error {
+	return r.updateUserGroups(ctx, groupBinding, func(groups []string, group string) (bool, []string) {
 		// add group to the groups
 		if !sliceutil.HasString(groups, group) {
 			groups := append(groups, group)
@@ -186,41 +125,62 @@ func (c *Controller) bindUser(groupBinding *iamv1alpha2.GroupBinding) error {
 }
 
 // Udpate user's Group property. So no need to query user's groups when authorizing.
-func (c *Controller) updateUserGroups(groupBinding *iamv1alpha2.GroupBinding, operator func(groups []string, group string) (bool, []string)) error {
-
+func (r *Reconciler) updateUserGroups(ctx context.Context, groupBinding *iamv1alpha2.GroupBinding, operator func(groups []string, group string) (bool, []string)) error {
 	for _, u := range groupBinding.Users {
-		// Ignore the user if the user if being deleted.
-		if user, err := c.ksClient.IamV1alpha2().Users().Get(context.Background(), u, metav1.GetOptions{}); err == nil && user.ObjectMeta.DeletionTimestamp.IsZero() {
-
+		// Ignore the user if the user being deleted.
+		user := &iamv1alpha2.User{}
+		if err := r.Get(ctx, client.ObjectKey{Name: u}, user); err != nil {
 			if errors.IsNotFound(err) {
 				klog.Infof("user %s doesn't exist any more", u)
 				continue
 			}
+			return err
+		}
 
-			if changed, groups := operator(user.Spec.Groups, groupBinding.GroupRef.Name); changed {
+		if !user.DeletionTimestamp.IsZero() {
+			continue
+		}
 
-				if err := c.patchUser(user, groups); err != nil {
-					if errors.IsNotFound(err) {
-						klog.Infof("user %s doesn't exist any more", u)
-						continue
-					}
-					klog.Error(err)
-					return err
+		if changed, groups := operator(user.Spec.Groups, groupBinding.GroupRef.Name); changed {
+			if err := r.patchUser(ctx, user, groups); err != nil {
+				if errors.IsNotFound(err) {
+					klog.Infof("user %s doesn't exist any more", u)
+					continue
 				}
+				klog.Error(err)
+				return err
 			}
 		}
 	}
 	return nil
 }
 
-func (c *Controller) patchUser(user *iamv1alpha2.User, groups []string) error {
+func (r *Reconciler) patchUser(ctx context.Context, user *iamv1alpha2.User, groups []string) error {
 	newUser := user.DeepCopy()
 	newUser.Spec.Groups = groups
 	patch := client.MergeFrom(user)
-	patchData, _ := patch.Data(newUser)
-	if _, err := c.ksClient.IamV1alpha2().Users().
-		Patch(context.Background(), user.Name, patch.Type(), patchData, metav1.PatchOptions{}); err != nil {
-		return err
-	}
+	return r.Patch(ctx, newUser, patch)
+}
+
+func (r *Reconciler) InjectClient(c client.Client) error {
+	r.Client = c
 	return nil
+}
+
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+
+	return builder.
+		ControllerManagedBy(mgr).
+		For(
+			&iamv1alpha2.GroupBinding{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 2,
+		}).
+		Named(controllerName).
+		Complete(r)
 }

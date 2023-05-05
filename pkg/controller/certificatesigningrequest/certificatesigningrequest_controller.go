@@ -37,13 +37,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 )
 
-const (
-	// SuccessSynced is used as part of the Event 'reason' when a Foo is csrSynced
-	successSynced = "Synced"
-	// is csrSynced successfully
-	messageResourceSynced = "CertificateSigningRequest csrSynced successfully"
-	controllerName        = "csr-controller"
-)
+const controllerName = "csr-controller"
 
 type Reconciler struct {
 	client.Client
@@ -85,7 +79,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	r.recorder.Event(csr, corev1.EventTypeNormal, successSynced, messageResourceSynced)
+	r.recorder.Event(csr, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 
