@@ -187,12 +187,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "storagecapability" controller
 	if cmOptions.IsControllerEnabled("storagecapability") {
-		storageCapabilityController := capability.NewController(
-			client.Kubernetes().StorageV1().StorageClasses(),
-			kubernetesInformer.Storage().V1().StorageClasses(),
-			kubernetesInformer.Storage().V1().CSIDrivers(),
-		)
-		addController(mgr, "storagecapability", storageCapabilityController)
+		addControllerWithSetup(mgr, "storagecapability", &capability.Reconciler{})
 	}
 
 	// "loginrecord" controller
