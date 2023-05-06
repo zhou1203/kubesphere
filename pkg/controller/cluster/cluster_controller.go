@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -58,17 +57,12 @@ import (
 // Cluster controller only runs under multicluster mode. Cluster controller is following below steps,
 //   1. Wait for cluster agent is ready if connection type is proxy
 //   2. Join cluster into federation control plane if kubeconfig is ready.
-//   3. Pull cluster version and configz, set result to cluster status
+//   3. Pull cluster version, set result to cluster status
 // Also put all clusters back into queue every 5 * time.Minute to sync cluster status, this is needed
 // in case there aren't any cluster changes made.
 // Also check if all the clusters are ready by the spec.connection.kubeconfig every resync period
 
-const (
-	kubesphereManaged = "kubesphere.io/managed"
-
-	// proxy format
-	proxyFormat = "%s/api/v1/namespaces/kubesphere-system/services/:ks-apiserver:80/proxy/%s"
-)
+const kubesphereManaged = "kubesphere.io/managed"
 
 // Cluster template for reconcile host cluster if there is none.
 var hostCluster = &clusterv1alpha1.Cluster{
@@ -292,12 +286,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 	if isHost {
-		return r.reconcileHostCluster(ctx, cluster, clusterConfig, clusterClient)
+		return r.reconcileHostCluster(ctx, cluster, clusterClient)
 	}
-	return r.reconcileMemberCluster(ctx, cluster, clusterConfig, clusterClient)
+	return r.reconcileMemberCluster(ctx, cluster, clusterClient)
 }
 
-func (r *Reconciler) reconcileHostCluster(ctx context.Context, cluster *clusterv1alpha1.Cluster, clusterConfig *rest.Config, clusterClient kubernetes.Interface) (ctrl.Result, error) {
+func (r *Reconciler) reconcileHostCluster(ctx context.Context, cluster *clusterv1alpha1.Cluster, clusterClient kubernetes.Interface) (ctrl.Result, error) {
 	hostKubeConfig, err := buildKubeConfigFromRestConfig(r.hostConfig)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -312,10 +306,10 @@ func (r *Reconciler) reconcileHostCluster(ctx context.Context, cluster *clusterv
 		cluster.Labels = make(map[string]string)
 	}
 	cluster.Labels[clusterv1alpha1.HostCluster] = ""
-	return r.syncClusterStatus(ctx, cluster, clusterConfig, clusterClient)
+	return r.syncClusterStatus(ctx, cluster, clusterClient)
 }
 
-func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *clusterv1alpha1.Cluster, clusterConfig *rest.Config, clusterClient kubernetes.Interface) (ctrl.Result, error) {
+func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *clusterv1alpha1.Cluster, clusterClient kubernetes.Interface) (ctrl.Result, error) {
 	// Install KS Core in member cluster
 	if !hasCondition(cluster.Status.Conditions, clusterv1alpha1.ClusterKSCoreReady) {
 		// get the lock, make sure only one thread is executing the helm task
@@ -353,25 +347,11 @@ func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *cluste
 		klog.Warningf("sync KubeConfig expiration date for cluster %s failed: %v", cluster.Name, err)
 	}
 
-	return r.syncClusterStatus(ctx, cluster, clusterConfig, clusterClient)
+	return r.syncClusterStatus(ctx, cluster, clusterClient)
 }
 
-func (r *Reconciler) syncClusterStatus(ctx context.Context, cluster *clusterv1alpha1.Cluster, clusterConfig *rest.Config, clusterClient kubernetes.Interface) (ctrl.Result, error) {
-	proxyTransport, err := rest.TransportFor(clusterConfig)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to create proxy transport for %s: %s", cluster.Name, err)
-	}
-
-	// TODO use rest.Interface instead
-	configz, err := r.tryToFetchKubeSphereComponents(clusterConfig.Host, proxyTransport)
-	if err != nil {
-		klog.Warningf("failed to fetch kubesphere components status in cluster %s: %s", cluster.Name, err)
-	} else {
-		cluster.Status.Configz = configz
-	}
-
-	// TODO use rest.Interface instead
-	v, err := r.tryFetchKubeSphereVersion(clusterConfig.Host, proxyTransport)
+func (r *Reconciler) syncClusterStatus(ctx context.Context, cluster *clusterv1alpha1.Cluster, clusterClient kubernetes.Interface) (ctrl.Result, error) {
+	v, err := r.tryFetchKubeSphereVersion(ctx, clusterClient)
 	if err != nil {
 		klog.Errorf("failed to get KubeSphere version, err: %#v", err)
 	} else {
@@ -434,58 +414,16 @@ func (r *Reconciler) checkIfClusterIsHostCluster(ctx context.Context, clusterKub
 	return kubeSystem.UID == clusterKubeSystemUID, nil
 }
 
-// tryToFetchKubeSphereComponents will send requests to member cluster configz api using kube-apiserver proxy way
-func (r *Reconciler) tryToFetchKubeSphereComponents(host string, transport http.RoundTripper) (map[string]bool, error) {
-	client := http.Client{
-		Transport: transport,
-		Timeout:   5 * time.Second,
-	}
-
-	response, err := client.Get(fmt.Sprintf(proxyFormat, host, "kapis/config.kubesphere.io/v1alpha2/configs/configz"))
-	if err != nil {
-		klog.V(4).Infof("Failed to get kubesphere components, error %v", err)
-		return nil, err
-	}
-
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		klog.V(4).Infof("Response status code isn't 200.")
-		return nil, fmt.Errorf("response code %d", response.StatusCode)
-	}
-
-	configz := make(map[string]bool)
-	decoder := json.NewDecoder(response.Body)
-	err = decoder.Decode(&configz)
-	if err != nil {
-		klog.V(4).Infof("Decode error %v", err)
-		return nil, err
-	}
-	return configz, nil
-}
-
-func (r *Reconciler) tryFetchKubeSphereVersion(host string, transport http.RoundTripper) (string, error) {
-	client := http.Client{
-		Transport: transport,
-		Timeout:   5 * time.Second,
-	}
-
-	response, err := client.Get(fmt.Sprintf(proxyFormat, host, "kapis/version"))
+func (r *Reconciler) tryFetchKubeSphereVersion(ctx context.Context, clusterClient kubernetes.Interface) (string, error) {
+	response, err := clusterClient.CoreV1().Services(constants.KubeSphereNamespace).
+		ProxyGet("http", "ks-apiserver", "80", "/version", nil).
+		DoRaw(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		klog.V(4).Infof("Response status code isn't 200.")
-		return "", fmt.Errorf("response code %d", response.StatusCode)
-	}
-
 	info := version.Info{}
-	decoder := json.NewDecoder(response.Body)
-	err = decoder.Decode(&info)
-	if err != nil {
+	if err = json.Unmarshal(response, &info); err != nil {
 		return "", err
 	}
 

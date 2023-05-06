@@ -169,6 +169,7 @@ type ClusterStatus struct {
 
 	// Configz is status of components enabled in the member cluster. This is synchronized with member cluster
 	// every amount of time, like 5 minutes.
+	// Deprecated: this field will be removed in the future version.
 	// +optional
 	Configz map[string]bool `json:"configz,omitempty"`
 

@@ -146,9 +146,10 @@ spec:
               configz:
                 additionalProperties:
                   type: boolean
-                description: Configz is status of components enabled in the member
+                description: 'Configz is status of components enabled in the member
                   cluster. This is synchronized with member cluster every amount of
-                  time, like 5 minutes.
+                  time, like 5 minutes. Deprecated: this field will be removed in
+                  the future version.'
                 type: object
               kubeSphereVersion:
                 description: GitVersion of the /kapis/version api response, this field
