@@ -213,9 +213,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "globalrolebinding" controller
 	if cmOptions.IsControllerEnabled("globalrolebinding") {
-		globalRoleBindingController := globalrolebinding.NewController(client.Kubernetes(), client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().GlobalRoleBindings())
-		addController(mgr, "globalrolebinding", globalRoleBindingController)
+		addControllerWithSetup(mgr, "globalrolebinding", &globalrolebinding.Reconciler{})
 	}
 
 	// "groupbinding" controller
