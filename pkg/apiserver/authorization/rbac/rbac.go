@@ -24,20 +24,17 @@ import (
 	"fmt"
 
 	"github.com/open-policy-agent/opa/rego"
+	rbacv1 "k8s.io/api/rbac/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apiserver/pkg/authentication/serviceaccount"
+	"k8s.io/apiserver/pkg/authentication/user"
+	"k8s.io/klog/v2"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
-
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
-
-	"k8s.io/klog/v2"
-
-	rbacv1 "k8s.io/api/rbac/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apiserver/pkg/authentication/user"
 )
 
 const (
@@ -241,7 +238,7 @@ func (r *RBACAuthorizer) visitRulesFor(requestAttributes authorizer.Attributes, 
 
 		var workspace string
 		var err error
-
+		// all of resource under namespace and devops belong to workspace
 		if requestAttributes.GetResourceScope() == request.NamespaceScope {
 			if workspace, err = r.am.GetNamespaceControlledWorkspace(requestAttributes.GetNamespace()); err != nil {
 				if !visitor(nil, "", nil, err) {
@@ -287,6 +284,16 @@ func (r *RBACAuthorizer) visitRulesFor(requestAttributes authorizer.Attributes, 
 	if requestAttributes.GetResourceScope() == request.NamespaceScope {
 
 		namespace := requestAttributes.GetNamespace()
+		// list devops role binding
+		//if requestAttributes.GetResourceScope() == request.DevOpsScope {
+		//	if relatedNamespace, err := r.am.GetDevOpsRelatedNamespace(requestAttributes.GetDevOps()); err != nil {
+		//		if !visitor(nil, "", nil, err) {
+		//			return
+		//		}
+		//	} else {
+		//		namespace = relatedNamespace
+		//	}
+		//}
 
 		if roleBindings, err := r.am.ListRoleBindings("", nil, namespace); err != nil {
 			if !visitor(nil, "", nil, err) {
@@ -385,7 +392,7 @@ func appliesToUser(user user.Info, subject rbacv1.Subject, namespace string) boo
 }
 
 type globalRoleBindingDescriber struct {
-	binding *iamv1alpha2.GlobalRoleBinding
+	binding *iamv1beta1.GlobalRoleBinding
 	subject *rbacv1.Subject
 }
 
@@ -399,7 +406,7 @@ func (d *globalRoleBindingDescriber) String() string {
 }
 
 type clusterRoleBindingDescriber struct {
-	binding *rbacv1.ClusterRoleBinding
+	binding *iamv1beta1.ClusterRoleBinding
 	subject *rbacv1.Subject
 }
 
@@ -413,7 +420,7 @@ func (d *clusterRoleBindingDescriber) String() string {
 }
 
 type workspaceRoleBindingDescriber struct {
-	binding *iamv1alpha2.WorkspaceRoleBinding
+	binding *iamv1beta1.WorkspaceRoleBinding
 	subject *rbacv1.Subject
 }
 
@@ -427,7 +434,7 @@ func (d *workspaceRoleBindingDescriber) String() string {
 }
 
 type roleBindingDescriber struct {
-	binding *rbacv1.RoleBinding
+	binding *iamv1beta1.RoleBinding
 	subject *rbacv1.Subject
 }
 
