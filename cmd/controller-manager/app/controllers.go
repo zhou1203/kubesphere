@@ -83,7 +83,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// begin init necessary informers
 	kubernetesInformer := informerFactory.KubernetesSharedInformerFactory()
-	kubesphereInformer := informerFactory.KubeSphereSharedInformerFactory()
 	// end informers
 
 	// begin init necessary clients
@@ -206,9 +205,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "globalrole" controller
 	if cmOptions.IsControllerEnabled("globalrole") {
-		globalRoleController := globalrole.NewController(client.Kubernetes(), client.KubeSphere(),
-			kubesphereInformer.Iam().V1alpha2().GlobalRoles())
-		addController(mgr, "globalrole", globalRoleController)
+		addControllerWithSetup(mgr, "globalrole", &globalrole.Reconciler{})
 	}
 
 	// "globalrolebinding" controller
