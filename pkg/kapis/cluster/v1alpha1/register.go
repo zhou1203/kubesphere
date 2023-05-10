@@ -40,21 +40,10 @@ var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
 func AddToContainer(container *restful.Container,
 	ksclient kubesphere.Interface,
 	k8sInformers k8sinformers.SharedInformerFactory,
-	ksInformers externalversions.SharedInformerFactory,
-	proxyService string,
-	proxyAddress string,
-	agentImage string) error {
+	ksInformers externalversions.SharedInformerFactory) error {
 
 	webservice := runtime.NewWebService(GroupVersion)
-	h := newHandler(ksclient, k8sInformers, ksInformers, proxyService, proxyAddress, agentImage)
-
-	// returns deployment yaml for cluster agent
-	webservice.Route(webservice.GET("/clusters/{cluster}/agent/deployment").
-		Doc("Return deployment yaml for cluster agent.").
-		Param(webservice.PathParameter("cluster", "Name of the cluster.").Required(true)).
-		To(h.generateAgentDeployment).
-		Returns(http.StatusOK, api.StatusOK, nil).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.MultiClusterTag}))
+	h := newHandler(ksclient, k8sInformers, ksInformers)
 
 	webservice.Route(webservice.POST("/clusters/validation").
 		Doc("").

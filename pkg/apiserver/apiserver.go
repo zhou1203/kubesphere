@@ -195,10 +195,7 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(s.container,
 		s.KubernetesClient.KubeSphere(),
 		s.InformerFactory.KubernetesSharedInformerFactory(),
-		s.InformerFactory.KubeSphereSharedInformerFactory(),
-		s.Config.MultiClusterOptions.ProxyPublishService,
-		s.Config.MultiClusterOptions.ProxyPublishAddress,
-		s.Config.MultiClusterOptions.AgentImage))
+		s.InformerFactory.KubeSphereSharedInformerFactory()))
 	urlruntime.Must(iamapi.AddToContainer(s.container, imOperator, amOperator,
 		group.New(s.InformerFactory, s.KubernetesClient.KubeSphere(), s.KubernetesClient.Kubernetes()),
 		rbacAuthorizer))

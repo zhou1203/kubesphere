@@ -105,8 +105,7 @@ func generateSwaggerJson() []byte {
 	informerFactory := informers.NewNullInformerFactory()
 
 	urlruntime.Must(oauth.AddToContainer(container, nil, nil, nil, nil, nil, nil))
-	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(container, clientsets.KubeSphere(), informerFactory.KubernetesSharedInformerFactory(),
-		informerFactory.KubeSphereSharedInformerFactory(), "", "", ""))
+	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(container, clientsets.KubeSphere(), informerFactory.KubernetesSharedInformerFactory(), informerFactory.KubeSphereSharedInformerFactory()))
 	urlruntime.Must(iamv1alpha2.AddToContainer(container, nil, nil, group.New(informerFactory, clientsets.KubeSphere(), clientsets.Kubernetes()), nil))
 	urlruntime.Must(operationsv1alpha2.AddToContainer(container, clientsets.Kubernetes()))
 	urlruntime.Must(resourcesv1alpha2.AddToContainer(container, clientsets.Kubernetes(), informerFactory, "", ""))

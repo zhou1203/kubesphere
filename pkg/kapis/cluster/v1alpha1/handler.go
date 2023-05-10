@@ -23,18 +23,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/emicklei/go-restful"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/cli-runtime/pkg/printers"
 	k8sinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/listers/core/v1"
@@ -54,201 +47,22 @@ import (
 )
 
 const (
-	defaultAgentImage   = "kubesphere/tower:v1.0"
 	defaultTimeout      = 10 * time.Second
 	KubeSphereApiServer = "ks-apiserver"
 )
 
-var errClusterConnectionIsNotProxy = fmt.Errorf("cluster is not using proxy connection")
-
 type handler struct {
 	ksclient        kubesphere.Interface
-	serviceLister   v1.ServiceLister
 	clusterLister   clusterlister.ClusterLister
 	configMapLister v1.ConfigMapLister
-
-	proxyService string
-	proxyAddress string
-	agentImage   string
-	yamlPrinter  *printers.YAMLPrinter
 }
 
-func newHandler(ksclient kubesphere.Interface, k8sInformers k8sinformers.SharedInformerFactory, ksInformers externalversions.SharedInformerFactory, proxyService, proxyAddress, agentImage string) *handler {
-
-	if len(agentImage) == 0 {
-		agentImage = defaultAgentImage
-	}
-
+func newHandler(ksclient kubesphere.Interface, k8sInformers k8sinformers.SharedInformerFactory, ksInformers externalversions.SharedInformerFactory) *handler {
 	return &handler{
 		ksclient:        ksclient,
-		serviceLister:   k8sInformers.Core().V1().Services().Lister(),
 		clusterLister:   ksInformers.Cluster().V1alpha1().Clusters().Lister(),
 		configMapLister: k8sInformers.Core().V1().ConfigMaps().Lister(),
-
-		proxyService: proxyService,
-		proxyAddress: proxyAddress,
-		agentImage:   agentImage,
-		yamlPrinter:  &printers.YAMLPrinter{},
 	}
-}
-
-// generateAgentDeployment will return a deployment yaml for proxy connection type cluster
-// ProxyPublishAddress takes high precedence over proxyPublishService, use proxyPublishService ingress
-// address only when proxyPublishAddress is not provided.
-func (h *handler) generateAgentDeployment(request *restful.Request, response *restful.Response) {
-	clusterName := request.PathParameter("cluster")
-
-	cluster, err := h.clusterLister.Get(clusterName)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			api.HandleNotFound(response, request, err)
-			return
-		} else {
-			api.HandleInternalError(response, request, err)
-			return
-		}
-	}
-
-	if cluster.Spec.Connection.Type != v1alpha1.ConnectionTypeProxy {
-		api.HandleNotFound(response, request, fmt.Errorf("cluster %s is not using proxy connection", cluster.Name))
-		return
-	}
-
-	// use service ingress address
-	if len(h.proxyAddress) == 0 {
-		err = h.populateProxyAddress()
-		if err != nil {
-			api.HandleNotFound(response, request, err)
-			return
-		}
-	}
-
-	var buf bytes.Buffer
-
-	err = h.generateDefaultDeployment(cluster, &buf)
-	if err != nil {
-		api.HandleInternalError(response, request, err)
-		return
-	}
-
-	response.Write(buf.Bytes())
-}
-
-func (h *handler) populateProxyAddress() error {
-	if len(h.proxyService) == 0 {
-		return fmt.Errorf("neither proxy address nor proxy service provided")
-	}
-	namespace := "kubesphere-system"
-	parts := strings.Split(h.proxyService, ".")
-	if len(parts) > 1 && len(parts[1]) != 0 {
-		namespace = parts[1]
-	}
-
-	service, err := h.serviceLister.Services(namespace).Get(parts[0])
-	if err != nil {
-		return fmt.Errorf("service %s not found in namespace %s", parts[0], namespace)
-	}
-
-	if len(service.Spec.Ports) == 0 {
-		return fmt.Errorf("there are no ports in proxy service %s spec", h.proxyService)
-	}
-
-	port := service.Spec.Ports[0].Port
-
-	var serviceAddress string
-	for _, ingress := range service.Status.LoadBalancer.Ingress {
-		if len(ingress.Hostname) != 0 {
-			serviceAddress = fmt.Sprintf("http://%s:%d", ingress.Hostname, port)
-		}
-
-		if len(ingress.IP) != 0 {
-			serviceAddress = fmt.Sprintf("http://%s:%d", ingress.IP, port)
-		}
-	}
-
-	if len(serviceAddress) == 0 {
-		return fmt.Errorf("cannot generate agent deployment yaml for member cluster "+
-			" because %s service has no public address, please check %s status, or set address "+
-			" mannually in ClusterConfiguration", h.proxyService, h.proxyService)
-	}
-
-	h.proxyAddress = serviceAddress
-	return nil
-}
-
-// Currently, this method works because of serviceaccount/clusterrole/clusterrolebinding already
-// created by kubesphere, we don't need to create them again. And it's a little bit inconvenient
-// if we want to change the template.
-// TODO(jeff): load template from configmap
-func (h *handler) generateDefaultDeployment(cluster *v1alpha1.Cluster, w io.Writer) error {
-
-	_, err := url.Parse(h.proxyAddress)
-	if err != nil {
-		return fmt.Errorf("invalid proxy address %s, should format like http[s]://1.2.3.4:123", h.proxyAddress)
-	}
-
-	if cluster.Spec.Connection.Type == v1alpha1.ConnectionTypeDirect {
-		return errClusterConnectionIsNotProxy
-	}
-
-	agent := appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cluster-agent",
-			Namespace: "kubesphere-system",
-		},
-		Spec: appsv1.DeploymentSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app":                       "agent",
-					"app.kubernetes.io/part-of": "tower",
-				},
-			},
-			Strategy: appsv1.DeploymentStrategy{},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app":                       "agent",
-						"app.kubernetes.io/part-of": "tower",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "agent",
-							Command: []string{
-								"/agent",
-								fmt.Sprintf("--name=%s", cluster.Name),
-								fmt.Sprintf("--token=%s", cluster.Spec.Connection.Token),
-								fmt.Sprintf("--proxy-server=%s", h.proxyAddress),
-								"--keepalive=10s",
-								"--kubesphere-service=ks-apiserver.kubesphere-system.svc:80",
-								"--kubernetes-service=kubernetes.default.svc:443",
-								"--v=0",
-							},
-							Image: h.agentImage,
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
-									corev1.ResourceMemory: resource.MustParse("200M"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("100m"),
-									corev1.ResourceMemory: resource.MustParse("100M"),
-								},
-							},
-						},
-					},
-					ServiceAccountName: "kubesphere",
-				},
-			},
-		},
-	}
-
-	return h.yamlPrinter.PrintObj(&agent, w)
 }
 
 // updateKubeConfig updates the kubeconfig of the specific cluster, this API is used to update expired kubeconfig.
