@@ -140,6 +140,10 @@ func isReleaseNotFoundError(err error) bool {
 }
 
 func clusterConfig(sub *corev1alpha1.Subscription, clusterName string) string {
+	if clusterName == "" {
+		return sub.Spec.Config
+	}
+
 	for cluster, config := range sub.Spec.ClusterScheduling.Overrides {
 		if cluster == clusterName {
 			return config
@@ -212,17 +216,24 @@ func fnvString(text string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func configChanged(sub *corev1alpha1.Subscription) bool {
-	return fnvString(sub.Spec.Config) != sub.Annotations[corev1alpha1.SubscriptionConfigHashAnnotation]
+func configHashAnnotationKey(clusterName string) string {
+	if clusterName == "" {
+		return corev1alpha1.SubscriptionConfigHashAnnotation
+	}
+	return fmt.Sprintf("%s-%s", corev1alpha1.SubscriptionConfigHashAnnotation, clusterName)
 }
 
-func setConfigHash(sub *corev1alpha1.Subscription, config string) {
-	configHash := fnvString(config)
+func configChanged(sub *corev1alpha1.Subscription, clusterName string) bool {
+	return fnvString(clusterConfig(sub, clusterName)) != sub.Annotations[configHashAnnotationKey(clusterName)]
+}
+
+func setConfigHash(sub *corev1alpha1.Subscription, clusterName string) {
+	configHash := fnvString(clusterConfig(sub, clusterName))
 	if sub.Annotations == nil {
 		sub.Annotations = map[string]string{
-			corev1alpha1.SubscriptionConfigHashAnnotation: configHash,
+			configHashAnnotationKey(clusterName): configHash,
 		}
 	} else {
-		sub.Annotations[corev1alpha1.SubscriptionConfigHashAnnotation] = configHash
+		sub.Annotations[configHashAnnotationKey(clusterName)] = configHash
 	}
 }

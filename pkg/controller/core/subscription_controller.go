@@ -123,7 +123,7 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Multicluster installation
 	if sub.Spec.ClusterScheduling != nil {
 		if err := r.syncClusterSchedulingStatus(ctx, sub); err != nil {
-			logger.Error(err, "failed to scheduling status")
+			logger.Error(err, "failed to sync scheduling status")
 			return ctrl.Result{}, err
 		}
 	}
@@ -855,7 +855,7 @@ func (r *SubscriptionReconciler) syncSubscriptionStatus(ctx context.Context, sub
 		return r.syncExtensionInstallationStatus(ctx, sub, true)
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
-		if configChanged(sub) {
+		if configChanged(sub, "") {
 			return r.installOrUpgradeExtension(ctx, sub, executor, true)
 		}
 
@@ -951,7 +951,7 @@ func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *cor
 		return r.syncClusterAgentInstallationStatus(ctx, sub, cluster, &clusterSchedulingStatus, true)
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
-		if configChanged(sub) {
+		if configChanged(sub, cluster.Name) {
 			return r.installOrUpgradeClusterAgent(ctx, sub, cluster, clusterClient, &clusterSchedulingStatus, executor, true)
 		}
 
@@ -1045,7 +1045,7 @@ func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, 
 		return err
 	}
 
-	setConfigHash(sub, sub.Spec.Config)
+	setConfigHash(sub, "")
 	sub.Status.ReleaseName = releaseName
 	sub.Status.TargetNamespace = targetNamespace
 	sub.Status.JobName = jobName
@@ -1097,7 +1097,7 @@ func (r *SubscriptionReconciler) installOrUpgradeClusterAgent(ctx context.Contex
 		return err
 	}
 
-	setConfigHash(sub, clusterConfig(sub, cluster.Name))
+	setConfigHash(sub, cluster.Name)
 	clusterSchedulingStatus.ReleaseName = releaseName
 	clusterSchedulingStatus.TargetNamespace = targetNamespace
 	clusterSchedulingStatus.JobName = jobName
