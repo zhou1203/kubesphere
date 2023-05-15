@@ -79,9 +79,7 @@ var hostCluster = &clusterv1alpha1.Cluster{
 		},
 	},
 	Spec: clusterv1alpha1.ClusterSpec{
-		JoinFederation: true,
-		Enable:         true,
-		Provider:       "kubesphere",
+		Provider: "kubesphere",
 		Connection: clusterv1alpha1.Connection{
 			Type: clusterv1alpha1.ConnectionTypeDirect,
 		},
@@ -111,13 +109,13 @@ func NewReconciler(hostConfig *rest.Config, hostClusterName string, resyncPeriod
 	}, nil
 }
 
-// InjectClient is used to inject the client into NodeReconciler.
+// InjectClient is used to inject the client into Reconciler.
 func (r *Reconciler) InjectClient(c client.Client) error {
 	r.Client = c
 	return nil
 }
 
-// SetupWithManager setups the NodeReconciler with manager.
+// SetupWithManager setups the Reconciler with manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return builder.
 		ControllerManagedBy(mgr).
