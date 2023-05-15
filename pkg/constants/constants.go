@@ -24,6 +24,7 @@ const (
 	KubeSphereLoggingNamespace = "kubesphere-logging-system"
 	KubeSphereNamespace        = "kubesphere-system"
 	KubeSphereControlNamespace = "kubesphere-controls-system"
+	KubeSphereAPIServerName    = "ks-apiserver"
 	PorterNamespace            = "porter-system"
 	IngressControllerNamespace = KubeSphereControlNamespace
 	AdminUserName              = "admin"

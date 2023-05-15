@@ -416,7 +416,7 @@ func (r *Reconciler) checkIfClusterIsHostCluster(ctx context.Context, clusterKub
 
 func (r *Reconciler) tryFetchKubeSphereVersion(ctx context.Context, clusterClient kubernetes.Interface) (string, error) {
 	response, err := clusterClient.CoreV1().Services(constants.KubeSphereNamespace).
-		ProxyGet("http", "ks-apiserver", "80", "/version", nil).
+		ProxyGet("http", constants.KubeSphereAPIServerName, "80", "/version", nil).
 		DoRaw(ctx)
 	if err != nil {
 		return "", err

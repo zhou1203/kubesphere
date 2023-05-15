@@ -26,11 +26,11 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
-
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 
 	"kubesphere.io/kubesphere/cmd/ks-apiserver/app/options"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
+	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/utils/term"
 	"kubesphere.io/kubesphere/pkg/version"
 )
@@ -47,7 +47,7 @@ func NewAPIServerCommand() *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use: "ks-apiserver",
+		Use: constants.KubeSphereAPIServerName,
 		Long: `The KubeSphere API server validates and configures data for the API objects. 
 The API Server services REST operations and provides the frontend to the
 cluster's shared state through which all other components interact.`,

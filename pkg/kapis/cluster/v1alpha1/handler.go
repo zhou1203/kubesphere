@@ -17,11 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -31,7 +29,6 @@ import (
 	k8sinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/rest"
 
 	"kubesphere.io/api/cluster/v1alpha1"
 
@@ -46,10 +43,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/version"
 )
 
-const (
-	defaultTimeout      = 10 * time.Second
-	KubeSphereApiServer = "ks-apiserver"
-)
+const defaultTimeout = 10 * time.Second
 
 type handler struct {
 	ksclient        kubesphere.Interface
@@ -113,15 +107,14 @@ func (h *handler) updateKubeConfig(request *restful.Request, response *restful.R
 		return
 	}
 
-	_, err = validateKubeSphereAPIServer(config)
-	if err != nil {
+	if _, err = validateKubeSphereAPIServer(clientSet); err != nil {
 		api.HandleBadRequest(response, request, fmt.Errorf("unable validate kubesphere endpoint, %v", err))
 		return
 	}
 
-	err = h.validateMemberClusterConfiguration(clientSet)
-	if err != nil {
+	if err = h.validateMemberClusterConfiguration(clientSet); err != nil {
 		api.HandleBadRequest(response, request, fmt.Errorf("failed to validate member cluster configuration, err: %v", err))
+		return
 	}
 
 	// Check if the cluster is the same
@@ -211,37 +204,18 @@ func (h *handler) validateKubeConfig(clusterName string, clientSet kubernetes.In
 }
 
 // validateKubeSphereAPIServer uses version api to check the accessibility
-func validateKubeSphereAPIServer(config *rest.Config) (*version.Info, error) {
-	transport, err := rest.TransportFor(config)
+func validateKubeSphereAPIServer(clusterClient kubernetes.Interface) (*version.Info, error) {
+	response, err := clusterClient.CoreV1().Services(constants.KubeSphereNamespace).
+		ProxyGet("http", constants.KubeSphereAPIServerName, "80", "/version", nil).
+		DoRaw(context.Background())
 	if err != nil {
-		return nil, err
-	}
-	client := http.Client{
-		Timeout:   defaultTimeout,
-		Transport: transport,
-	}
-
-	response, err := client.Get(fmt.Sprintf("%s/api/v1/namespaces/%s/services/:%s:/proxy/kapis/version", config.Host, constants.KubeSphereNamespace, KubeSphereApiServer))
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-
-	responseBytes, _ := io.ReadAll(response.Body)
-	responseBody := string(responseBytes)
-
-	response.Body = io.NopCloser(bytes.NewBuffer(responseBytes))
-
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("invalid response: %s , please make sure %s.%s.svc of member cluster is up and running", KubeSphereApiServer, constants.KubeSphereNamespace, responseBody)
+		return nil, fmt.Errorf("invalid response: %s, please make sure %s.%s.svc of member cluster is up and running", response, constants.KubeSphereAPIServerName, constants.KubeSphereNamespace)
 	}
 
 	ver := version.Info{}
-	err = json.NewDecoder(response.Body).Decode(&ver)
-	if err != nil {
-		return nil, fmt.Errorf("invalid response: %s , please make sure %s.%s.svc of member cluster is up and running", KubeSphereApiServer, constants.KubeSphereNamespace, responseBody)
+	if err = json.Unmarshal(response, &ver); err != nil {
+		return nil, fmt.Errorf("invalid response: %s, please make sure %s.%s.svc of member cluster is up and running", response, constants.KubeSphereAPIServerName, constants.KubeSphereNamespace)
 	}
-
 	return &ver, nil
 }
 
