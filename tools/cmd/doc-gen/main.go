@@ -36,7 +36,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/informers"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
-	iamv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/kubesphere/pkg/kapis/iam/v1beta1"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
@@ -44,7 +44,6 @@ import (
 	tenantv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha2"
 	tenantv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha3"
 	terminalv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/terminal/v1alpha2"
-	"kubesphere.io/kubesphere/pkg/models/iam/group"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/version"
 )
@@ -106,7 +105,7 @@ func generateSwaggerJson() []byte {
 
 	urlruntime.Must(oauth.AddToContainer(container, nil, nil, nil, nil, nil, nil))
 	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(container, clientsets.KubeSphere(), informerFactory.KubernetesSharedInformerFactory(), informerFactory.KubeSphereSharedInformerFactory()))
-	urlruntime.Must(iamv1alpha2.AddToContainer(container, nil, nil, group.New(informerFactory, clientsets.KubeSphere(), clientsets.Kubernetes()), nil))
+	urlruntime.Must(iamv1beta1.AddToContainer(container, nil, nil))
 	urlruntime.Must(operationsv1alpha2.AddToContainer(container, clientsets.Kubernetes()))
 	urlruntime.Must(resourcesv1alpha2.AddToContainer(container, clientsets.Kubernetes(), informerFactory, "", ""))
 	urlruntime.Must(resourcesv1alpha3.AddToContainer(container, informerFactory))
@@ -130,21 +129,11 @@ func generateSwaggerJson() []byte {
 		},
 		{
 			Name: "Identity Management",
-			Tags: []string{
-				constants.UserTag,
-			},
+			Tags: []string{},
 		},
 		{
 			Name: "Access Management",
-			Tags: []string{
-				constants.ClusterMemberTag,
-				constants.WorkspaceMemberTag,
-				constants.NamespaceMemberTag,
-				constants.GlobalRoleTag,
-				constants.ClusterRoleTag,
-				constants.WorkspaceRoleTag,
-				constants.NamespaceRoleTag,
-			},
+			Tags: []string{},
 		},
 		{
 			Name: "Multi-tenancy",
