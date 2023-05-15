@@ -17,8 +17,6 @@ limitations under the License.
 package constants
 
 const (
-	APIVersion = "v1alpha1"
-
 	KubeSystemNamespace        = "kube-system"
 	IstioNamespace             = "istio-system"
 	KubeSphereLoggingNamespace = "kubesphere-logging-system"
@@ -26,24 +24,16 @@ const (
 	KubeSphereControlNamespace = "kubesphere-controls-system"
 	KubeSphereAPIServerName    = "ks-apiserver"
 	PorterNamespace            = "porter-system"
-	IngressControllerNamespace = KubeSphereControlNamespace
-	AdminUserName              = "admin"
-	IngressControllerPrefix    = "kubesphere-router-"
 	KubeSphereConfigName       = "kubesphere-config"
 	KubeSphereConfigMapDataKey = "kubesphere.yaml"
 	KubectlPodNamePrefix       = "ks-managed-kubectl"
 
-	ClusterNameLabelKey      = "kubesphere.io/cluster"
-	NameLabelKey             = "kubesphere.io/name"
 	WorkspaceLabelKey        = "kubesphere.io/workspace"
 	NamespaceLabelKey        = "kubesphere.io/namespace"
 	DisplayNameAnnotationKey = "kubesphere.io/alias-name"
-	DanglingAppCleanupKey    = "application.kubesphere.io/app-cleanup"
 	CreatorAnnotationKey     = "kubesphere.io/creator"
 	UsernameLabelKey         = "kubesphere.io/username"
 	KubefedManagedLabel      = "kubefed.io/managed"
-
-	UserNameHeader = "X-Token-Username"
 
 	AuthenticationTag = "Authentication"
 	UserTag           = "User"
@@ -57,9 +47,6 @@ const (
 	ClusterRoleTag   = "Cluster Role"
 	WorkspaceRoleTag = "Workspace Role"
 	NamespaceRoleTag = "Namespace Role"
-
-	CleanupDanglingAppOngoing = "ongoing"
-	CleanupDanglingAppDone    = "done"
 
 	ToolboxTag      = "Toolbox"
 	RegistryTag     = "Docker Registry"
@@ -75,42 +62,11 @@ const (
 	ClusterResourcesTag   = "Cluster Resources"
 	ComponentStatusTag    = "Component Status"
 
-	GatewayTag = "Gateway"
-
 	NetworkTopologyTag = "Network Topology"
-
-	KubeSphereMetricsTag = "KubeSphere Metrics"
-	ClusterMetricsTag    = "Cluster Metrics"
-	NodeMetricsTag       = "Node Metrics"
-	NamespaceMetricsTag  = "Namespace Metrics"
-	PodMetricsTag        = "Pod Metrics"
-	PVCMetricsTag        = "PVC Metrics"
-	IngressMetricsTag    = "Ingress Metrics"
-	ContainerMetricsTag  = "Container Metrics"
-	WorkloadMetricsTag   = "Workload Metrics"
-	WorkspaceMetricsTag  = "Workspace Metrics"
-	ComponentMetricsTag  = "Component Metrics"
-	CustomMetricsTag     = "Custom Metrics"
 
 	LogQueryTag      = "Log Query"
 	EventsQueryTag   = "Events Query"
 	AuditingQueryTag = "Auditing Query"
-
-	ClusterMetersTag   = "Cluster Meters"
-	NodeMetersTag      = "Node Meters"
-	WorkspaceMetersTag = "Workspace Meters"
-	NamespaceMetersTag = "Namespace Meters"
-	WorkloadMetersTag  = "Workload Meters"
-	PodMetersTag       = "Pod Meters"
-	ServiceMetricsTag  = "ServiceName Meters"
-
-	ApplicationReleaseName = "meta.helm.sh/release-name"
-	ApplicationReleaseNS   = "meta.helm.sh/release-namespace"
-
-	ApplicationName    = "app.kubernetes.io/name"
-	ApplicationVersion = "app.kubernetes.io/version"
-
-	DashboardTag = "Dashboard"
 
 	// SuccessSynced is used as part of the Event 'reason' when a resource is synced
 	SuccessSynced = "Synced"

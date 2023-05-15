@@ -18,7 +18,6 @@ package api
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type ListResult struct {
@@ -65,104 +64,14 @@ type Workloads struct {
 	Items     map[string]interface{} `json:"items,omitempty" description:"unhealthy workloads"`
 }
 
-type ClientType string
+const StatusOK = "ok"
 
 const (
-	ClientKubernetes  ClientType = "Kubernetes"
-	ClientKubeSphere  ClientType = "Kubesphere"
-	ClientIstio       ClientType = "Istio"
-	ClientS2i         ClientType = "S2i"
-	ClientApplication ClientType = "Application"
-
-	StatusOK = "ok"
-)
-
-var SupportedGroupVersionResources = map[ClientType][]schema.GroupVersionResource{
-	// all supported kubernetes api objects
-	ClientKubernetes: {
-		{Group: "", Version: "v1", Resource: "namespaces"},
-		{Group: "", Version: "v1", Resource: "nodes"},
-		{Group: "", Version: "v1", Resource: "resourcequotas"},
-		{Group: "", Version: "v1", Resource: "pods"},
-		{Group: "", Version: "v1", Resource: "services"},
-		{Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
-		{Group: "", Version: "v1", Resource: "secrets"},
-		{Group: "", Version: "v1", Resource: "configmaps"},
-		{Group: "", Version: "v1", Resource: "serviceaccounts"},
-
-		{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"},
-		{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"},
-		{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"},
-		{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"},
-
-		{Group: "apps", Version: "v1", Resource: "deployments"},
-		{Group: "apps", Version: "v1", Resource: "daemonsets"},
-		{Group: "apps", Version: "v1", Resource: "replicasets"},
-		{Group: "apps", Version: "v1", Resource: "statefulsets"},
-		{Group: "apps", Version: "v1", Resource: "controllerrevisions"},
-
-		{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"},
-
-		{Group: "batch", Version: "v1", Resource: "jobs"},
-		{Group: "batch", Version: "v1", Resource: "cronjobs"},
-
-		{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
-
-		{Group: "autoscaling", Version: "v2beta2", Resource: "horizontalpodautoscalers"},
-	},
-
-	// all supported kubesphere api objects
-	ClientKubeSphere: {
-		{Group: "tenant.kubesphere.io", Version: "v1alpha1", Resource: "workspaces"},
-
-		{Group: "servicemesh.kubesphere.io", Version: "v1alpha2", Resource: "strategies"},
-		{Group: "servicemesh.kubesphere.io", Version: "v1alpha2", Resource: "servicepolicies"},
-	},
-
-	// all supported istio api objects
-	ClientIstio: {},
-
-	// kubernetes-sigs application api objects
-	ClientApplication: {
-		{Group: "app.k8s.io", Version: "v1beta1", Resource: "applications"},
-	},
-}
-
-// List of all resource kinds supported by the UI.
-const (
-	ResourceKindConfigMap                = "configmaps"
-	ResourceKindDaemonSet                = "daemonsets"
-	ResourceKindDeployment               = "deployments"
-	ResourceKindEvent                    = "events"
-	ResourceKindHorizontalPodAutoscaler  = "horizontalpodautoscalers"
-	ResourceKindIngress                  = "ingresses"
-	ResourceKindJob                      = "jobs"
-	ResourceKindCronJob                  = "cronjobs"
-	ResourceKindLimitRange               = "limitranges"
-	ResourceKindNamespace                = "namespaces"
-	ResourceKindNode                     = "nodes"
-	ResourceKindPersistentVolumeClaim    = "persistentvolumeclaims"
-	ResourceKindPersistentVolume         = "persistentvolumes"
-	ResourceKindCustomResourceDefinition = "customresourcedefinitions"
-	ResourceKindPod                      = "pods"
-	ResourceKindReplicaSet               = "replicasets"
-	ResourceKindResourceQuota            = "resourcequota"
-	ResourceKindSecret                   = "secrets"
-	ResourceKindService                  = "services"
-	ResourceKindStatefulSet              = "statefulsets"
-	ResourceKindStorageClass             = "storageclasses"
-	ResourceKindClusterRole              = "clusterroles"
-	ResourceKindClusterRoleBinding       = "clusterrolebindings"
-	ResourceKindRole                     = "roles"
-	ResourceKindRoleBinding              = "rolebindings"
-	ResourceKindWorkspace                = "workspaces"
-	ResourceKindS2iBinary                = "s2ibinaries"
-	ResourceKindStrategy                 = "strategy"
-	ResourceKindServicePolicy            = "servicepolicies"
-	ResourceKindS2iBuilderTemplate       = "s2ibuildertemplates"
-	ResourceKindeS2iRun                  = "s2iruns"
-	ResourceKindS2iBuilder               = "s2ibuilders"
-	ResourceKindApplication              = "applications"
+	ResourceKindDaemonSet             = "daemonsets"
+	ResourceKindDeployment            = "deployments"
+	ResourceKindJob                   = "jobs"
+	ResourceKindPersistentVolumeClaim = "persistentvolumeclaims"
+	ResourceKindStatefulSet           = "statefulsets"
 
 	WorkspaceNone = ""
 	ClusterNone   = ""
