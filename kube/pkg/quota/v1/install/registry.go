@@ -19,9 +19,9 @@ package install
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	quota "kubesphere.io/kubesphere/kube/pkg/quota/v1"
-	core "kubesphere.io/kubesphere/kube/pkg/quota/v1/evaluator/core"
-	generic "kubesphere.io/kubesphere/kube/pkg/quota/v1/generic"
+	"kubesphere.io/kubesphere/kube/pkg/quota/v1"
+	"kubesphere.io/kubesphere/kube/pkg/quota/v1/evaluator/core"
+	"kubesphere.io/kubesphere/kube/pkg/quota/v1/generic"
 )
 
 // NewQuotaConfigurationForAdmission returns a quota configuration for admission control.

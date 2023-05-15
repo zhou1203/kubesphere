@@ -29,7 +29,7 @@ import (
 
 	"kubesphere.io/kubesphere/kube/pkg/apis/core/v1/helper"
 	k8sfeatures "kubesphere.io/kubesphere/kube/pkg/features"
-	quota "kubesphere.io/kubesphere/kube/pkg/quota/v1"
+	"kubesphere.io/kubesphere/kube/pkg/quota/v1"
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/generic"
 )
 
@@ -50,18 +50,6 @@ var pvcResources = []corev1.ResourceName{
 // * gold.storageclass.storage.k8s.io/: 500Gi
 // * bronze.storageclass.storage.k8s.io/requests.storage: 500Gi
 const storageClassSuffix string = ".storageclass.storage.k8s.io/"
-
-/* TODO: prune?
-// ResourceByStorageClass returns a quota resource name by storage class.
-func ResourceByStorageClass(storageClass string, resourceName corev1.ResourceName) corev1.ResourceName {
-	return corev1.ResourceName(string(storageClass + storageClassSuffix + string(resourceName)))
-}
-*/
-
-// V1ResourceByStorageClass returns a quota resource name by storage class.
-func V1ResourceByStorageClass(storageClass string, resourceName corev1.ResourceName) corev1.ResourceName {
-	return corev1.ResourceName(string(storageClass + storageClassSuffix + string(resourceName)))
-}
 
 // NewPersistentVolumeClaimEvaluator returns an evaluator that can evaluate persistent volume claims
 func NewPersistentVolumeClaimEvaluator(f quota.ListerForResourceFunc) quota.Evaluator {
