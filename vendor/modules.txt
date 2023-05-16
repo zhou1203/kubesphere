@@ -332,9 +332,6 @@ github.com/go-redis/redis/internal/hashtag
 github.com/go-redis/redis/internal/pool
 github.com/go-redis/redis/internal/proto
 github.com/go-redis/redis/internal/util
-# github.com/go-resty/resty/v2 v2.5.0
-## explicit; go 1.11
-github.com/go-resty/resty/v2
 # github.com/gobuffalo/flect v0.3.0 => github.com/gobuffalo/flect v0.3.0
 ## explicit; go 1.16
 github.com/gobuffalo/flect
@@ -1019,7 +1016,6 @@ golang.org/x/net/idna
 golang.org/x/net/internal/socks
 golang.org/x/net/internal/timeseries
 golang.org/x/net/proxy
-golang.org/x/net/publicsuffix
 golang.org/x/net/trace
 golang.org/x/net/websocket
 # golang.org/x/oauth2 v0.4.0 => golang.org/x/oauth2 v0.4.0
@@ -2063,10 +2059,8 @@ kubesphere.io/api/tenant/v1alpha1
 kubesphere.io/api/tenant/v1alpha2
 # kubesphere.io/client-go v0.0.0 => ./staging/src/kubesphere.io/client-go
 ## explicit; go 1.19
-kubesphere.io/client-go/client
-kubesphere.io/client-go/client/generic
-kubesphere.io/client-go/restclient
-kubesphere.io/client-go/restclient/versioned/iam/v1alpha2
+kubesphere.io/client-go/kubesphere/scheme
+kubesphere.io/client-go/rest
 # kubesphere.io/utils v0.0.0 => ./staging/src/kubesphere.io/utils
 ## explicit; go 1.19
 kubesphere.io/utils/helm
