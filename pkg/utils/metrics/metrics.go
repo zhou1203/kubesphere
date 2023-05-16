@@ -58,7 +58,7 @@ type DefaultMetrics struct{}
 // Install adds the DefaultMetrics handler
 func (m DefaultMetrics) Install(c *restful.Container) {
 	registerOnce.Do(m.registerMetrics)
-	c.Handle("/kapis/metrics", Handler())
+	c.Handle("/metrics", Handler())
 }
 
 func (m DefaultMetrics) registerMetrics() {

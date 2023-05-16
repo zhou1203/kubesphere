@@ -276,7 +276,7 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	default:
 		fallthrough
 	case authorization.RBAC:
-		excludedPaths := []string{"/oauth/*", "/kapis/config.kubesphere.io/*", "/kapis/version", "/version", "/kapis/metrics", "/healthz"}
+		excludedPaths := []string{"/oauth/*", "/kapis/config.kubesphere.io/*", "/kapis/version", "/version", "/metrics", "/healthz"}
 		pathAuthorizer, _ := path.NewAuthorizer(excludedPaths)
 		amOperator := am.NewReadOnlyOperator(s.InformerFactory)
 		authorizers = unionauthorizer.New(pathAuthorizer, rbac.NewRBACAuthorizer(amOperator))

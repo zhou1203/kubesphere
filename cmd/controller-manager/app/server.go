@@ -224,7 +224,7 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	klog.V(2).Info("registering metrics to the webhook server")
 	// Add an extra metric endpoint, so we can use the same metric definition with ks-apiserver
 	// /kapis/metrics is independent of controller-manager's built-in /metrics
-	mgr.AddMetricsExtraHandler("/kapis/metrics", metrics.Handler())
+	mgr.AddMetricsExtraHandler("/metrics", metrics.Handler())
 
 	klog.V(0).Info("Starting the controllers.")
 	if err = mgr.Start(ctx); err != nil {
