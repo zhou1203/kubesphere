@@ -32,10 +32,10 @@ import (
 )
 
 type Interface interface {
-	//read the content, caller should close the io.ReadCloser.
+	// Read the content, caller should close the io.ReadCloser.
 	Read(key string) ([]byte, error)
 
-	// Upload uploads a object to storage and returns object location if succeeded
+	// Upload uploads an object to storage and returns object location if succeeded
 	Upload(key, fileName string, body io.Reader, size int) error
 
 	GetDownloadURL(key string, fileName string) (string, error)
@@ -88,7 +88,7 @@ func calculateConcurrency(size int) int {
 
 // Upload use Multipart upload to upload a single object as a set of parts.
 // If the data length is known to be large, it is recommended to pass in the data length,
-// it will helps to calculate concurrency. Otherwise, `size` can be 0,
+// it will help to calculate concurrency. Otherwise, `size` can be 0,
 // use 5 as default upload concurrency, same as aws-sdk-go.
 // See https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html for more details.
 func (s *Client) Upload(key, fileName string, body io.Reader, size int) error {

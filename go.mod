@@ -14,13 +14,13 @@ require (
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d
 	github.com/coreos/go-oidc v2.1.0+incompatible
 	github.com/davecgh/go-spew v1.1.1
-	github.com/docker/distribution v2.8.1+incompatible
+	github.com/docker/distribution v2.8.2+incompatible
 	github.com/docker/docker v20.10.24+incompatible
 	github.com/elastic/go-elasticsearch/v5 v5.6.1
 	github.com/elastic/go-elasticsearch/v6 v6.8.2
 	github.com/elastic/go-elasticsearch/v7 v7.3.0
-	github.com/emicklei/go-restful v2.16.0+incompatible
-	github.com/emicklei/go-restful-openapi v1.4.1
+	github.com/emicklei/go-restful-openapi/v2 v2.9.1
+	github.com/emicklei/go-restful/v3 v3.10.2
 	github.com/evanphx/json-patch v5.6.0+incompatible
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-ldap/ldap v3.0.3+incompatible
@@ -113,7 +113,6 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/emicklei/go-restful/v3 v3.10.1 // indirect
 	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
@@ -277,7 +276,7 @@ replace (
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.3
 	github.com/davecgh/go-spew => github.com/davecgh/go-spew v1.1.1
 	github.com/docker/cli => github.com/docker/cli v20.10.22+incompatible
-	github.com/docker/distribution => github.com/docker/distribution v2.8.1+incompatible
+	github.com/docker/distribution => github.com/docker/distribution v2.8.2+incompatible
 	github.com/docker/docker => github.com/docker/docker v20.10.24+incompatible
 	github.com/docker/docker-credential-helpers => github.com/docker/docker-credential-helpers v0.7.0
 	github.com/docker/go-connections => github.com/docker/go-connections v0.4.0
@@ -286,9 +285,8 @@ replace (
 	github.com/elastic/go-elasticsearch/v5 => github.com/elastic/go-elasticsearch/v5 v5.6.1
 	github.com/elastic/go-elasticsearch/v6 => github.com/elastic/go-elasticsearch/v6 v6.8.2
 	github.com/elastic/go-elasticsearch/v7 => github.com/elastic/go-elasticsearch/v7 v7.3.0
-	github.com/emicklei/go-restful => github.com/emicklei/go-restful v2.16.0+incompatible
-	github.com/emicklei/go-restful-openapi => github.com/emicklei/go-restful-openapi v1.4.1
-	github.com/emicklei/go-restful/v3 => github.com/emicklei/go-restful/v3 v3.10.1
+	github.com/emicklei/go-restful-openapi/v2 => github.com/emicklei/go-restful-openapi/v2 v2.9.2-0.20230507070325-d6acc08e570c
+	github.com/emicklei/go-restful/v3 => github.com/emicklei/go-restful/v3 v3.10.2
 	github.com/emirpasic/gods => github.com/emirpasic/gods v1.12.0
 	github.com/evanphx/json-patch => github.com/evanphx/json-patch v5.6.0+incompatible
 	github.com/evanphx/json-patch/v5 => github.com/evanphx/json-patch/v5 v5.6.0

@@ -24,27 +24,23 @@ import (
 	"strings"
 	"sync"
 
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
-
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
 	"k8s.io/client-go/kubernetes/scheme"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"kubesphere.io/kubesphere/pkg/apis"
 	"kubesphere.io/kubesphere/pkg/apiserver"
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/informers"
 	genericoptions "kubesphere.io/kubesphere/pkg/server/options"
 	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
-
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 type ServerRunOptions struct {
@@ -53,9 +49,6 @@ type ServerRunOptions struct {
 	*apiserverconfig.Config
 	schemeOnce sync.Once
 	DebugMode  bool
-
-	// Enable gops or not.
-	GOPSEnabled bool
 }
 
 func NewServerRunOptions() *ServerRunOptions {
@@ -71,8 +64,6 @@ func NewServerRunOptions() *ServerRunOptions {
 func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
 	fs := fss.FlagSet("generic")
 	fs.BoolVar(&s.DebugMode, "debug", false, "Don't enable this if you don't know what it means.")
-	fs.BoolVar(&s.GOPSEnabled, "gops", false, "Whether to enable gops or not. When enabled this option, "+
-		"ks-apiserver will listen on a random port on 127.0.0.1, then you can use the gops tool to list and diagnose the ks-apiserver currently running.")
 	s.GenericServerRunOptions.AddFlags(fs, s.GenericServerRunOptions)
 	s.KubernetesOptions.AddFlags(fss.FlagSet("kubernetes"), s.KubernetesOptions)
 	s.AuthenticationOptions.AddFlags(fss.FlagSet("authentication"), s.AuthenticationOptions)
@@ -91,8 +82,6 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
 	return fss
 }
 
-const fakeInterface string = "FAKE"
-
 // NewAPIServer creates an APIServer instance using given options
 func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIServer, error) {
 	apiServer := &apiserver.APIServer{
@@ -110,24 +99,14 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 
 	apiServer.ClusterClient = clusterclient.NewClusterClient(informerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
 
-	// If CacheOptions is nil, will create a fake cache.
-	if s.CacheOptions.Type == "" {
-		s.CacheOptions.Type = cache.DefaultCacheType
-		klog.Warning("ks-apiserver starts without cache provided, it will use in memory cache. " +
-			"This may cause inconsistencies when running ks-apiserver with multiple replicas, and memory leak risk")
-	}
-	cacheClient, err := cache.New(s.CacheOptions, stopCh)
-	if err != nil {
+	if apiServer.CacheClient, err = cache.New(s.CacheOptions, stopCh); err != nil {
 		return nil, fmt.Errorf("failed to create cache, error: %v", err)
 	}
-	apiServer.CacheClient = cacheClient
 
 	if s.AuditingOptions.Host != "" {
-		auditingClient, err := auditingclient.NewClient(s.AuditingOptions)
-		if err != nil {
+		if apiServer.AuditingClient, err = auditingclient.NewClient(s.AuditingOptions); err != nil {
 			return nil, fmt.Errorf("failed to connect to elasticsearch, please check elasticsearch status, error: %v", err)
 		}
-		apiServer.AuditingClient = auditingClient
 	}
 
 	server := &http.Server{
