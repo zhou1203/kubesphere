@@ -65,6 +65,7 @@ import (
 	iamapi "kubesphere.io/kubesphere/pkg/kapis/iam/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
+	"kubesphere.io/kubesphere/pkg/kapis/overview"
 	packagev1alpha1 "kubesphere.io/kubesphere/pkg/kapis/package/v1alpha1"
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha3"
@@ -83,6 +84,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	overviewclient "kubesphere.io/kubesphere/pkg/simple/client/overview"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/iputil"
 	"kubesphere.io/kubesphere/pkg/utils/metrics"
@@ -123,6 +125,8 @@ type APIServer struct {
 	RuntimeClient runtimeclient.Client
 
 	ClusterClient clusterclient.ClusterClients
+
+	ResourceManager resourcev1beta1.ResourceManager
 }
 
 func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
@@ -181,6 +185,9 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 		s.InformerFactory)
 	rbacAuthorizer := rbac.NewRBACAuthorizer(amOperator)
 
+	counter := overviewclient.New(s.ResourceManager)
+	counter.RegisterResource(overviewclient.NewDefaultRegisterOptions()...)
+
 	urlruntime.Must(configv1alpha2.AddToContainer(s.container, s.Config))
 	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.InformerFactory))
 	urlruntime.Must(operationsv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes()))
@@ -208,6 +215,7 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 		s.Config.AuthenticationOptions))
 	urlruntime.Must(version.AddToContainer(s.container, s.KubernetesClient.Kubernetes().Discovery()))
 	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
+	urlruntime.Must(overview.AddToContainer(s.container, counter))
 }
 
 // installHealthz creates the healthz endpoint for this server

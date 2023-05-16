@@ -36,6 +36,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/informers"
+	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 	genericoptions "kubesphere.io/kubesphere/pkg/server/options"
 	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
@@ -151,6 +152,8 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 	if err != nil {
 		klog.Fatalf("unable to create issuer: %v", err)
 	}
+
+	apiServer.ResourceManager = resourcev1beta1.New(apiServer.RuntimeClient, apiServer.RuntimeCache)
 
 	apiServer.Server = server
 
