@@ -56,11 +56,11 @@ cluster's shared state through which all other components interact.`,
 				return utilerrors.NewAggregate(errs)
 			}
 
-			if s.GOPSEnabled {
+			if s.DebugMode {
 				// Add agent to report additional information such as the current stack trace, Go version, memory stats, etc.
 				// Bind to a random port on address 127.0.0.1.
 				if err := agent.Listen(agent.Options{}); err != nil {
-					klog.Fatal(err)
+					klog.Fatalln(err)
 				}
 			}
 

@@ -44,7 +44,7 @@ type KubeSphereControllerManagerOptions struct {
 	WebhookCertDir        string
 
 	// KubeSphere is using sigs.k8s.io/application as fundamental object to implement Application Management.
-	// There are other projects also built on sigs.k8s.io/application, when KubeSphere installed along side
+	// There are other projects also built on sigs.k8s.io/application, when KubeSphere installed alongside
 	// them, conflicts happen. So we leave an option to only reconcile applications  matched with the given
 	// selector. Default will reconcile all applications.
 	//    For example
@@ -62,8 +62,7 @@ type KubeSphereControllerManagerOptions struct {
 	//     e.g. *,-foo, means "disable 'foo'"
 	ControllerGates []string
 
-	// Enable gops or not.
-	GOPSEnabled bool
+	DebugMode bool
 }
 
 func NewKubeSphereControllerManagerOptions() *KubeSphereControllerManagerOptions {
@@ -112,8 +111,7 @@ func (s *KubeSphereControllerManagerOptions) Flags(allControllerNameSelectors []
 		"named 'foo', '-foo' disables the controller named 'foo'.\nAll controllers: %s",
 		strings.Join(allControllerNameSelectors, ", ")))
 
-	gfs.BoolVar(&s.GOPSEnabled, "gops", s.GOPSEnabled, "Whether to enable gops or not.  When enabled this option, "+
-		"controller-manager will listen on a random port on 127.0.0.1, then you can use the gops tool to list and diagnose the controller-manager currently running.")
+	gfs.BoolVar(&s.DebugMode, "debug", false, "Don't enable this if you don't know what it means.")
 
 	kfs := fss.FlagSet("klog")
 	local := flag.NewFlagSet("klog", flag.ExitOnError)
@@ -127,14 +125,14 @@ func (s *KubeSphereControllerManagerOptions) Flags(allControllerNameSelectors []
 }
 
 // Validate Options and Genetic Options
-func (o *KubeSphereControllerManagerOptions) Validate(allControllerNameSelectors []string) []error {
+func (s *KubeSphereControllerManagerOptions) Validate(allControllerNameSelectors []string) []error {
 	var errs []error
-	errs = append(errs, o.KubernetesOptions.Validate()...)
-	errs = append(errs, o.MultiClusterOptions.Validate()...)
+	errs = append(errs, s.KubernetesOptions.Validate()...)
+	errs = append(errs, s.MultiClusterOptions.Validate()...)
 
 	// genetic option: application-selector
-	if len(o.ApplicationSelector) != 0 {
-		_, err := labels.Parse(o.ApplicationSelector)
+	if len(s.ApplicationSelector) != 0 {
+		_, err := labels.Parse(s.ApplicationSelector)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -142,7 +140,7 @@ func (o *KubeSphereControllerManagerOptions) Validate(allControllerNameSelectors
 
 	// genetic option: controllers, check all selectors are valid
 	allControllersNameSet := sets.New(allControllerNameSelectors...)
-	for _, selector := range o.ControllerGates {
+	for _, selector := range s.ControllerGates {
 		if selector == "*" {
 			continue
 		}
@@ -156,9 +154,9 @@ func (o *KubeSphereControllerManagerOptions) Validate(allControllerNameSelectors
 }
 
 // IsControllerEnabled check if a specified controller enabled or not.
-func (o *KubeSphereControllerManagerOptions) IsControllerEnabled(name string) bool {
+func (s *KubeSphereControllerManagerOptions) IsControllerEnabled(name string) bool {
 	hasStar := false
-	for _, ctrl := range o.ControllerGates {
+	for _, ctrl := range s.ControllerGates {
 		if ctrl == name {
 			return true
 		}

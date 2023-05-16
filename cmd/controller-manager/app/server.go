@@ -19,7 +19,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/google/gops/agent"
 	"github.com/spf13/cobra"
@@ -66,24 +65,20 @@ func NewControllerManagerCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:  "controller-manager",
 		Long: `KubeSphere controller manager is a daemon that embeds the control loops shipped with KubeSphere.`,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if errs := s.Validate(allControllers); len(errs) != 0 {
-				klog.Error(utilerrors.NewAggregate(errs))
-				os.Exit(1)
+				return utilerrors.NewAggregate(errs)
 			}
 
-			if s.GOPSEnabled {
+			if s.DebugMode {
 				// Add agent to report additional information such as the current stack trace, Go version, memory stats, etc.
 				// Bind to a random port on address 127.0.0.1
 				if err := agent.Listen(agent.Options{}); err != nil {
-					klog.Fatal(err)
+					klog.Fatalln(err)
 				}
 			}
 
-			if err = Run(s, controllerconfig.WatchConfigChange(), signals.SetupSignalHandler()); err != nil {
-				klog.Error(err)
-				os.Exit(1)
-			}
+			return Run(s, controllerconfig.WatchConfigChange(), signals.SetupSignalHandler())
 		},
 		SilenceUsage: true,
 	}
