@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -35,8 +34,8 @@ import (
 	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"kubesphere.io/kubesphere/pkg/apis"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 func newUser(name string) *iamv1alpha2.User {
@@ -75,12 +74,8 @@ func TestDoNothing(t *testing.T) {
 		}
 		loginRecords = append(loginRecords, &loginRecord)
 	}
-	sch := scheme.Scheme
-	if err := apis.AddToScheme(sch); err != nil {
-		t.Fatalf("unable add APIs to scheme: %v", err)
-	}
 
-	client := runtimefakeclient.NewClientBuilder().WithScheme(sch).WithRuntimeObjects(user).WithRuntimeObjects(loginRecords...).Build()
+	client := runtimefakeclient.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(user).WithRuntimeObjects(loginRecords...).Build()
 	c := &Reconciler{
 		Recorder:              &record.FakeRecorder{},
 		Logger:                ctrl.Log.WithName("controllers").WithName(controllerName),

@@ -22,21 +22,19 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 
-	"k8s.io/client-go/kubernetes/scheme"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	"kubesphere.io/kubesphere/pkg/apis"
 	"kubesphere.io/kubesphere/pkg/apiserver"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/informers"
 	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
+	"kubesphere.io/kubesphere/pkg/scheme"
 	genericoptions "kubesphere.io/kubesphere/pkg/server/options"
 	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
@@ -45,21 +43,18 @@ import (
 )
 
 type ServerRunOptions struct {
-	ConfigFile              string
-	GenericServerRunOptions *genericoptions.ServerRunOptions
 	*apiserverconfig.Config
-	schemeOnce sync.Once
+	GenericServerRunOptions *genericoptions.ServerRunOptions
+
+	ConfigFile string
 	DebugMode  bool
 }
 
 func NewServerRunOptions() *ServerRunOptions {
-	s := &ServerRunOptions{
+	return &ServerRunOptions{
 		GenericServerRunOptions: genericoptions.NewServerRunOptions(),
 		Config:                  apiserverconfig.New(),
-		schemeOnce:              sync.Once{},
 	}
-
-	return s
 }
 
 func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
@@ -126,24 +121,17 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		server.Addr = fmt.Sprintf(":%d", s.GenericServerRunOptions.SecurePort)
 	}
 
-	sch := scheme.Scheme
-	s.schemeOnce.Do(func() {
-		if err := apis.AddToScheme(sch); err != nil {
-			klog.Fatalf("unable add APIs to scheme: %v", err)
-		}
-	})
-
 	mapper, err := apiutil.NewDynamicRESTMapper(apiServer.KubernetesClient.Config())
 	if err != nil {
 		klog.Fatalf("unable create dynamic RESTMapper: %v", err)
 	}
 
-	apiServer.RuntimeCache, err = runtimecache.New(apiServer.KubernetesClient.Config(), runtimecache.Options{Scheme: sch, Mapper: mapper})
+	apiServer.RuntimeCache, err = runtimecache.New(apiServer.KubernetesClient.Config(), runtimecache.Options{Scheme: scheme.Scheme, Mapper: mapper})
 	if err != nil {
 		klog.Fatalf("unable to create controller runtime cache: %v", err)
 	}
 
-	apiServer.RuntimeClient, err = runtimeclient.New(apiServer.KubernetesClient.Config(), runtimeclient.Options{Scheme: sch})
+	apiServer.RuntimeClient, err = runtimeclient.New(apiServer.KubernetesClient.Config(), runtimeclient.Options{Scheme: scheme.Scheme})
 	if err != nil {
 		klog.Fatalf("unable to create controller runtime client: %v", err)
 	}

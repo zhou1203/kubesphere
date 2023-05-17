@@ -23,11 +23,10 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"kubesphere.io/kubesphere/pkg/apis"
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 func newJob(name string, spec batchv1.JobSpec) *batchv1.Job {
@@ -44,9 +43,7 @@ func newJob(name string, spec batchv1.JobSpec) *batchv1.Job {
 func TestAddAnnotation(t *testing.T) {
 	job := newJob("test", batchv1.JobSpec{})
 
-	scheme := scheme.Scheme
-	apis.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(job).Build()
 
 	reconciler := &Reconciler{}
 	reconciler.InjectClient(fakeClient)

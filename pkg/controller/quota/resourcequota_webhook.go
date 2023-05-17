@@ -31,7 +31,6 @@ import (
 	utilwait "k8s.io/apimachinery/pkg/util/wait"
 	admissionapi "k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/authentication/user"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -42,6 +41,7 @@ import (
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/install"
 	"kubesphere.io/kubesphere/kube/plugin/pkg/admission/resourcequota"
 	resourcequotaapi "kubesphere.io/kubesphere/kube/plugin/pkg/admission/resourcequota/apis/resourcequota"
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 const (

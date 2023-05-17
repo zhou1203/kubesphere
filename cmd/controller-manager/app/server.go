@@ -22,7 +22,6 @@ import (
 
 	"github.com/google/gops/agent"
 	"github.com/spf13/cobra"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
@@ -33,12 +32,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
-	"kubesphere.io/kubesphere/pkg/apis"
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/user"
 	"kubesphere.io/kubesphere/pkg/informers"
+	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/utils/metrics"
 	"kubesphere.io/kubesphere/pkg/utils/term"
@@ -145,7 +144,6 @@ func Run(s *options.KubeSphereControllerManagerOptions, configCh <-chan controll
 }
 
 func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) error {
-
 	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions)
 	if err != nil {
 		klog.Errorf("Failed to create kubernetes clientset %v", err)
@@ -158,12 +156,14 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 		kubernetesClient.ApiExtensions())
 
 	mgrOptions := manager.Options{
+		Scheme:  scheme.Scheme,
 		CertDir: s.WebhookCertDir,
 		Port:    8443,
 	}
 
 	if s.LeaderElect {
 		mgrOptions = manager.Options{
+			Scheme:                  scheme.Scheme,
 			CertDir:                 s.WebhookCertDir,
 			Port:                    8443,
 			LeaderElection:          s.LeaderElect,
@@ -182,13 +182,6 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	if err != nil {
 		klog.Fatalf("unable to set up overall controller manager: %v", err)
 	}
-
-	if err = apis.AddToScheme(mgr.GetScheme()); err != nil {
-		klog.Fatalf("unable add APIs to scheme: %v", err)
-	}
-
-	// register common meta types into schemas.
-	metav1.AddToGroupVersion(mgr.GetScheme(), metav1.SchemeGroupVersion)
 
 	// TODO(jeff): refactor config with CRD
 	// install all controllers

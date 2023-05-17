@@ -27,13 +27,12 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"kubesphere.io/kubesphere/pkg/apis"
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 func TestLoginRecordController(t *testing.T) {
@@ -75,9 +74,7 @@ var _ = Describe("LoginRecord", func() {
 		user = newUser("admin")
 		loginRecord = newLoginRecord(user.Name)
 
-		scheme := scheme.Scheme
-		apis.AddToScheme(scheme)
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(user, loginRecord).Build()
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(user, loginRecord).Build()
 
 		reconciler = NewReconciler(time.Hour, 1)
 		reconciler.InjectClient(fakeClient)
