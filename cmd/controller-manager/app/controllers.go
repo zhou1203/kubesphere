@@ -27,6 +27,7 @@ import (
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
+	"kubesphere.io/kubesphere/pkg/controller/clusterrole"
 	"kubesphere.io/kubesphere/pkg/controller/core"
 	"kubesphere.io/kubesphere/pkg/controller/globalrole"
 	"kubesphere.io/kubesphere/pkg/controller/globalrolebinding"
@@ -36,6 +37,8 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/loginrecord"
 	"kubesphere.io/kubesphere/pkg/controller/namespace"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
+	"kubesphere.io/kubesphere/pkg/controller/role"
+	"kubesphere.io/kubesphere/pkg/controller/roletemplate"
 	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/storage/capability"
 	"kubesphere.io/kubesphere/pkg/controller/user"
@@ -66,6 +69,9 @@ var allControllers = []string{
 	"csr",
 	"globalrole",
 	"globalrolebinding",
+	"roletemplate",
+	"clusterrole",
+	"role",
 	"groupbinding",
 	"group",
 	"rulegroup",
@@ -201,6 +207,26 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	if cmOptions.IsControllerEnabled("csr") {
 		csrController := certificatesigningrequest.NewReconciler(client.Kubernetes(), kubernetesInformer.Core().V1().ConfigMaps().Lister(), client.Config())
 		addControllerWithSetup(mgr, "csr", csrController)
+	}
+
+	if cmOptions.IsControllerEnabled("globalrole") {
+		globalRoleController := &globalrole.Reconciler{}
+		addControllerWithSetup(mgr, "globalrole", globalRoleController)
+	}
+
+	if cmOptions.IsControllerEnabled("clusterrole") {
+		clusterRoleController := &clusterrole.Reconciler{}
+		addControllerWithSetup(mgr, "clusterrole", clusterRoleController)
+	}
+
+	if cmOptions.IsControllerEnabled("role") {
+		roleController := &role.Reconciler{}
+		addControllerWithSetup(mgr, "role", roleController)
+	}
+
+	if cmOptions.IsControllerEnabled("roletemplate") {
+		roletemplateController := &roletemplate.Reconciler{}
+		addControllerWithSetup(mgr, "roletemplate", roletemplateController)
 	}
 
 	// "globalrole" controller

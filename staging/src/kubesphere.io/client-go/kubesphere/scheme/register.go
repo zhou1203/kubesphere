@@ -27,6 +27,7 @@ import (
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	storagev1alpha1 "kubesphere.io/api/storage/v1alpha1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
@@ -42,6 +43,7 @@ var localSchemeBuilder = runtime.SchemeBuilder{
 	corev1alpha1.AddToScheme,
 	extensionsv1alpha1.AddToScheme,
 	iamv1alpha2.AddToScheme,
+	iamv1beta1.AddToScheme,
 	quotav1alpha2.AddToScheme,
 	storagev1alpha1.AddToScheme,
 	tenantv1alpha1.AddToScheme,

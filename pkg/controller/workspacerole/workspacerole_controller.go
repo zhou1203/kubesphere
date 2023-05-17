@@ -20,9 +20,7 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,9 +28,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
+	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 )
@@ -44,34 +43,24 @@ const (
 // Reconciler reconciles a WorkspaceRole object
 type Reconciler struct {
 	client.Client
-	Logger                  logr.Logger
-	Scheme                  *runtime.Scheme
-	Recorder                record.EventRecorder
-	MaxConcurrentReconciles int
+	logger   logr.Logger
+	recorder record.EventRecorder
+	helper   *rbachelper.Helper
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Client == nil {
 		r.Client = mgr.GetClient()
 	}
-	if r.Logger.GetSink() == nil {
-		r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	}
-	if r.Scheme == nil {
-		r.Scheme = mgr.GetScheme()
-	}
-	if r.Recorder == nil {
-		r.Recorder = mgr.GetEventRecorderFor(controllerName)
-	}
-	if r.MaxConcurrentReconciles <= 0 {
-		r.MaxConcurrentReconciles = 1
-	}
+	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.helper = rbachelper.NewHelper(r.Client)
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
+			MaxConcurrentReconciles: 2,
 		}).
-		For(&iamv1alpha2.WorkspaceRole{}).
+		For(&iamv1beta1.WorkspaceRole{}).
 		Complete(r)
 }
 
@@ -80,30 +69,26 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:groups=tenant.kubesphere.io,resources=workspaces,verbs=get;list;watch;
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.Logger.WithValues("workspacerole", req.NamespacedName)
-	rootCtx := context.Background()
-	workspaceRole := &iamv1alpha2.WorkspaceRole{}
-	err := r.Get(rootCtx, req.NamespacedName, workspaceRole)
-	if err != nil {
+	logger := r.logger.WithValues("workspacerole", req.NamespacedName)
+	workspaceRole := &iamv1beta1.WorkspaceRole{}
+	if err := r.Get(ctx, req.NamespacedName, workspaceRole); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// controlled kubefed-controller-manager
-	if workspaceRole.Labels[constants.KubefedManagedLabel] == "true" {
-		return ctrl.Result{}, nil
-	}
-
-	if err := r.bindWorkspace(rootCtx, logger, workspaceRole); err != nil {
+	if err := r.bindWorkspace(ctx, logger, workspaceRole); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
+	if workspaceRole.AggregationRoleTemplates != nil {
+		if err := r.helper.AggregationRole(ctx, rbachelper.WorkspaceRoleRuleOwner{WorkspaceRole: workspaceRole}, r.recorder); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
-	r.Recorder.Event(workspaceRole, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, workspaceRole *iamv1alpha2.WorkspaceRole) error {
+func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, workspaceRole *iamv1beta1.WorkspaceRole) error {
 	workspaceName := workspaceRole.Labels[constants.WorkspaceLabelKey]
 	if workspaceName == "" {
 		return nil
@@ -114,7 +99,7 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 	}
 	if !metav1.IsControlledBy(workspaceRole, &workspace) {
 		workspaceRole.OwnerReferences = k8sutil.RemoveWorkspaceOwnerReference(workspaceRole.OwnerReferences)
-		if err := controllerutil.SetControllerReference(&workspace, workspaceRole, r.Scheme); err != nil {
+		if err := controllerutil.SetControllerReference(&workspace, workspaceRole, r.Scheme()); err != nil {
 			logger.Error(err, "set controller reference failed")
 			return err
 		}

@@ -19,40 +19,40 @@ package globalrole
 import (
 	"context"
 
-	corev1 "k8s.io/api/core/v1"
+	"github.com/go-logr/logr"
 	"k8s.io/client-go/tools/record"
+	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
-
-	"kubesphere.io/kubesphere/pkg/constants"
+	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
 )
 
 const controllerName = "globalrole-controller"
 
 type Reconciler struct {
 	client.Client
-
+	logger   logr.Logger
 	recorder record.EventRecorder
+	helper   *rbachelper.Helper
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	globalRole := &iamv1alpha2.GlobalRole{}
+	globalRole := &iamv1beta1.GlobalRole{}
 	if err := r.Get(ctx, req.NamespacedName, globalRole); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
-	// if err = c.multiClusterSync(context.Background(), globalRole); err != nil {
-	// 	klog.Error(err)
-	// 	return err
-	// }
+	if globalRole.AggregationRoleTemplates != nil {
+		if err := r.helper.AggregationRole(ctx, rbachelper.GlobalRoleRuleOwner{GlobalRole: globalRole}, r.recorder); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
-	r.recorder.Event(globalRole, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 
@@ -62,8 +62,9 @@ func (r *Reconciler) InjectClient(c client.Client) error {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-
+	r.helper = rbachelper.NewHelper(r.Client)
 	return builder.
 		ControllerManagedBy(mgr).
 		For(

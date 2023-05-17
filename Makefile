@@ -7,7 +7,7 @@
 CRD_OPTIONS ?= "crd:allowDangerousTypes=true"
 
 GV="tenant:v1alpha1 tenant:v1alpha2 iam:v1alpha2 cluster:v1alpha1 storage:v1alpha1 auditing:v1alpha1 quota:v1alpha2"
-MANIFESTS="cluster/v1alpha1 iam/v1alpha2 quota/v1alpha2 storage/v1alpha1 tenant/... extensions/v1alpha1 core/v1alpha1"
+MANIFESTS="cluster/v1alpha1 iam/... quota/v1alpha2 storage/v1alpha1 tenant/... extensions/v1alpha1 core/v1alpha1"
 
 # App Version
 APP_VERSION = v3.2.0
