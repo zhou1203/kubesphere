@@ -43,7 +43,7 @@ const (
 	defaultRegoFileName = "authz.rego"
 )
 
-type RBACAuthorizer struct {
+type Authorizer struct {
 	am am.AccessManagementInterface
 }
 
@@ -88,7 +88,7 @@ func (r *ruleAccumulator) visit(_ fmt.Stringer, _ string, rule *rbacv1.PolicyRul
 	return true
 }
 
-func (r *RBACAuthorizer) Authorize(requestAttributes authorizer.Attributes) (authorizer.Decision, string, error) {
+func (r *Authorizer) Authorize(requestAttributes authorizer.Attributes) (authorizer.Decision, string, error) {
 	ruleCheckingVisitor := &authorizingVisitor{requestAttributes: requestAttributes}
 
 	r.visitRulesFor(requestAttributes, ruleCheckingVisitor.visit)
@@ -147,8 +147,8 @@ func (r *RBACAuthorizer) Authorize(requestAttributes authorizer.Attributes) (aut
 	return authorizer.DecisionNoOpinion, reason, nil
 }
 
-func NewRBACAuthorizer(am am.AccessManagementInterface) *RBACAuthorizer {
-	return &RBACAuthorizer{am: am}
+func NewRBACAuthorizer(am am.AccessManagementInterface) *Authorizer {
+	return &Authorizer{am: am}
 }
 
 func ruleAllows(requestAttributes authorizer.Attributes, rule *rbacv1.PolicyRule) bool {
@@ -193,13 +193,13 @@ func regoPolicyAllows(requestAttributes authorizer.Attributes, regoPolicy string
 	return false
 }
 
-func (r *RBACAuthorizer) rulesFor(requestAttributes authorizer.Attributes) ([]rbacv1.PolicyRule, error) {
+func (r *Authorizer) rulesFor(requestAttributes authorizer.Attributes) ([]rbacv1.PolicyRule, error) {
 	visitor := &ruleAccumulator{}
 	r.visitRulesFor(requestAttributes, visitor.visit)
 	return visitor.rules, utilerrors.NewAggregate(visitor.errors)
 }
 
-func (r *RBACAuthorizer) visitRulesFor(requestAttributes authorizer.Attributes, visitor func(source fmt.Stringer, regoPolicy string, rule *rbacv1.PolicyRule, err error) bool) {
+func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visitor func(source fmt.Stringer, regoPolicy string, rule *rbacv1.PolicyRule, err error) bool) {
 
 	if globalRoleBindings, err := r.am.ListGlobalRoleBindings(""); err != nil {
 		if !visitor(nil, "", nil, err) {

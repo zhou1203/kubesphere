@@ -1,26 +1,30 @@
 package v1beta1
 
 import (
-	rbacv1 "k8s.io/api/rbac/v1"
-
 	"github.com/emicklei/go-restful/v3"
+	rbacv1 "k8s.io/api/rbac/v1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
-	"kubesphere.io/kubesphere/pkg/api"
+	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
+	"kubesphere.io/kubesphere/pkg/apiserver/authorization/rbac"
+	apiserverrequest "kubesphere.io/kubesphere/pkg/apiserver/request"
 
+	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 )
 
 type iamHandler struct {
-	im im.IdentityManagementInterface
-	am am.AccessManagementInterface
+	im         im.IdentityManagementInterface
+	am         am.AccessManagementInterface
+	authorizer authorizer.Authorizer
 }
 
 func newIAMHandler(im im.IdentityManagementInterface, am am.AccessManagementInterface) *iamHandler {
 	return &iamHandler{
-		im: im,
-		am: am,
+		im:         im,
+		am:         am,
+		authorizer: rbac.NewRBACAuthorizer(am),
 	}
 }
 
@@ -225,4 +229,66 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 	}
 
 	_ = response.WriteEntity(result)
+}
+
+func (h *iamHandler) CreateSubjectAccessReview(request *restful.Request, response *restful.Response) {
+	subjectAccessReview := iamv1beta1.SubjectAccessReview{}
+	if err := request.ReadEntity(&subjectAccessReview); err != nil {
+		api.HandleBadRequest(response, request, err)
+		return
+	}
+
+	attr := authorizer.AttributesRecord{
+		User: &iamv1beta1.DefaultInfo{
+			Name:   subjectAccessReview.Spec.User,
+			UID:    subjectAccessReview.Spec.UID,
+			Groups: subjectAccessReview.Spec.Groups,
+		},
+	}
+
+	if subjectAccessReview.Spec.ResourceAttributes != nil {
+		attr.ResourceRequest = true
+		attr.Verb = subjectAccessReview.Spec.ResourceAttributes.Verb
+		attr.APIGroup = subjectAccessReview.Spec.ResourceAttributes.Group
+		attr.APIVersion = subjectAccessReview.Spec.ResourceAttributes.Version
+		attr.Workspace = subjectAccessReview.Spec.ResourceAttributes.Workspace
+		attr.Namespace = subjectAccessReview.Spec.ResourceAttributes.Namespace
+		attr.Resource = subjectAccessReview.Spec.ResourceAttributes.Resource
+		attr.Name = subjectAccessReview.Spec.ResourceAttributes.Name
+		attr.Subresource = subjectAccessReview.Spec.ResourceAttributes.Subresource
+		if attr.Namespace != "" {
+			attr.ResourceScope = apiserverrequest.NamespaceScope
+		} else if attr.Workspace != "" {
+			attr.ResourceScope = apiserverrequest.WorkspaceScope
+		} else {
+			attr.ResourceScope = subjectAccessReview.Spec.ResourceAttributes.ResourceScope
+		}
+	} else {
+		attr.ResourceRequest = false
+		attr.Verb = subjectAccessReview.Spec.NonResourceAttributes.Verb
+		attr.Path = subjectAccessReview.Spec.NonResourceAttributes.Path
+	}
+
+	decision, reason, err := h.authorizer.Authorize(attr)
+	if err != nil {
+		api.HandleInternalError(response, request, err)
+		return
+	}
+
+	subjectAccessReview.Status = iamv1beta1.SubjectAccessReviewStatus{}
+
+	switch decision {
+	case authorizer.DecisionAllow:
+		subjectAccessReview.Status.Allowed = true
+	case authorizer.DecisionDeny:
+		subjectAccessReview.Status.Denied = true
+		subjectAccessReview.Status.Allowed = false
+		subjectAccessReview.Status.Reason = reason
+	case authorizer.DecisionNoOpinion:
+		subjectAccessReview.Status.Allowed = false
+		subjectAccessReview.Status.Denied = false
+		subjectAccessReview.Status.Reason = reason
+	}
+
+	_ = response.WriteEntity(subjectAccessReview)
 }
