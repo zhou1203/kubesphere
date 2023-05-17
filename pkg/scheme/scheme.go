@@ -2,6 +2,7 @@ package scheme
 
 import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -14,6 +15,9 @@ var Scheme = runtime.NewScheme()
 var Codecs = serializer.NewCodecFactory(Scheme)
 
 func init() {
+	// register common meta types into schemas.
+	metav1.AddToGroupVersion(Scheme, metav1.SchemeGroupVersion)
+
 	_ = clientgoscheme.AddToScheme(Scheme)
 	_ = apiextensionsv1.AddToScheme(Scheme)
 	_ = kubespherescheme.AddToScheme(Scheme)
