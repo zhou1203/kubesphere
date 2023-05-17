@@ -142,7 +142,6 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 	}
 
 	apiServer.ResourceManager = resourcev1beta1.New(apiServer.RuntimeClient, apiServer.RuntimeCache)
-
 	apiServer.Server = server
 
 	return apiServer, nil

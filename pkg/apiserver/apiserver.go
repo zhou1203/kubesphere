@@ -36,12 +36,11 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/basic"
@@ -62,7 +61,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/informers"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
-	iamapi "kubesphere.io/kubesphere/pkg/kapis/iam/v1alpha2"
+	iamapi "kubesphere.io/kubesphere/pkg/kapis/iam/v1beta1"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/overview"
@@ -75,7 +74,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/kapis/version"
 	"kubesphere.io/kubesphere/pkg/models/auth"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
-	"kubesphere.io/kubesphere/pkg/models/iam/group"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/loginrecord"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/user"
@@ -180,9 +178,7 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 			s.InformerFactory.KubernetesSharedInformerFactory()),
 		loginrecord.New(s.InformerFactory.KubeSphereSharedInformerFactory()),
 		s.Config.AuthenticationOptions)
-	amOperator := am.NewOperator(s.KubernetesClient.KubeSphere(),
-		s.KubernetesClient.Kubernetes(),
-		s.InformerFactory)
+	amOperator := am.NewOperator(s.ResourceManager)
 	rbacAuthorizer := rbac.NewRBACAuthorizer(amOperator)
 
 	counter := overviewclient.New(s.ResourceManager)
@@ -202,9 +198,7 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 		s.KubernetesClient.KubeSphere(),
 		s.InformerFactory.KubernetesSharedInformerFactory(),
 		s.InformerFactory.KubeSphereSharedInformerFactory()))
-	urlruntime.Must(iamapi.AddToContainer(s.container, imOperator, amOperator,
-		group.New(s.InformerFactory, s.KubernetesClient.KubeSphere(), s.KubernetesClient.Kubernetes()),
-		rbacAuthorizer))
+	urlruntime.Must(iamapi.AddToContainer(s.container, imOperator, amOperator))
 
 	userLister := s.InformerFactory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users().Lister()
 	urlruntime.Must(oauth.AddToContainer(s.container, imOperator,
@@ -286,7 +280,7 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	case authorization.RBAC:
 		excludedPaths := []string{"/oauth/*", "/kapis/config.kubesphere.io/*", "/kapis/version", "/version", "/metrics", "/healthz"}
 		pathAuthorizer, _ := path.NewAuthorizer(excludedPaths)
-		amOperator := am.NewReadOnlyOperator(s.InformerFactory)
+		amOperator := am.NewReadOnlyOperator(s.ResourceManager)
 		authorizers = unionauthorizer.New(pathAuthorizer, rbac.NewRBACAuthorizer(amOperator))
 	}
 

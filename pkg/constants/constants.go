@@ -36,17 +36,6 @@ const (
 	KubefedManagedLabel      = "kubefed.io/managed"
 
 	AuthenticationTag = "Authentication"
-	UserTag           = "User"
-	GroupTag          = "Group"
-
-	WorkspaceMemberTag = "Workspace Member"
-	NamespaceMemberTag = "Namespace Member"
-	ClusterMemberTag   = "Cluster Member"
-
-	GlobalRoleTag    = "Global Role"
-	ClusterRoleTag   = "Cluster Role"
-	WorkspaceRoleTag = "Workspace Role"
-	NamespaceRoleTag = "Namespace Role"
 
 	ToolboxTag      = "Toolbox"
 	RegistryTag     = "Docker Registry"
