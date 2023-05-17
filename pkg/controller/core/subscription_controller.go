@@ -855,7 +855,7 @@ func (r *SubscriptionReconciler) syncSubscriptionStatus(ctx context.Context, sub
 		return r.syncExtensionInstallationStatus(ctx, sub, true)
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
-		if configChanged(sub, "") {
+		if configChanged(sub, "") || r.versionChanged(ctx, sub) {
 			return r.installOrUpgradeExtension(ctx, sub, executor, true)
 		}
 
@@ -951,7 +951,7 @@ func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *cor
 		return r.syncClusterAgentInstallationStatus(ctx, sub, cluster, &clusterSchedulingStatus, true)
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
-		if configChanged(sub, cluster.Name) {
+		if configChanged(sub, cluster.Name) || r.versionChanged(ctx, sub) {
 			return r.installOrUpgradeClusterAgent(ctx, sub, cluster, clusterClient, &clusterSchedulingStatus, executor, true)
 		}
 
@@ -1325,4 +1325,13 @@ func newClusterClient(cluster clusterv1alpha1.Cluster) (client.Client, error) {
 		return nil, err
 	}
 	return client.New(config, client.Options{})
+}
+
+func (r *SubscriptionReconciler) versionChanged(ctx context.Context, sub *corev1alpha1.Subscription) bool {
+	extension := &corev1alpha1.Extension{}
+	if err := r.Get(ctx, types.NamespacedName{Name: sub.Spec.Extension.Name}, extension); err != nil {
+		klog.Warningf("get Extension %s failed: %v", sub.Spec.Extension.Name, err)
+		return false
+	}
+	return sub.Spec.Extension.Version != extension.Status.SubscribedVersion
 }
