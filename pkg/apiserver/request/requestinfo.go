@@ -122,8 +122,8 @@ type RequestInfoFactory struct {
 // /kapis/{api-group}/{version}/namespaces/{namespace}/{resource}
 // /kapis/{api-group}/{version}/namespaces/{namespace}/{resource}/{resourceName}
 // With workspaces:
-// /kapis/clusters/{cluster}/{api-group}/{version}/namespaces/{namespace}/{resource}
-// /kapis/clusters/{cluster}/{api-group}/{version}/namespaces/{namespace}/{resource}/{resourceName}
+// /clusters/{cluster}/kapis/{api-group}/{version}/namespaces/{namespace}/{resource}
+// /clusters/{cluster}/kapis/{api-group}/{version}/namespaces/{namespace}/{resource}/{resourceName}
 func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, error) {
 	requestInfo := RequestInfo{
 		IsKubernetesRequest: false,
@@ -141,7 +141,7 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 		prefix := requestInfo.APIPrefix
 		if prefix == "" {
 			currentParts := splitPath(requestInfo.Path)
-			//Proxy discovery API
+			// Proxy discovery API
 			if len(currentParts) > 0 && len(currentParts) < 3 {
 				prefix = currentParts[0]
 			}
@@ -156,13 +156,6 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 		return &requestInfo, nil
 	}
 
-	if !r.APIPrefixes.Has(currentParts[0]) {
-		// return a non-resource request
-		return &requestInfo, nil
-	}
-	requestInfo.APIPrefix = currentParts[0]
-	currentParts = currentParts[1:]
-
 	// URL forms: /clusters/{cluster}/*
 	if currentParts[0] == "clusters" {
 		if len(currentParts) > 1 {
@@ -172,6 +165,13 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 			currentParts = currentParts[2:]
 		}
 	}
+
+	if !r.APIPrefixes.Has(currentParts[0]) {
+		// return a non-resource request
+		return &requestInfo, nil
+	}
+	requestInfo.APIPrefix = currentParts[0]
+	currentParts = currentParts[1:]
 
 	if !r.GrouplessAPIPrefixes.Has(requestInfo.APIPrefix) {
 		// one part (APIPrefix) has already been consumed, so this is actually "do we have four parts?"
