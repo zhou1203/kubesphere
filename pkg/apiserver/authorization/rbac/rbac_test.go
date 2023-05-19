@@ -855,7 +855,7 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 	}
 }
 
-func newMockRBACAuthorizer(staticRoles *StaticRoles) (*RBACAuthorizer, error) {
+func newMockRBACAuthorizer(staticRoles *StaticRoles) (*Authorizer, error) {
 	ksClient := fakeks.NewSimpleClientset()
 	k8sClient := fakek8s.NewSimpleClientset()
 	fakeInformerFactory := informers.NewInformerFactories(k8sClient, ksClient, nil)

@@ -5,6 +5,31 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// DefaultInfo provides a simple user information exchange object
+// for components that implement the UserInfo interface.
+type DefaultInfo struct {
+	Name   string
+	UID    string
+	Groups []string
+	Extra  map[string][]string
+}
+
+func (i *DefaultInfo) GetName() string {
+	return i.Name
+}
+
+func (i *DefaultInfo) GetUID() string {
+	return i.UID
+}
+
+func (i *DefaultInfo) GetGroups() []string {
+	return i.Groups
+}
+
+func (i *DefaultInfo) GetExtra() map[string][]string {
+	return i.Extra
+}
+
 // User is the Schema for the users API
 // +kubebuilder:printcolumn:name="Email",type="string",JSONPath=".spec.email"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.state"

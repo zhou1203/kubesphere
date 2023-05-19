@@ -70,6 +70,12 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Doc("Get the user`s global role").
 		Returns(http.StatusOK, api.StatusOK, iamv1beta1.GlobalRole{}))
 
+	ws.Route(ws.POST("/subjectaccessreviews").
+		To(handler.CreateSubjectAccessReview).
+		Doc("Evaluates all of the request attributes against all policies and allows or denies the request.").
+		Reads(iamv1beta1.SubjectAccessReview{}).
+		Returns(http.StatusOK, api.StatusOK, iamv1beta1.SubjectAccessReview{}))
+
 	container.Add(ws)
 	return nil
 }
