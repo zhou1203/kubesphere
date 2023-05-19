@@ -62,6 +62,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/informers"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
+	gatewayv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha2"
 	iamapi "kubesphere.io/kubesphere/pkg/kapis/iam/v1beta1"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
@@ -210,6 +211,7 @@ func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
 		s.Config.AuthenticationOptions))
 	urlruntime.Must(version.AddToContainer(s.container, s.KubernetesClient.Kubernetes().Discovery()))
 	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
+	urlruntime.Must(gatewayv1alpha2.AddToContainer(s.container, s.RuntimeCache))
 	urlruntime.Must(overview.AddToContainer(s.container, counter))
 }
 
