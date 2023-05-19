@@ -78,7 +78,6 @@ func (q *Query) Selector() labels.Selector {
 }
 
 func (p *Pagination) GetValidPagination(total int) (startIndex, endIndex int) {
-
 	// no pagination
 	if p.Limit == NoPagination.Limit {
 		return 0, total

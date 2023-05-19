@@ -33,26 +33,4 @@ const (
 	FieldStatus              = "status"
 	FieldOwnerReference      = "ownerReference"
 	FieldOwnerKind           = "ownerKind"
-
-	FieldType = "type"
 )
-
-var SortableFields = []Field{
-	FieldCreationTimeStamp,
-	FieldCreateTime,
-	FieldUpdateTime,
-	FieldLastUpdateTimestamp,
-	FieldName,
-}
-
-// Field contains all the query field that can be compared
-var ComparableFields = []Field{
-	FieldName,
-	FieldUID,
-	FieldLabel,
-	FieldAnnotation,
-	FieldNamespace,
-	FieldStatus,
-	FieldOwnerReference,
-	FieldOwnerKind,
-}

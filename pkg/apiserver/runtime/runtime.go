@@ -27,14 +27,13 @@ const (
 	ApiRootPath = "/kapis"
 )
 
-// container holds all webservice of apiserver
+// Container holds all webservice of apiserver
 var Container = restful.NewContainer()
 
 type ContainerBuilder []func(c *restful.Container) error
 
 const MimeMergePatchJson = "application/merge-patch+json"
 const MimeJsonPatchJson = "application/json-patch+json"
-const MimeMultipartFormData = "multipart/form-data"
 
 func init() {
 	restful.RegisterEntityAccessor(MimeMergePatchJson, restful.NewEntityAccessorJSON(restful.MIME_JSON))
@@ -63,10 +62,4 @@ func (cb *ContainerBuilder) Register(funcs ...func(*restful.Container) error) {
 	for _, f := range funcs {
 		*cb = append(*cb, f)
 	}
-}
-
-func NewContainerBuilder(funcs ...func(*restful.Container) error) ContainerBuilder {
-	var cb ContainerBuilder
-	cb.Register(funcs...)
-	return cb
 }
