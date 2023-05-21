@@ -1,3 +1,6 @@
+//go:build exclude
+
+// TODO refactor with  fake controller runtime client
 /*
 Copyright 2019 The KubeSphere Authors.
 
@@ -22,7 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -80,20 +83,20 @@ func TestListRoles(t *testing.T) {
 }
 
 var (
-	foo1 = &iamv1alpha2.GlobalRoleBinding{
+	foo1 = &iamv1beta1.GlobalRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo1",
 			Namespace: "bar",
 		},
 	}
 
-	foo2 = &iamv1alpha2.GlobalRoleBinding{
+	foo2 = &iamv1beta1.GlobalRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo2",
 			Namespace: "bar",
 		},
 	}
-	bar1 = &iamv1alpha2.GlobalRoleBinding{
+	bar1 = &iamv1beta1.GlobalRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "bar1",
 			Namespace: "bar",

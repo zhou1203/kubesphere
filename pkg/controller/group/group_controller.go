@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	iam1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/constants"
@@ -54,13 +54,13 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	group := &iam1alpha2.Group{}
+	group := &iamv1beta1.Group{}
 	if err := r.Get(ctx, req.NamespacedName, group); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if group.ObjectMeta.DeletionTimestamp.IsZero() {
-		var g *iam1alpha2.Group
+		var g *iamv1beta1.Group
 		if !sliceutil.HasString(group.Finalizers, finalizer) {
 			g = group.DeepCopy()
 			g.ObjectMeta.Finalizers = append(g.ObjectMeta.Finalizers, finalizer)
@@ -80,17 +80,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		// Set OwnerReferences when the group has a parent or Workspace. And it's not owned by kubefed
 		if group.Labels != nil && group.Labels[constants.KubefedManagedLabel] != "true" {
-			if parent, ok := group.Labels[iam1alpha2.GroupParent]; ok {
+			if parent, ok := group.Labels[iamv1beta1.GroupParent]; ok {
 				// If the Group is owned by a Parent
 				if !k8sutil.IsControlledBy(group.OwnerReferences, "Group", parent) {
 					if g == nil {
 						g = group.DeepCopy()
 					}
-					groupParent := &iam1alpha2.Group{}
+					groupParent := &iamv1beta1.Group{}
 					if err := r.Get(ctx, client.ObjectKey{Name: parent}, groupParent); err != nil {
 						if errors.IsNotFound(err) {
 							utilruntime.HandleError(fmt.Errorf("parent group '%s' no longer exists", req.String()))
-							delete(g.Labels, iam1alpha2.GroupParent)
+							delete(g.Labels, iamv1beta1.GroupParent)
 						} else {
 							return ctrl.Result{}, err
 						}
@@ -151,29 +151,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) deleteGroupBindings(ctx context.Context, group *iam1alpha2.Group) error {
+func (r *Reconciler) deleteGroupBindings(ctx context.Context, group *iamv1beta1.Group) error {
 	if len(group.Name) > validation.LabelValueMaxLength {
 		// ignore invalid label value error
 		return nil
 	}
 
 	// Groupbindings that created by kubesphere will be deleted directly.
-	return r.DeleteAllOf(ctx, &iam1alpha2.GroupBinding{}, client.GracePeriodSeconds(0), client.MatchingLabelsSelector{
-		Selector: labels.SelectorFromValidatedSet(labels.Set{iam1alpha2.GroupReferenceLabel: group.Name}),
+	return r.DeleteAllOf(ctx, &iamv1beta1.GroupBinding{}, client.GracePeriodSeconds(0), client.MatchingLabelsSelector{
+		Selector: labels.SelectorFromValidatedSet(labels.Set{iamv1beta1.GroupReferenceLabel: group.Name}),
 	})
 }
 
 // remove all RoleBindings.
-func (r *Reconciler) deleteRoleBindings(ctx context.Context, group *iam1alpha2.Group) error {
+func (r *Reconciler) deleteRoleBindings(ctx context.Context, group *iamv1beta1.Group) error {
 	if len(group.Name) > validation.LabelValueMaxLength {
 		// ignore invalid label value error
 		return nil
 	}
 
-	selector := labels.SelectorFromValidatedSet(labels.Set{iam1alpha2.GroupReferenceLabel: group.Name})
+	selector := labels.SelectorFromValidatedSet(labels.Set{iamv1beta1.GroupReferenceLabel: group.Name})
 	deleteOption := client.GracePeriodSeconds(0)
 
-	if err := r.DeleteAllOf(ctx, &iam1alpha2.WorkspaceRoleBinding{}, deleteOption, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+	if err := r.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRoleBinding{}, deleteOption, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 		return err
 	}
 
@@ -204,7 +204,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return builder.
 		ControllerManagedBy(mgr).
 		For(
-			&iam1alpha2.Group{},
+			&iamv1beta1.Group{},
 			builder.WithPredicates(
 				predicate.ResourceVersionChangedPredicate{},
 			),

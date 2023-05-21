@@ -17,13 +17,17 @@ limitations under the License.
 package pod
 
 import (
+	"context"
 	"fmt"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/informers"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -44,29 +48,28 @@ const (
 )
 
 type podsGetter struct {
-	informer informers.SharedInformerFactory
+	cache runtimeclient.Reader
 }
 
-func New(sharedInformers informers.SharedInformerFactory) v1alpha3.Interface {
-	return &podsGetter{informer: sharedInformers}
+func New(cache runtimeclient.Reader) v1alpha3.Interface {
+	return &podsGetter{cache: cache}
 }
 
 func (p *podsGetter) Get(namespace, name string) (runtime.Object, error) {
-	return p.informer.Core().V1().Pods().Lister().Pods(namespace).Get(name)
+	pod := &corev1.Pod{}
+	return pod, p.cache.Get(context.Background(), types.NamespacedName{Namespace: namespace, Name: name}, pod)
 }
 
 func (p *podsGetter) List(namespace string, query *query.Query) (*api.ListResult, error) {
-
-	pods, err := p.informer.Core().V1().Pods().Lister().Pods(namespace).List(query.Selector())
-	if err != nil {
+	pods := &corev1.PodList{}
+	if err := p.cache.List(context.Background(), pods, client.InNamespace(namespace),
+		client.MatchingLabelsSelector{Selector: query.Selector()}); err != nil {
 		return nil, err
 	}
-
 	var result []runtime.Object
-	for _, pod := range pods {
-		result = append(result, pod)
+	for _, item := range pods.Items {
+		result = append(result, item.DeepCopy())
 	}
-
 	return v1alpha3.DefaultList(result, query, p.compare, p.filter), nil
 }
 
@@ -119,8 +122,8 @@ func (p *podsGetter) podBindPVC(item *corev1.Pod, pvcName string) bool {
 }
 
 func (p *podsGetter) podBelongToService(item *corev1.Pod, serviceName string) bool {
-	service, err := p.informer.Core().V1().Services().Lister().Services(item.Namespace).Get(serviceName)
-	if err != nil {
+	service := &corev1.Service{}
+	if err := p.cache.Get(context.Background(), types.NamespacedName{Namespace: item.Namespace, Name: serviceName}, service); err != nil {
 		return false
 	}
 	selector := labels.Set(service.Spec.Selector).AsSelectorPreValidated()

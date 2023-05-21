@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 )
@@ -56,7 +56,7 @@ func NewReconciler(loginHistoryRetentionPeriod time.Duration, loginHistoryMaximu
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	loginRecord := &iamv1alpha2.LoginRecord{}
+	loginRecord := &iamv1beta1.LoginRecord{}
 	if err := r.Get(ctx, req.NamespacedName, loginRecord); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 
@@ -105,7 +105,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 // updateUserLastLoginTime accepts a login object and set user lastLoginTime field
-func (r *Reconciler) updateUserLastLoginTime(ctx context.Context, user *iamv1alpha2.User, loginRecord *iamv1alpha2.LoginRecord) error {
+func (r *Reconciler) updateUserLastLoginTime(ctx context.Context, user *iamv1beta1.User, loginRecord *iamv1beta1.LoginRecord) error {
 	// update lastLoginTime
 	if user.DeletionTimestamp.IsZero() &&
 		(user.Status.LastLoginTime == nil || user.Status.LastLoginTime.Before(&loginRecord.CreationTimestamp)) {
@@ -117,9 +117,9 @@ func (r *Reconciler) updateUserLastLoginTime(ctx context.Context, user *iamv1alp
 }
 
 // shrinkEntriesFor will delete old entries out of limit
-func (r *Reconciler) shrinkEntriesFor(ctx context.Context, user *iamv1alpha2.User) error {
-	loginRecords := &iamv1alpha2.LoginRecordList{}
-	if err := r.List(ctx, loginRecords, client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{iamv1alpha2.UserReferenceLabel: user.Name})}); err != nil {
+func (r *Reconciler) shrinkEntriesFor(ctx context.Context, user *iamv1beta1.User) error {
+	loginRecords := &iamv1beta1.LoginRecordList{}
+	if err := r.List(ctx, loginRecords, client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{iamv1beta1.UserReferenceLabel: user.Name})}); err != nil {
 		return err
 	}
 
@@ -139,13 +139,13 @@ func (r *Reconciler) shrinkEntriesFor(ctx context.Context, user *iamv1alpha2.Use
 	return nil
 }
 
-func (r *Reconciler) userForLoginRecord(ctx context.Context, loginRecord *iamv1alpha2.LoginRecord) (*iamv1alpha2.User, error) {
-	username, ok := loginRecord.Labels[iamv1alpha2.UserReferenceLabel]
+func (r *Reconciler) userForLoginRecord(ctx context.Context, loginRecord *iamv1beta1.LoginRecord) (*iamv1beta1.User, error) {
+	username, ok := loginRecord.Labels[iamv1beta1.UserReferenceLabel]
 	if !ok || len(username) == 0 {
 		klog.V(4).Info("login doesn't belong to any user")
-		return nil, errors.NewNotFound(iamv1alpha2.Resource(iamv1alpha2.ResourcesSingularUser), username)
+		return nil, errors.NewNotFound(iamv1beta1.Resource(iamv1beta1.ResourcesSingularUser), username)
 	}
-	user := &iamv1alpha2.User{}
+	user := &iamv1beta1.User{}
 	if err := r.Get(ctx, client.ObjectKey{Name: username}, user); err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return builder.
 		ControllerManagedBy(mgr).
 		For(
-			&iamv1alpha2.LoginRecord{},
+			&iamv1beta1.LoginRecord{},
 			builder.WithPredicates(
 				predicate.ResourceVersionChangedPredicate{},
 			),

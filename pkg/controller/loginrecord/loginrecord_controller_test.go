@@ -23,12 +23,12 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -40,35 +40,35 @@ func TestLoginRecordController(t *testing.T) {
 	RunSpecs(t, "LoginRecord Controller Test Suite")
 }
 
-func newLoginRecord(username string) *iamv1alpha2.LoginRecord {
-	return &iamv1alpha2.LoginRecord{
+func newLoginRecord(username string) *iamv1beta1.LoginRecord {
+	return &iamv1beta1.LoginRecord{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-%d", username, rand.Intn(1000000)),
 			Labels: map[string]string{
-				iamv1alpha2.UserReferenceLabel: username,
+				iamv1beta1.UserReferenceLabel: username,
 			},
 			CreationTimestamp: metav1.Now(),
 		},
-		Spec: iamv1alpha2.LoginRecordSpec{
-			Type:      iamv1alpha2.Token,
+		Spec: iamv1beta1.LoginRecordSpec{
+			Type:      iamv1beta1.Token,
 			Provider:  "",
 			Success:   true,
-			Reason:    iamv1alpha2.AuthenticatedSuccessfully,
+			Reason:    iamv1beta1.AuthenticatedSuccessfully,
 			SourceIP:  "",
 			UserAgent: "",
 		},
 	}
 }
 
-func newUser(username string) *iamv1alpha2.User {
-	return &iamv1alpha2.User{
+func newUser(username string) *iamv1beta1.User {
+	return &iamv1beta1.User{
 		ObjectMeta: metav1.ObjectMeta{Name: username},
 	}
 }
 
 var _ = Describe("LoginRecord", func() {
-	var user *iamv1alpha2.User
-	var loginRecord *iamv1alpha2.LoginRecord
+	var user *iamv1beta1.User
+	var loginRecord *iamv1beta1.LoginRecord
 	var reconciler *Reconciler
 	BeforeEach(func() {
 		user = newUser("admin")

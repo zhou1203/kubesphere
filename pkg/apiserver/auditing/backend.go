@@ -26,7 +26,6 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/auditing/v1alpha1"
 	options "kubesphere.io/kubesphere/pkg/simple/client/auditing"
 )
 
@@ -42,7 +41,7 @@ const (
 type Backend struct {
 	url                string
 	senderCh           chan interface{}
-	cache              chan *v1alpha1.Event
+	cache              chan *Event
 	client             http.Client
 	sendTimeout        time.Duration
 	getSenderTimeout   time.Duration
@@ -51,7 +50,7 @@ type Backend struct {
 	stopCh             <-chan struct{}
 }
 
-func NewBackend(opts *options.Options, cache chan *v1alpha1.Event, stopCh <-chan struct{}) *Backend {
+func NewBackend(opts *options.Options, cache chan *Event, stopCh <-chan struct{}) *Backend {
 
 	b := Backend{
 		url:                opts.WebhookUrl,
@@ -111,12 +110,12 @@ func (b *Backend) worker() {
 	}
 }
 
-func (b *Backend) getEvents() *v1alpha1.EventList {
+func (b *Backend) getEvents() *EventList {
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.eventBatchInterval)
 	defer cancel()
 
-	events := &v1alpha1.EventList{}
+	events := &EventList{}
 	for {
 		select {
 		case event := <-b.cache:
@@ -135,7 +134,7 @@ func (b *Backend) getEvents() *v1alpha1.EventList {
 	}
 }
 
-func (b *Backend) sendEvents(events *v1alpha1.EventList) {
+func (b *Backend) sendEvents(events *EventList) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.sendTimeout)
 	defer cancel()
@@ -197,7 +196,7 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 	}
 }
 
-func (b *Backend) eventToBytes(event *v1alpha1.EventList) ([]byte, error) {
+func (b *Backend) eventToBytes(event *EventList) ([]byte, error) {
 
 	bs, err := json.Marshal(event)
 	if err != nil {

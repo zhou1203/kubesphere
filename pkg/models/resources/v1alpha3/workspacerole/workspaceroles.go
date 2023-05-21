@@ -17,47 +17,58 @@ limitations under the License.
 package workspacerole
 
 import (
+	"context"
 	"encoding/json"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
-
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
-	informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3"
 )
 
 type workspacerolesGetter struct {
-	sharedInformers informers.SharedInformerFactory
+	cache runtimeclient.Reader
 }
 
-func New(sharedInformers informers.SharedInformerFactory) v1alpha3.Interface {
-	return &workspacerolesGetter{sharedInformers: sharedInformers}
+func New(cache runtimeclient.Reader) v1alpha3.Interface {
+	return &workspacerolesGetter{cache: cache}
 }
 
 func (d *workspacerolesGetter) Get(_, name string) (runtime.Object, error) {
-	return d.sharedInformers.Iam().V1alpha2().WorkspaceRoles().Lister().Get(name)
+	globalRole := &apiextensionsv1.CustomResourceDefinition{}
+	return globalRole, d.cache.Get(context.Background(), types.NamespacedName{Name: name}, globalRole)
 }
 
-func (d *workspacerolesGetter) List(_ string, queryParam *query.Query) (*api.ListResult, error) {
+func (d *workspacerolesGetter) List(_ string, query *query.Query) (*api.ListResult, error) {
 
-	var roles []*iamv1alpha2.WorkspaceRole
+	var roles []*iamv1beta1.WorkspaceRole
 	var err error
-
-	if aggregateTo := queryParam.Filters[iamv1alpha2.AggregateTo]; aggregateTo != "" {
+	if aggregateTo := query.Filters[iamv1beta1.AggregateTo]; aggregateTo != "" {
 		roles, err = d.fetchAggregationRoles(string(aggregateTo))
-		delete(queryParam.Filters, iamv1alpha2.AggregateTo)
+		if err != nil {
+			return nil, err
+		}
+		delete(query.Filters, iamv1beta1.AggregateTo)
 	} else {
-		roles, err = d.sharedInformers.Iam().V1alpha2().WorkspaceRoles().Lister().List(queryParam.Selector())
-	}
-
-	if err != nil {
-		return nil, err
+		workspaceRoleList := &iamv1beta1.WorkspaceRoleList{}
+		if err = d.cache.List(context.Background(), workspaceRoleList,
+			client.MatchingLabelsSelector{Selector: query.Selector()}); err != nil {
+			return nil, err
+		}
+		roles = make([]*iamv1beta1.WorkspaceRole, 0)
+		for _, item := range workspaceRoleList.Items {
+			roles = append(roles, item.DeepCopy())
+		}
 	}
 
 	var result []runtime.Object
@@ -65,17 +76,17 @@ func (d *workspacerolesGetter) List(_ string, queryParam *query.Query) (*api.Lis
 		result = append(result, role)
 	}
 
-	return v1alpha3.DefaultList(result, queryParam, d.compare, d.filter), nil
+	return v1alpha3.DefaultList(result, query, d.compare, d.filter), nil
 }
 
 func (d *workspacerolesGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
 
-	leftRole, ok := left.(*iamv1alpha2.WorkspaceRole)
+	leftRole, ok := left.(*iamv1beta1.WorkspaceRole)
 	if !ok {
 		return false
 	}
 
-	rightRole, ok := right.(*iamv1alpha2.WorkspaceRole)
+	rightRole, ok := right.(*iamv1beta1.WorkspaceRole)
 	if !ok {
 		return false
 	}
@@ -84,14 +95,14 @@ func (d *workspacerolesGetter) compare(left runtime.Object, right runtime.Object
 }
 
 func (d *workspacerolesGetter) filter(object runtime.Object, filter query.Filter) bool {
-	role, ok := object.(*iamv1alpha2.WorkspaceRole)
+	role, ok := object.(*iamv1beta1.WorkspaceRole)
 
 	if !ok {
 		return false
 	}
 
 	switch filter.Field {
-	case iamv1alpha2.ScopeWorkspace:
+	case iamv1beta1.ScopeWorkspace:
 		return role.Labels[tenantv1alpha1.WorkspaceLabel] == string(filter.Value)
 	default:
 		return v1alpha3.DefaultObjectMetaFilter(role.ObjectMeta, filter)
@@ -99,8 +110,8 @@ func (d *workspacerolesGetter) filter(object runtime.Object, filter query.Filter
 
 }
 
-func (d *workspacerolesGetter) fetchAggregationRoles(name string) ([]*iamv1alpha2.WorkspaceRole, error) {
-	roles := make([]*iamv1alpha2.WorkspaceRole, 0)
+func (d *workspacerolesGetter) fetchAggregationRoles(name string) ([]*iamv1beta1.WorkspaceRole, error) {
+	roles := make([]*iamv1beta1.WorkspaceRole, 0)
 
 	obj, err := d.Get("", name)
 
@@ -111,7 +122,7 @@ func (d *workspacerolesGetter) fetchAggregationRoles(name string) ([]*iamv1alpha
 		return nil, err
 	}
 
-	if annotation := obj.(*iamv1alpha2.WorkspaceRole).Annotations[iamv1alpha2.AggregationRolesAnnotation]; annotation != "" {
+	if annotation := obj.(*iamv1beta1.WorkspaceRole).Annotations[iamv1beta1.AggregationRolesAnnotation]; annotation != "" {
 		var roleNames []string
 		if err = json.Unmarshal([]byte(annotation), &roleNames); err == nil {
 
@@ -126,7 +137,7 @@ func (d *workspacerolesGetter) fetchAggregationRoles(name string) ([]*iamv1alpha
 					return nil, err
 				}
 
-				roles = append(roles, role.(*iamv1alpha2.WorkspaceRole))
+				roles = append(roles, role.(*iamv1beta1.WorkspaceRole))
 			}
 		}
 	}

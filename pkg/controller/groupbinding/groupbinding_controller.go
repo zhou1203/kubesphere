@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
@@ -47,13 +47,13 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	groupBinding := &iamv1alpha2.GroupBinding{}
+	groupBinding := &iamv1beta1.GroupBinding{}
 	if err := r.Get(ctx, req.NamespacedName, groupBinding); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if groupBinding.ObjectMeta.DeletionTimestamp.IsZero() {
-		var g *iamv1alpha2.GroupBinding
+		var g *iamv1beta1.GroupBinding
 		if !sliceutil.HasString(groupBinding.Finalizers, finalizer) {
 			g = groupBinding.DeepCopy()
 			g.ObjectMeta.Finalizers = append(g.ObjectMeta.Finalizers, finalizer)
@@ -100,7 +100,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) unbindUser(ctx context.Context, groupBinding *iamv1alpha2.GroupBinding) error {
+func (r *Reconciler) unbindUser(ctx context.Context, groupBinding *iamv1beta1.GroupBinding) error {
 	return r.updateUserGroups(ctx, groupBinding, func(groups []string, group string) (bool, []string) {
 		// remove a group from the groups
 		if sliceutil.HasString(groups, group) {
@@ -113,7 +113,7 @@ func (r *Reconciler) unbindUser(ctx context.Context, groupBinding *iamv1alpha2.G
 	})
 }
 
-func (r *Reconciler) bindUser(ctx context.Context, groupBinding *iamv1alpha2.GroupBinding) error {
+func (r *Reconciler) bindUser(ctx context.Context, groupBinding *iamv1beta1.GroupBinding) error {
 	return r.updateUserGroups(ctx, groupBinding, func(groups []string, group string) (bool, []string) {
 		// add group to the groups
 		if !sliceutil.HasString(groups, group) {
@@ -125,10 +125,10 @@ func (r *Reconciler) bindUser(ctx context.Context, groupBinding *iamv1alpha2.Gro
 }
 
 // Udpate user's Group property. So no need to query user's groups when authorizing.
-func (r *Reconciler) updateUserGroups(ctx context.Context, groupBinding *iamv1alpha2.GroupBinding, operator func(groups []string, group string) (bool, []string)) error {
+func (r *Reconciler) updateUserGroups(ctx context.Context, groupBinding *iamv1beta1.GroupBinding, operator func(groups []string, group string) (bool, []string)) error {
 	for _, u := range groupBinding.Users {
 		// Ignore the user if the user being deleted.
-		user := &iamv1alpha2.User{}
+		user := &iamv1beta1.User{}
 		if err := r.Get(ctx, client.ObjectKey{Name: u}, user); err != nil {
 			if errors.IsNotFound(err) {
 				klog.Infof("user %s doesn't exist any more", u)
@@ -155,7 +155,7 @@ func (r *Reconciler) updateUserGroups(ctx context.Context, groupBinding *iamv1al
 	return nil
 }
 
-func (r *Reconciler) patchUser(ctx context.Context, user *iamv1alpha2.User, groups []string) error {
+func (r *Reconciler) patchUser(ctx context.Context, user *iamv1beta1.User, groups []string) error {
 	newUser := user.DeepCopy()
 	newUser.Spec.Groups = groups
 	patch := client.MergeFrom(user)
@@ -173,7 +173,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return builder.
 		ControllerManagedBy(mgr).
 		For(
-			&iamv1alpha2.GroupBinding{},
+			&iamv1beta1.GroupBinding{},
 			builder.WithPredicates(
 				predicate.ResourceVersionChangedPredicate{},
 			),

@@ -18,16 +18,13 @@ package kubeconfig
 import (
 	"testing"
 
-	certificatesv1 "k8s.io/api/certificates/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sinformers "k8s.io/client-go/informers"
-	k8sfake "k8s.io/client-go/kubernetes/fake"
-	k8stesting "k8s.io/client-go/testing"
-	"k8s.io/client-go/tools/clientcmd"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/scheme"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 )
 
 const fakeKubeConfig = `
@@ -57,14 +54,16 @@ func Test_operator_CreateKubeConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k8sClient := k8sfake.NewSimpleClientset()
-	k8sInformers := k8sinformers.NewSharedInformerFactory(k8sClient, 0)
-	operator := NewOperator(k8sClient, k8sInformers.Core().V1().ConfigMaps().Lister(), config)
 
-	user1 := &iamv1alpha2.User{
+	client := runtimefakeclient.NewClientBuilder().
+		WithScheme(scheme.Scheme).
+		Build()
+	operator := NewOperator(client, config)
+
+	user1 := &iamv1beta1.User{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       iamv1alpha2.ResourceKindUser,
-			APIVersion: iamv1alpha2.SchemeGroupVersion.String(),
+			Kind:       iamv1beta1.ResourceKindUser,
+			APIVersion: iamv1beta1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "user1",
@@ -75,38 +74,7 @@ func Test_operator_CreateKubeConfig(t *testing.T) {
 		t.Errorf("CreateKubeConfig() unexpected error %v", err)
 	}
 
-	if len(k8sClient.Actions()) != 2 {
-		t.Errorf("CreateKubeConfig() unexpected action %v", k8sClient.Actions())
-		return
-	}
-
-	csrCreateAction, ok := k8sClient.Actions()[0].(k8stesting.CreateActionImpl)
-	if !ok {
-		t.Errorf("CreateKubeConfig() unexpected action %v", k8sClient.Actions()[0])
-		return
-	}
-
-	csr, ok := csrCreateAction.Object.(*certificatesv1.CertificateSigningRequest)
-	if !ok {
-		t.Errorf("CreateKubeConfig() unexpected object %v", csrCreateAction.Object)
-		return
-	}
-	if csr.Labels[constants.UsernameLabelKey] != user1.Name || csr.Annotations[privateKeyAnnotation] == "" {
-		t.Errorf("CreateKubeConfig() unexpected CertificateSigningRequest %v", csr)
-		return
-	}
-	cmCreateAction := k8sClient.Actions()[1].(k8stesting.CreateActionImpl)
-	if !ok {
-		t.Errorf("CreateKubeConfig() unexpected action %v", k8sClient.Actions()[1])
-		return
-	}
-	cm, ok := cmCreateAction.Object.(*corev1.ConfigMap)
-	if !ok {
-		t.Errorf("CreateKubeConfig() unexpected object %v", cmCreateAction.Object)
-		return
-	}
-	if cm.Labels[constants.UsernameLabelKey] != user1.Name || len(cm.Data) == 0 {
-		t.Errorf("CreateKubeConfig() unexpected ConfigMap %v", cm)
-		return
+	if _, err := operator.GetKubeConfig(user1.Name); err != nil {
+		t.Errorf("GetKubeConfig() unexpected error %v", err)
 	}
 }

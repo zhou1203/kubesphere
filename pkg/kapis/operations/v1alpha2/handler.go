@@ -20,9 +20,10 @@ import (
 	"fmt"
 	"net/http"
 
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/emicklei/go-restful/v3"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/kubernetes"
 
 	"kubesphere.io/kubesphere/pkg/models/workloads"
 	"kubesphere.io/kubesphere/pkg/server/errors"
@@ -32,7 +33,7 @@ type operationHandler struct {
 	jobRunner workloads.JobRunner
 }
 
-func newOperationHandler(client kubernetes.Interface) *operationHandler {
+func newOperationHandler(client runtimeclient.Client) *operationHandler {
 	return &operationHandler{
 		jobRunner: workloads.NewJobRunner(client),
 	}

@@ -19,15 +19,14 @@ package v1alpha1
 import (
 	"net/http"
 
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	k8sinformers "k8s.io/client-go/informers"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-	"kubesphere.io/kubesphere/pkg/client/informers/externalversions"
 	"kubesphere.io/kubesphere/pkg/constants"
 )
 
@@ -37,13 +36,10 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
 
-func AddToContainer(container *restful.Container,
-	ksclient kubesphere.Interface,
-	k8sInformers k8sinformers.SharedInformerFactory,
-	ksInformers externalversions.SharedInformerFactory) error {
+func AddToContainer(container *restful.Container, cacheClient runtimeclient.Client) error {
 
 	webservice := runtime.NewWebService(GroupVersion)
-	h := newHandler(ksclient, k8sInformers, ksInformers)
+	h := newHandler(cacheClient)
 
 	webservice.Route(webservice.POST("/clusters/validation").
 		Doc("").

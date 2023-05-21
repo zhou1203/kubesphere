@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 )
@@ -65,7 +65,7 @@ var _ = Describe("ServiceAccount", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        saName,
 				Namespace:   saNamespace,
-				Annotations: map[string]string{iamv1alpha2.RoleAnnotation: saRole},
+				Annotations: map[string]string{iamv1beta1.RoleAnnotation: saRole},
 			},
 		}
 		req = ctrl.Request{
@@ -101,7 +101,7 @@ var _ = Describe("ServiceAccount", func() {
 			By("Expecting to bind role successfully")
 			rolebindings := &rbacv1.RoleBindingList{}
 			Expect(func() bool {
-				reconciler.List(ctx, rolebindings, client.InNamespace(sa.Namespace), client.MatchingLabels{iamv1alpha2.ServiceAccountReferenceLabel: sa.Name})
+				reconciler.List(ctx, rolebindings, client.InNamespace(sa.Namespace), client.MatchingLabels{iamv1beta1.ServiceAccountReferenceLabel: sa.Name})
 				return len(rolebindings.Items) == 1 && k8sutil.IsControlledBy(rolebindings.Items[0].OwnerReferences, "ServiceAccount", saName)
 			}()).Should(BeTrue())
 		})

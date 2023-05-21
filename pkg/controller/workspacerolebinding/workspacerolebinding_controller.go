@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/constants"
@@ -71,7 +71,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).
-		For(&iamv1alpha2.WorkspaceRoleBinding{}).
+		For(&iamv1beta1.WorkspaceRoleBinding{}).
 		Complete(r)
 }
 
@@ -82,7 +82,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Logger.WithValues("workspacerolebinding", req.NamespacedName)
 	rootCtx := context.Background()
-	workspaceRoleBinding := &iamv1alpha2.WorkspaceRoleBinding{}
+	workspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{}
 	if err := r.Get(rootCtx, req.NamespacedName, workspaceRoleBinding); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -102,7 +102,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, workspaceRoleBinding *iamv1alpha2.WorkspaceRoleBinding) error {
+func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding) error {
 	workspaceName := workspaceRoleBinding.Labels[constants.WorkspaceLabelKey]
 	if workspaceName == "" {
 		return nil

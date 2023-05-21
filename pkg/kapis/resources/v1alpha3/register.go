@@ -21,15 +21,14 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/api/resource/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
-	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/models/components"
 	v2 "kubesphere.io/kubesphere/pkg/models/registries/v2"
-	resourcev1alpha2 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha2/resource"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 
 	"net/http"
@@ -51,10 +50,10 @@ func Resource(resource string) schema.GroupResource {
 	return GroupVersion.WithResource(resource).GroupResource()
 }
 
-func AddToContainer(c *restful.Container, informerFactory informers.InformerFactory) error {
+func AddToContainer(c *restful.Container, cacheReader runtimeclient.Reader) error {
 
 	webservice := runtime.NewWebService(GroupVersion)
-	handler := New(resourcev1alpha3.NewResourceGetter(informerFactory), resourcev1alpha2.NewResourceGetter(informerFactory), components.NewComponentsGetter(informerFactory.KubernetesSharedInformerFactory()))
+	handler := New(resourcev1alpha3.NewResourceGetter(cacheReader), components.NewComponentsGetter(cacheReader))
 
 	webservice.Route(webservice.GET("/{resources}").
 		To(handler.handleListResources).

@@ -17,40 +17,42 @@ limitations under the License.
 package workspace
 
 import (
-	"k8s.io/apimachinery/pkg/runtime"
+	"context"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
-	informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3"
 )
 
 type workspaceGetter struct {
-	sharedInformers informers.SharedInformerFactory
+	cache runtimeclient.Reader
 }
 
-func New(sharedInformers informers.SharedInformerFactory) v1alpha3.Interface {
-	return &workspaceGetter{sharedInformers: sharedInformers}
+func New(cache runtimeclient.Reader) v1alpha3.Interface {
+	return &workspaceGetter{cache: cache}
 }
 
 func (d *workspaceGetter) Get(_, name string) (runtime.Object, error) {
-	return d.sharedInformers.Tenant().V1alpha1().Workspaces().Lister().Get(name)
+	workspace := &tenantv1alpha1.Workspace{}
+	return workspace, d.cache.Get(context.Background(), types.NamespacedName{Name: name}, workspace)
 }
 
 func (d *workspaceGetter) List(_ string, query *query.Query) (*api.ListResult, error) {
-
-	workspaces, err := d.sharedInformers.Tenant().V1alpha1().Workspaces().Lister().List(query.Selector())
-	if err != nil {
+	workspaces := &tenantv1alpha1.WorkspaceList{}
+	if err := d.cache.List(context.Background(), workspaces,
+		client.MatchingLabelsSelector{Selector: query.Selector()}); err != nil {
 		return nil, err
 	}
-
 	var result []runtime.Object
-	for _, workspace := range workspaces {
-		result = append(result, workspace)
+	for _, item := range workspaces.Items {
+		result = append(result, item.DeepCopy())
 	}
-
 	return v1alpha3.DefaultList(result, query, d.compare, d.filter), nil
 }
 

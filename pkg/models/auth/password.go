@@ -21,33 +21,29 @@ package auth
 import (
 	"context"
 
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"golang.org/x/crypto/bcrypt"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	authuser "k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
-
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-	iamv1alpha2listers "kubesphere.io/kubesphere/pkg/client/listers/iam/v1alpha2"
 )
 
 type passwordAuthenticator struct {
-	ksClient    kubesphere.Interface
-	userGetter  *userGetter
+	userGetter  *userMapper
+	client      runtimeclient.Client
 	authOptions *authentication.Options
 }
 
-func NewPasswordAuthenticator(ksClient kubesphere.Interface,
-	userLister iamv1alpha2listers.UserLister,
-	options *authentication.Options) PasswordAuthenticator {
+func NewPasswordAuthenticator(cacheClient runtimeclient.Client, options *authentication.Options) PasswordAuthenticator {
 	passwordAuthenticator := &passwordAuthenticator{
-		ksClient:    ksClient,
-		userGetter:  &userGetter{userLister: userLister},
+		client:      cacheClient,
+		userGetter:  &userMapper{cache: cacheClient},
 		authOptions: options,
 	}
 	return passwordAuthenticator
@@ -66,7 +62,7 @@ func (p *passwordAuthenticator) Authenticate(_ context.Context, provider, userna
 
 // authByKubeSphere authenticate by the kubesphere user
 func (p *passwordAuthenticator) authByKubeSphere(username, password string) (authuser.Info, string, error) {
-	user, err := p.userGetter.findUser(username)
+	user, err := p.userGetter.Find(username)
 	if err != nil {
 		// ignore not found error
 		if !errors.IsNotFound(err) {
@@ -76,8 +72,8 @@ func (p *passwordAuthenticator) authByKubeSphere(username, password string) (aut
 	}
 
 	// check user status
-	if user != nil && user.Status.State != iamv1alpha2.UserActive {
-		if user.Status.State == iamv1alpha2.UserAuthLimitExceeded {
+	if user != nil && user.Status.State != iamv1beta1.UserActive {
+		if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
 			klog.Errorf("%s, username: %s", RateLimitExceededError, username)
 			return nil, "", RateLimitExceededError
 		} else {
@@ -98,9 +94,9 @@ func (p *passwordAuthenticator) authByKubeSphere(username, password string) (aut
 			Groups: user.Spec.Groups,
 		}
 		// check if the password is initialized
-		if uninitialized := user.Annotations[iamv1alpha2.UninitializedAnnotation]; uninitialized != "" {
+		if uninitialized := user.Annotations[iamv1beta1.UninitializedAnnotation]; uninitialized != "" {
 			u.Extra = map[string][]string{
-				iamv1alpha2.ExtraUninitialized: {uninitialized},
+				iamv1beta1.ExtraUninitialized: {uninitialized},
 			}
 		}
 		return u, "", nil
@@ -129,7 +125,7 @@ func (p *passwordAuthenticator) authByProvider(provider, username, password stri
 		}
 		return nil, "", err
 	}
-	linkedAccount, err := p.userGetter.findMappedUser(providerOptions.Name, authenticated.GetUserID())
+	linkedAccount, err := p.userGetter.FindMappedUser(providerOptions.Name, authenticated.GetUserID())
 
 	if err != nil && !errors.IsNotFound(err) {
 		klog.Error(err)
@@ -145,8 +141,8 @@ func (p *passwordAuthenticator) authByProvider(provider, username, password stri
 		if !providerOptions.DisableLoginConfirmation {
 			return preRegistrationUser(providerOptions.Name, authenticated), providerOptions.Name, nil
 		}
-		linkedAccount, err = p.ksClient.IamV1alpha2().Users().Create(context.Background(), mappedUser(providerOptions.Name, authenticated), metav1.CreateOptions{})
-		if err != nil {
+		linkedAccount = mappedUser(providerOptions.Name, authenticated)
+		if err = p.client.Create(context.Background(), linkedAccount); err != nil {
 			klog.Error(err)
 			return nil, "", err
 		}

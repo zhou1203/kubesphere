@@ -3,6 +3,7 @@ package v1beta1
 import (
 	"github.com/emicklei/go-restful/v3"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
@@ -30,7 +31,7 @@ func newIAMHandler(im im.IdentityManagementInterface, am am.AccessManagementInte
 
 func (h *iamHandler) ListClusterMembers(request *restful.Request, response *restful.Response) {
 	bindings, err := h.am.ListClusterRoleBindings("")
-	result := &api.ListResult{Items: make([]interface{}, 0)}
+	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
@@ -56,7 +57,7 @@ func (h *iamHandler) ListClusterMembers(request *restful.Request, response *rest
 func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 	bindings, err := h.am.ListWorkspaceRoleBindings("", nil, workspace)
-	result := &api.ListResult{Items: make([]interface{}, 0)}
+	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
@@ -83,7 +84,7 @@ func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *re
 func (h *iamHandler) ListNamespaceMember(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 	bindings, err := h.am.ListRoleBindings("", nil, namespace)
-	result := &api.ListResult{Items: make([]interface{}, 0)}
+	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
@@ -120,7 +121,7 @@ func (h *iamHandler) GetGlobalRoleOfUser(request *restful.Request, response *res
 func (h *iamHandler) GetWorkspaceRoleOfUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("username")
 	workspace := request.PathParameter("workspace")
-	result := &api.ListResult{Items: make([]interface{}, 0)}
+	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 
 	workspaceRoles, err := h.am.GetWorkspaceRoleOfUser(username, nil, workspace)
 	if err != nil {
@@ -151,7 +152,7 @@ func (h *iamHandler) GetClusterRoleOfUser(request *restful.Request, response *re
 func (h *iamHandler) GetRoleOfUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("username")
 	namespace := request.PathParameter("namespace")
-	result := &api.ListResult{Items: make([]interface{}, 0)}
+	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 
 	roles, err := h.am.GetNamespaceRoleOfUser(username, nil, namespace)
 	if err != nil {
@@ -173,7 +174,7 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 	scope := request.QueryParameter("scope")
 	namespace := request.QueryParameter("namespace")
 	workspace := request.QueryParameter("workspace")
-	result := &api.ListResult{Items: make([]interface{}, 0)}
+	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	var roleTemplateNames []string
 
 	switch scope {

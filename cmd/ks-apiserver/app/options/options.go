@@ -23,23 +23,22 @@ import (
 	"net/http"
 	"strings"
 
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
+
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
+
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
-	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"kubesphere.io/kubesphere/pkg/apiserver"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
-	"kubesphere.io/kubesphere/pkg/informers"
 	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	genericoptions "kubesphere.io/kubesphere/pkg/server/options"
 	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 type ServerRunOptions struct {
@@ -84,16 +83,10 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		Config: s.Config,
 	}
 
-	kubernetesClient, err := k8s.NewKubernetesClient(s.KubernetesOptions)
-	if err != nil {
-		return nil, err
+	var err error
+	if apiServer.KubernetesClient, err = k8s.NewKubernetesClient(s.KubernetesOptions); err != nil {
+		return nil, fmt.Errorf("failed to create kubernetes client, error: %v", err)
 	}
-	apiServer.KubernetesClient = kubernetesClient
-
-	informerFactory := informers.NewInformerFactories(kubernetesClient.Kubernetes(), kubernetesClient.KubeSphere(), kubernetesClient.ApiExtensions())
-	apiServer.InformerFactory = informerFactory
-
-	apiServer.ClusterClient = clusterclient.NewClusterClient(informerFactory.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters())
 
 	if apiServer.CacheClient, err = cache.New(s.CacheOptions, stopCh); err != nil {
 		return nil, fmt.Errorf("failed to create cache, error: %v", err)
@@ -105,6 +98,25 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		}
 	}
 
+	if c, err := cluster.New(apiServer.KubernetesClient.Config(), func(options *cluster.Options) {
+		options.Scheme = scheme.Scheme
+	}); err != nil {
+		klog.Fatalf("unable to create controller runtime cluster: %v", err)
+	} else {
+		apiServer.RuntimeCache = c.GetCache()
+		apiServer.RuntimeClient = c.GetClient()
+	}
+
+	if apiServer.ClusterClient, err = clusterclient.NewClusterClient(apiServer.RuntimeCache); err != nil {
+		klog.Fatalf("unable to create cluster client: %v", err)
+	}
+
+	if apiServer.Issuer, err = token.NewIssuer(s.AuthenticationOptions); err != nil {
+		klog.Fatalf("unable to create issuer: %v", err)
+	}
+
+	apiServer.ResourceManager = resourcev1beta1.New(apiServer.RuntimeClient)
+
 	server := &http.Server{
 		Addr: fmt.Sprintf(":%d", s.GenericServerRunOptions.InsecurePort),
 	}
@@ -114,34 +126,12 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		if err != nil {
 			return nil, err
 		}
-
 		server.TLSConfig = &tls.Config{
 			Certificates: []tls.Certificate{certificate},
 		}
 		server.Addr = fmt.Sprintf(":%d", s.GenericServerRunOptions.SecurePort)
 	}
 
-	mapper, err := apiutil.NewDynamicRESTMapper(apiServer.KubernetesClient.Config())
-	if err != nil {
-		klog.Fatalf("unable create dynamic RESTMapper: %v", err)
-	}
-
-	apiServer.RuntimeCache, err = runtimecache.New(apiServer.KubernetesClient.Config(), runtimecache.Options{Scheme: scheme.Scheme, Mapper: mapper})
-	if err != nil {
-		klog.Fatalf("unable to create controller runtime cache: %v", err)
-	}
-
-	apiServer.RuntimeClient, err = runtimeclient.New(apiServer.KubernetesClient.Config(), runtimeclient.Options{Scheme: scheme.Scheme})
-	if err != nil {
-		klog.Fatalf("unable to create controller runtime client: %v", err)
-	}
-
-	apiServer.Issuer, err = token.NewIssuer(s.AuthenticationOptions)
-	if err != nil {
-		klog.Fatalf("unable to create issuer: %v", err)
-	}
-
-	apiServer.ResourceManager = resourcev1beta1.New(apiServer.RuntimeClient, apiServer.RuntimeCache)
 	apiServer.Server = server
 
 	return apiServer, nil

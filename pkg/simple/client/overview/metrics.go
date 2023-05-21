@@ -11,7 +11,6 @@ import (
 	v12 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -185,7 +184,7 @@ func NewDefaultRegisterOptions() []RegisterOption {
 		},
 		{
 			MetricsName: UserCount,
-			Type:        []client.ObjectList{&iamv1alpha2.UserList{}},
+			Type:        []client.ObjectList{&iamv1beta1.UserList{}},
 		},
 		{
 			MetricsName: GlobalRoleBindingCount,

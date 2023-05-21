@@ -36,19 +36,19 @@ const proxyURLFormat = "/api/v1/namespaces/kubesphere-system/services/:ks-apiser
 
 type multiclusterDispatcher struct {
 	next http.Handler
-	clusterclient.ClusterClients
+	clusterclient.Interface
 }
 
 // WithMulticluster forward request to desired cluster based on request cluster name
 // which included in request path clusters/{cluster}
-func WithMulticluster(next http.Handler, clusterClient clusterclient.ClusterClients) http.Handler {
+func WithMulticluster(next http.Handler, clusterClient clusterclient.Interface) http.Handler {
 	if clusterClient == nil {
 		klog.V(4).Infof("Multicluster dispatcher is disabled")
 		return next
 	}
 	return &multiclusterDispatcher{
-		next:           next,
-		ClusterClients: clusterClient,
+		next:      next,
+		Interface: clusterClient,
 	}
 }
 

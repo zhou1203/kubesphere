@@ -23,6 +23,10 @@ import (
 	"reflect"
 	"testing"
 
+	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"kubesphere.io/kubesphere/pkg/scheme"
+
 	"kubesphere.io/kubesphere/pkg/server/options"
 
 	"github.com/mitchellh/mapstructure"
@@ -30,13 +34,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apiserver/pkg/authentication/user"
 	authuser "k8s.io/apiserver/pkg/authentication/user"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
-	fakeks "kubesphere.io/kubesphere/pkg/client/clientset/versioned/fake"
-	ksinformers "kubesphere.io/kubesphere/pkg/client/informers/externalversions"
 )
 
 func TestEncryptPassword(t *testing.T) {
@@ -121,22 +123,16 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 	if err := identityprovider.SetupWithOptions(oauthOptions.OAuthOptions.IdentityProviders); err != nil {
 		t.Fatal(err)
 	}
+	client := runtimefakeclient.NewClientBuilder().
+		WithScheme(scheme.Scheme).
+		WithRuntimeObjects(
+			newUser("user1", "100001", "fakepwd"),
+			newUser("user3", "100003", ""),
+			newActiveUser("user4", "password"),
+		).
+		Build()
 
-	ksClient := fakeks.NewSimpleClientset()
-	ksInformerFactory := ksinformers.NewSharedInformerFactory(ksClient, 0)
-	err := ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newUser("user1", "100001", "fakepwd"))
-	_ = ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newUser("user3", "100003", ""))
-	_ = ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newActiveUser("user4", "password"))
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	authenticator := NewPasswordAuthenticator(
-		ksClient,
-		ksInformerFactory.Iam().V1alpha2().Users().Lister(),
-		oauthOptions,
-	)
+	authenticator := NewPasswordAuthenticator(client, oauthOptions)
 
 	type args struct {
 		ctx      context.Context
@@ -298,10 +294,10 @@ func encrypt(password string) (string, error) {
 	return string(bytes), err
 }
 
-func newActiveUser(username string, password string) *iamv1alpha2.User {
+func newActiveUser(username string, password string) *iamv1beta1.User {
 	u := newUser(username, "", "")
 	password, _ = encrypt(password)
 	u.Spec.EncryptedPassword = password
-	u.Status.State = iamv1alpha2.UserActive
+	u.Status.State = iamv1beta1.UserActive
 	return u
 }

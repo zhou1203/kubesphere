@@ -26,8 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/api/gateway/v1alpha2"
 
@@ -40,10 +39,10 @@ const (
 )
 
 type handler struct {
-	cache cache.Cache
+	cache runtimeclient.Reader
 }
 
-func newHandler(cache cache.Cache) *handler {
+func newHandler(cache runtimeclient.Reader) *handler {
 	return &handler{
 		cache: cache,
 	}
@@ -86,7 +85,7 @@ func (h *handler) ingressClassScopeList(request *restful.Request, response *rest
 		// Specify namespaceSelector
 		if nsSelector != "" {
 			nsList := corev1.NamespaceList{}
-			_ = h.cache.List(context.TODO(), &nsList, &client.ListOptions{LabelSelector: Selector(nsSelector)})
+			_ = h.cache.List(context.TODO(), &nsList, &runtimeclient.ListOptions{LabelSelector: Selector(nsSelector)})
 			for _, n := range nsList.Items {
 				if n.Name == currentNs {
 					_ = h.setStatus(&item)
@@ -111,7 +110,7 @@ func Selector(s string) labels.Selector {
 func (h *handler) getMasterNodeIp() []string {
 	internalIps := []string{}
 	masters := &corev1.NodeList{}
-	err := h.cache.List(context.TODO(), masters, &client.ListOptions{
+	err := h.cache.List(context.TODO(), masters, &runtimeclient.ListOptions{
 		LabelSelector: labels.SelectorFromSet(
 			labels.Set{
 				MasterLabel: "",

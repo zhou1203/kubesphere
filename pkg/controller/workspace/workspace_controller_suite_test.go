@@ -17,14 +17,14 @@ limitations under the License.
 package workspace
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gexec"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,13 +40,15 @@ import (
 var k8sClient client.Client
 var k8sManager ctrl.Manager
 var testEnv *envtest.Environment
+var ctx context.Context
+var cancel context.CancelFunc
 
 func TestWorkspaceController(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Workspace Controller Test Suite")
 }
 
-var _ = BeforeSuite(func(done Done) {
+var _ = BeforeSuite(func() {
 	logf.SetLogger(klog.NewKlogr())
 
 	By("bootstrapping test environment")
@@ -75,20 +77,21 @@ var _ = BeforeSuite(func(done Done) {
 	err = (&Reconciler{}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	ctx, cancel = context.WithCancel(context.Background())
+
 	go func() {
-		err = k8sManager.Start(ctrl.SetupSignalHandler())
+		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
 	}()
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
-
-	close(done)
-}, 60)
+})
 
 var _ = AfterSuite(func() {
+	cancel()
 	By("tearing down the test environment")
-	gexec.KillAndWait(5 * time.Second)
-	err := testEnv.Stop()
-	Expect(err).ToNot(HaveOccurred())
+	Eventually(func() error {
+		return testEnv.Stop()
+	}, 30*time.Second, 5*time.Second).ShouldNot(HaveOccurred())
 })

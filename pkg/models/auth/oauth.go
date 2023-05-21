@@ -22,34 +22,28 @@ import (
 	"context"
 	"net/http"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	authuser "k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
-	iamv1alpha2listers "kubesphere.io/kubesphere/pkg/client/listers/iam/v1alpha2"
 )
 
 type oauthAuthenticator struct {
-	ksClient   kubesphere.Interface
-	userGetter *userGetter
+	client     runtimeclient.Client
+	userGetter *userMapper
 	options    *authentication.Options
 }
 
-func NewOAuthAuthenticator(ksClient kubesphere.Interface,
-	userLister iamv1alpha2listers.UserLister,
-	options *authentication.Options) OAuthAuthenticator {
+func NewOAuthAuthenticator(cacheClient runtimeclient.Client, options *authentication.Options) OAuthAuthenticator {
 	authenticator := &oauthAuthenticator{
-		ksClient:   ksClient,
-		userGetter: &userGetter{userLister: userLister},
+		client:     cacheClient,
+		userGetter: &userMapper{cache: cacheClient},
 		options:    options,
 	}
 	return authenticator
@@ -73,7 +67,7 @@ func (o *oauthAuthenticator) Authenticate(_ context.Context, provider string, re
 		return nil, "", err
 	}
 
-	user, err := o.userGetter.findMappedUser(providerOptions.Name, authenticated.GetUserID())
+	user, err := o.userGetter.FindMappedUser(providerOptions.Name, authenticated.GetUserID())
 	if user == nil && providerOptions.MappingMethod == oauth.MappingMethodLookup {
 		klog.Error(err)
 		return nil, "", err
@@ -84,19 +78,21 @@ func (o *oauthAuthenticator) Authenticate(_ context.Context, provider string, re
 		if !providerOptions.DisableLoginConfirmation {
 			return preRegistrationUser(providerOptions.Name, authenticated), providerOptions.Name, nil
 		}
-		user, err = o.ksClient.IamV1alpha2().Users().Create(context.Background(), mappedUser(providerOptions.Name, authenticated), metav1.CreateOptions{})
-		if err != nil {
+
+		user = mappedUser(providerOptions.Name, authenticated)
+
+		if err = o.client.Create(context.Background(), user); err != nil {
 			return nil, providerOptions.Name, err
 		}
 	}
 
 	if user != nil {
-		if user.Status.State == iamv1alpha2.UserDisabled {
+		if user.Status.State == iamv1beta1.UserDisabled {
 			// state not active
 			return nil, "", AccountIsNotActiveError
 		}
 		return &authuser.DefaultInfo{Name: user.GetName()}, providerOptions.Name, nil
 	}
 
-	return nil, "", errors.NewNotFound(iamv1alpha2.Resource("user"), authenticated.GetUsername())
+	return nil, "", errors.NewNotFound(iamv1beta1.Resource("user"), authenticated.GetUsername())
 }

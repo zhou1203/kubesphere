@@ -17,11 +17,15 @@ limitations under the License.
 package persistentvolumeclaim
 
 import (
+	"context"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/informers"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -29,59 +33,52 @@ import (
 )
 
 const (
-	storageClassName = "storageClassName"
-
+	storageClassName             = "storageClassName"
 	annotationInUse              = "kubesphere.io/in-use"
 	annotationAllowSnapshot      = "kubesphere.io/allow-snapshot"
 	annotationStorageProvisioner = "volume.beta.kubernetes.io/storage-provisioner"
 )
 
 type persistentVolumeClaimGetter struct {
-	informers informers.SharedInformerFactory
+	cache runtimeclient.Reader
 }
 
-func New(informer informers.SharedInformerFactory) v1alpha3.Interface {
-	return &persistentVolumeClaimGetter{informers: informer}
+func New(cache runtimeclient.Reader) v1alpha3.Interface {
+	return &persistentVolumeClaimGetter{cache: cache}
 }
 
 func (p *persistentVolumeClaimGetter) Get(namespace, name string) (runtime.Object, error) {
-	pvc, err := p.informers.Core().V1().PersistentVolumeClaims().Lister().PersistentVolumeClaims(namespace).Get(name)
-	if err != nil {
-		return pvc, err
-	}
-	// we should never mutate the shared objects from informers
-	pvc = pvc.DeepCopy()
-	return pvc, nil
+	pvc := &corev1.PersistentVolumeClaim{}
+	return pvc, p.cache.Get(context.Background(), types.NamespacedName{Namespace: namespace, Name: name}, pvc)
 }
 
 func (p *persistentVolumeClaimGetter) List(namespace string, query *query.Query) (*api.ListResult, error) {
-	all, err := p.informers.Core().V1().PersistentVolumeClaims().Lister().PersistentVolumeClaims(namespace).List(query.Selector())
-	if err != nil {
+	persistentVolumeClaims := &corev1.PersistentVolumeClaimList{}
+	if err := p.cache.List(context.Background(), persistentVolumeClaims, client.InNamespace(namespace),
+		client.MatchingLabelsSelector{Selector: query.Selector()}); err != nil {
 		return nil, err
 	}
-
 	var result []runtime.Object
-	for _, pvc := range all {
-		pvc = pvc.DeepCopy()
-		result = append(result, pvc)
+	for _, item := range persistentVolumeClaims.Items {
+		result = append(result, item.DeepCopy())
 	}
 	return v1alpha3.DefaultList(result, query, p.compare, p.filter), nil
 }
 
 func (p *persistentVolumeClaimGetter) compare(left, right runtime.Object, field query.Field) bool {
-	leftSnapshot, ok := left.(*v1.PersistentVolumeClaim)
+	leftPVC, ok := left.(*corev1.PersistentVolumeClaim)
 	if !ok {
 		return false
 	}
-	rightSnapshot, ok := right.(*v1.PersistentVolumeClaim)
+	rightPVC, ok := right.(*corev1.PersistentVolumeClaim)
 	if !ok {
 		return false
 	}
-	return v1alpha3.DefaultObjectMetaCompare(leftSnapshot.ObjectMeta, rightSnapshot.ObjectMeta, field)
+	return v1alpha3.DefaultObjectMetaCompare(leftPVC.ObjectMeta, rightPVC.ObjectMeta, field)
 }
 
 func (p *persistentVolumeClaimGetter) filter(object runtime.Object, filter query.Filter) bool {
-	pvc, ok := object.(*v1.PersistentVolumeClaim)
+	pvc, ok := object.(*corev1.PersistentVolumeClaim)
 	if !ok {
 		return false
 	}

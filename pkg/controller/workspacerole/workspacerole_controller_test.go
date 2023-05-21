@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 )
@@ -53,7 +53,7 @@ var _ = Describe("WorkspaceRole", func() {
 	// test Kubernetes API server, which isn't the goal here.
 	Context("WorkspaceRole Controller", func() {
 		It("Should create successfully", func() {
-			workspaceAdmin := &iamv1alpha2.WorkspaceRole{
+			workspaceAdmin := &iamv1beta1.WorkspaceRole{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   fmt.Sprintf("%s-admin", workspace.Name),
 					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: workspace.Name},

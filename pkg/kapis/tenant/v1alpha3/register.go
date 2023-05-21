@@ -19,25 +19,26 @@ package v1alpha3
 import (
 	"net/http"
 
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
+
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 	"kubesphere.io/kubesphere/pkg/constants"
-	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/models"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/server/errors"
-	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 )
 
 const (
@@ -50,14 +51,14 @@ func Resource(resource string) schema.GroupResource {
 	return GroupVersion.WithResource(resource).GroupResource()
 }
 
-func AddToContainer(c *restful.Container, factory informers.InformerFactory, k8sclient kubernetes.Interface,
-	ksclient kubesphere.Interface, auditingclient auditing.Client, am am.AccessManagementInterface,
-	im im.IdentityManagementInterface, authorizer authorizer.Authorizer) error {
+func AddToContainer(c *restful.Container, cacheClient runtimeclient.Client, auditingClient auditingclient.Client,
+	clusterClient clusterclient.Interface, am am.AccessManagementInterface, im im.IdentityManagementInterface,
+	authorizer authorizer.Authorizer) error {
 	mimePatch := []string{restful.MIME_JSON, runtime.MimeMergePatchJson, runtime.MimeJsonPatchJson}
 
 	ws := runtime.NewWebService(GroupVersion)
-	v1alpha2Handler := v1alpha2.NewTenantHandler(factory, k8sclient, ksclient, auditingclient, am, im, authorizer)
-	handler := newTenantHandler(factory, k8sclient, ksclient, auditingclient, am, im, authorizer)
+	v1alpha2Handler := v1alpha2.NewTenantHandler(cacheClient, auditingClient, clusterClient, am, im, authorizer)
+	handler := newTenantHandler(cacheClient, auditingClient, clusterClient, am, im, authorizer)
 
 	ws.Route(ws.POST("/workspacetemplates").
 		To(v1alpha2Handler.CreateWorkspaceTemplate).

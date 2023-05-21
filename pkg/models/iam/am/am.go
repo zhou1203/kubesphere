@@ -30,7 +30,6 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 
@@ -129,7 +128,7 @@ func (am *amOperator) GetGlobalRoleOfUser(username string) (*iamv1beta1.GlobalRo
 		return globalRole, nil
 	}
 
-	err = errors.NewNotFound(iamv1beta1.Resource(iamv1alpha2.ResourcesSingularGlobalRoleBinding), username)
+	err = errors.NewNotFound(iamv1beta1.Resource(iamv1beta1.ResourcesSingularGlobalRoleBinding), username)
 	klog.V(4).Info(err)
 	return nil, err
 }
@@ -156,7 +155,7 @@ func (am *amOperator) GetWorkspaceRoleOfUser(username string, groups []string, w
 			if out.Annotations == nil {
 				out.Annotations = make(map[string]string, 0)
 			}
-			out.Annotations[iamv1alpha2.WorkspaceRoleAnnotation] = role.Name
+			out.Annotations[iamv1beta1.WorkspaceRoleAnnotation] = role.Name
 			roles[i] = out
 		}
 		if len(userRoleBindings) > 1 {
@@ -165,7 +164,7 @@ func (am *amOperator) GetWorkspaceRoleOfUser(username string, groups []string, w
 		return roles, nil
 	}
 
-	err = errors.NewNotFound(iamv1beta1.Resource(iamv1alpha2.ResourcesSingularWorkspaceRoleBinding), username)
+	err = errors.NewNotFound(iamv1beta1.Resource(iamv1beta1.ResourcesSingularWorkspaceRoleBinding), username)
 	klog.V(4).Info(err)
 	return nil, err
 }
@@ -189,7 +188,7 @@ func (am *amOperator) GetNamespaceRoleOfUser(username string, groups []string, n
 			if out.Annotations == nil {
 				out.Annotations = make(map[string]string, 0)
 			}
-			out.Annotations[iamv1alpha2.RoleAnnotation] = role.Name
+			out.Annotations[iamv1beta1.RoleAnnotation] = role.Name
 			roles[i] = out
 		}
 		if len(userRoleBindings) > 1 {
@@ -198,7 +197,7 @@ func (am *amOperator) GetNamespaceRoleOfUser(username string, groups []string, n
 		return roles, nil
 	}
 
-	err = errors.NewNotFound(iamv1beta1.Resource(iamv1alpha2.ResourcesSingularRoleBinding), username)
+	err = errors.NewNotFound(iamv1beta1.Resource(iamv1beta1.ResourcesSingularRoleBinding), username)
 	klog.V(4).Info(err)
 	return nil, err
 }
@@ -226,11 +225,11 @@ func (am *amOperator) GetClusterRoleOfUser(username string) (*iamv1beta1.Cluster
 		if out.Annotations == nil {
 			out.Annotations = make(map[string]string, 0)
 		}
-		out.Annotations[iamv1alpha2.ClusterRoleAnnotation] = role.Name
+		out.Annotations[iamv1beta1.ClusterRoleAnnotation] = role.Name
 		return out, nil
 	}
 
-	err = errors.NewNotFound(iamv1beta1.Resource(iamv1alpha2.ResourcesSingularClusterRoleBinding), username)
+	err = errors.NewNotFound(iamv1beta1.Resource(iamv1beta1.ResourcesSingularClusterRoleBinding), username)
 	klog.V(4).Info(err)
 	return nil, err
 }
@@ -349,10 +348,8 @@ func convertToListResult(list client.ObjectList) (*api.ListResult, error) {
 		return nil, err
 	}
 
-	for _, object := range extractList {
-		listResult.Items = append(listResult.Items, object.(interface{}))
-		listResult.TotalItems += 1
-	}
+	listResult.Items = extractList
+	listResult.TotalItems = len(extractList)
 
 	return listResult, nil
 
@@ -392,7 +389,7 @@ func (am *amOperator) GetRoleReferenceRules(roleRef rbacv1.RoleRef, namespace st
 	empty := make([]rbacv1.PolicyRule, 0)
 
 	switch roleRef.Kind {
-	case iamv1alpha2.ResourceKindRole:
+	case iamv1beta1.ResourceKindRole:
 		role, err := am.GetNamespaceRole(namespace, roleRef.Name)
 		if err != nil {
 			if errors.IsNotFound(err) {
@@ -400,8 +397,8 @@ func (am *amOperator) GetRoleReferenceRules(roleRef rbacv1.RoleRef, namespace st
 			}
 			return "", nil, err
 		}
-		return role.Annotations[iamv1alpha2.RegoOverrideAnnotation], role.Rules, nil
-	case iamv1alpha2.ResourceKindClusterRole:
+		return role.Annotations[iamv1beta1.RegoOverrideAnnotation], role.Rules, nil
+	case iamv1beta1.ResourceKindClusterRole:
 		clusterRole, err := am.GetClusterRole(roleRef.Name)
 		if err != nil {
 			if errors.IsNotFound(err) {
@@ -409,8 +406,8 @@ func (am *amOperator) GetRoleReferenceRules(roleRef rbacv1.RoleRef, namespace st
 			}
 			return "", nil, err
 		}
-		return clusterRole.Annotations[iamv1alpha2.RegoOverrideAnnotation], clusterRole.Rules, nil
-	case iamv1alpha2.ResourceKindGlobalRole:
+		return clusterRole.Annotations[iamv1beta1.RegoOverrideAnnotation], clusterRole.Rules, nil
+	case iamv1beta1.ResourceKindGlobalRole:
 		globalRole, err := am.GetGlobalRole(roleRef.Name)
 		if err != nil {
 			if errors.IsNotFound(err) {
@@ -418,8 +415,8 @@ func (am *amOperator) GetRoleReferenceRules(roleRef rbacv1.RoleRef, namespace st
 			}
 			return "", nil, err
 		}
-		return globalRole.Annotations[iamv1alpha2.RegoOverrideAnnotation], globalRole.Rules, nil
-	case iamv1alpha2.ResourceKindWorkspaceRole:
+		return globalRole.Annotations[iamv1beta1.RegoOverrideAnnotation], globalRole.Rules, nil
+	case iamv1beta1.ResourceKindWorkspaceRole:
 		workspaceRole, err := am.GetWorkspaceRole("", roleRef.Name)
 		if err != nil {
 			if errors.IsNotFound(err) {
@@ -427,7 +424,7 @@ func (am *amOperator) GetRoleReferenceRules(roleRef rbacv1.RoleRef, namespace st
 			}
 			return "", nil, err
 		}
-		return workspaceRole.Annotations[iamv1alpha2.RegoOverrideAnnotation], workspaceRole.Rules, nil
+		return workspaceRole.Annotations[iamv1beta1.RegoOverrideAnnotation], workspaceRole.Rules, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported role reference kind: %q", roleRef.Kind)
 	}
@@ -442,7 +439,7 @@ func (am *amOperator) GetWorkspaceRole(workspace string, name string) (*iamv1bet
 	}
 
 	if workspace != "" && role.Labels[tenantv1alpha1.WorkspaceLabel] != workspace {
-		err := errors.NewNotFound(iamv1beta1.Resource(iamv1alpha2.ResourcesSingularWorkspaceRole), name)
+		err := errors.NewNotFound(iamv1beta1.Resource(iamv1beta1.ResourcesSingularWorkspaceRole), name)
 		klog.Error(err)
 		return nil, err
 	}

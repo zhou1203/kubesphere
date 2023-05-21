@@ -22,6 +22,10 @@ import (
 	"reflect"
 	"testing"
 
+	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"kubesphere.io/kubesphere/pkg/scheme"
+
 	"kubesphere.io/kubesphere/pkg/server/options"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
@@ -29,12 +33,10 @@ import (
 	"github.com/mitchellh/mapstructure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authentication/user"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
-	fakeks "kubesphere.io/kubesphere/pkg/client/clientset/versioned/fake"
-	ksinformers "kubesphere.io/kubesphere/pkg/client/informers/externalversions"
 )
 
 func Test_oauthAuthenticator_Authenticate(t *testing.T) {
@@ -70,16 +72,14 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ksClient := fakeks.NewSimpleClientset()
-	ksInformerFactory := ksinformers.NewSharedInformerFactory(ksClient, 0)
-
-	if err := ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newUser("user1", "100001", "fake")); err != nil {
-		t.Fatal(err)
-	}
+	client := runtimefakeclient.NewClientBuilder().
+		WithScheme(scheme.Scheme).
+		WithRuntimeObjects(newUser("user1", "100001", "fake")).
+		Build()
 
 	blockedUser := newUser("user2", "100002", "fake")
-	blockedUser.Status = iamv1alpha2.UserStatus{State: iamv1alpha2.UserDisabled}
-	if err := ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(blockedUser); err != nil {
+	blockedUser.Status = iamv1beta1.UserStatus{State: iamv1beta1.UserDisabled}
+	if err := client.Create(context.Background(), blockedUser); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,12 +97,8 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 		wantErr            bool
 	}{
 		{
-			name: "Should successfully",
-			oauthAuthenticator: NewOAuthAuthenticator(
-				nil,
-				ksInformerFactory.Iam().V1alpha2().Users().Lister(),
-				oauthOptions,
-			),
+			name:               "Should successfully",
+			oauthAuthenticator: NewOAuthAuthenticator(client, oauthOptions),
 			args: args{
 				ctx:      context.Background(),
 				provider: "fake",
@@ -115,12 +111,8 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name: "Blocked user test",
-			oauthAuthenticator: NewOAuthAuthenticator(
-				nil,
-				ksInformerFactory.Iam().V1alpha2().Users().Lister(),
-				oauthOptions,
-			),
+			name:               "Blocked user test",
+			oauthAuthenticator: NewOAuthAuthenticator(client, oauthOptions),
 			args: args{
 				ctx:      context.Background(),
 				provider: "fake",
@@ -131,12 +123,8 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name: "Should successfully",
-			oauthAuthenticator: NewOAuthAuthenticator(
-				nil,
-				ksInformerFactory.Iam().V1alpha2().Users().Lister(),
-				oauthOptions,
-			),
+			name:               "Should successfully",
+			oauthAuthenticator: NewOAuthAuthenticator(client, oauthOptions),
 			args: args{
 				ctx:      context.Background(),
 				provider: "fake1",
@@ -170,17 +158,17 @@ func must(r *http.Request, err error) *http.Request {
 	return r
 }
 
-func newUser(username string, uid string, idp string) *iamv1alpha2.User {
-	return &iamv1alpha2.User{
+func newUser(username string, uid string, idp string) *iamv1beta1.User {
+	return &iamv1beta1.User{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       iamv1alpha2.ResourceKindUser,
-			APIVersion: iamv1alpha2.SchemeGroupVersion.String(),
+			Kind:       iamv1beta1.ResourceKindUser,
+			APIVersion: iamv1beta1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: username,
 			Labels: map[string]string{
-				iamv1alpha2.IdentifyProviderLabel: idp,
-				iamv1alpha2.OriginUIDLabel:        uid,
+				iamv1beta1.IdentifyProviderLabel: idp,
+				iamv1beta1.OriginUIDLabel:        uid,
 			},
 		},
 	}
