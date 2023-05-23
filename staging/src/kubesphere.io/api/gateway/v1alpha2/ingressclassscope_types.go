@@ -40,7 +40,7 @@ type IngressClassScopeSpec struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope="Namespaced"
+// +kubebuilder:resource:scope="Cluster"
 
 // IngressClassScope is a special resource used to
 // connect other gateways to the KubeSphere platform.
