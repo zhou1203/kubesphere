@@ -21,7 +21,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/client-go/tools/record"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -68,7 +67,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return builder.
 		ControllerManagedBy(mgr).
 		For(
-			&iamv1alpha2.GlobalRole{},
+			&iamv1beta1.GlobalRole{},
 			builder.WithPredicates(
 				predicate.ResourceVersionChangedPredicate{},
 			),

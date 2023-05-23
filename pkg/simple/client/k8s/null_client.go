@@ -21,8 +21,6 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 )
 
 type nullClient struct {
@@ -33,10 +31,6 @@ func NewNullClient() Client {
 }
 
 func (n nullClient) Kubernetes() kubernetes.Interface {
-	return nil
-}
-
-func (n nullClient) KubeSphere() kubesphere.Interface {
 	return nil
 }
 

@@ -19,14 +19,16 @@ package v1alpha2
 import (
 	"net/http"
 
+	"k8s.io/apimachinery/pkg/runtime"
+
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
-	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
+	apiserverruntime "kubesphere.io/kubesphere/pkg/apiserver/runtime"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/group"
@@ -41,7 +43,7 @@ const (
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
 
 func AddToContainer(container *restful.Container, im im.IdentityManagementInterface, am am.AccessManagementInterface, group group.GroupOperator, authorizer authorizer.Authorizer) error {
-	ws := runtime.NewWebService(GroupVersion)
+	ws := apiserverruntime.NewWebService(GroupVersion)
 	handler := newIAMHandler(im, am, group, authorizer)
 
 	ws.Route(ws.DELETE("/users/{user}").
@@ -59,17 +61,17 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		To(handler.DescribeUser).
 		Doc("Retrieve user details.").
 		Param(ws.PathParameter("user", "username")).
-		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.User{}))
+		Returns(http.StatusOK, api.StatusOK, iamv1beta1.User{}))
 	ws.Route(ws.GET("/users").
 		To(handler.ListUsers).
 		Doc("List all users.").
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []interface{}{iamv1alpha2.User{}}}))
+		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.User{}}}))
 
 	ws.Route(ws.GET("/users/{user}/loginrecords").
 		To(handler.ListUserLoginRecords).
 		Param(ws.PathParameter("user", "username of the user")).
 		Doc("List login records of the specified user.").
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []interface{}{iamv1alpha2.LoginRecord{}}}).
+		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.LoginRecord{}}}).
 		Metadata(restfulspec.KeyOpenAPITags, []string{constants.UserResourceTag}))
 
 	ws.Route(ws.GET("/workspaces/{workspace}/groups").
@@ -83,7 +85,7 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Param(ws.PathParameter("workspace", "workspace name")).
 		Param(ws.PathParameter("group", "group name")).
 		Doc("Retrieve group details.").
-		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.Group{}))
+		Returns(http.StatusOK, api.StatusOK, iamv1beta1.Group{}))
 
 	ws.Route(ws.DELETE("/workspaces/{workspace}/groups/{group}").
 		To(handler.DeleteGroup).
@@ -96,23 +98,23 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		To(handler.CreateGroup).
 		Param(ws.PathParameter("workspace", "workspace name")).
 		Doc("Create Group").
-		Reads(iamv1alpha2.Group{}).
-		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.Group{}))
+		Reads(iamv1beta1.Group{}).
+		Returns(http.StatusOK, api.StatusOK, iamv1beta1.Group{}))
 
 	ws.Route(ws.PUT("/workspaces/{workspace}/groups/{group}/").
 		To(handler.UpdateGroup).
 		Param(ws.PathParameter("workspace", "workspace name")).
 		Param(ws.PathParameter("group", "group name")).
 		Doc("Update Group").
-		Reads(iamv1alpha2.Group{}).
-		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.Group{}))
+		Reads(iamv1beta1.Group{}).
+		Returns(http.StatusOK, api.StatusOK, iamv1beta1.Group{}))
 
 	ws.Route(ws.PATCH("/workspaces/{workspace}/groups/{group}/").
 		To(handler.PatchGroup).
 		Param(ws.PathParameter("workspace", "workspace name")).
 		Doc("Patch Group").
-		Reads(iamv1alpha2.Group{}).
-		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.Group{}))
+		Reads(iamv1beta1.Group{}).
+		Returns(http.StatusOK, api.StatusOK, iamv1beta1.Group{}))
 
 	ws.Route(ws.GET("/workspaces/{workspace}/groupbindings").
 		To(handler.ListGroupBindings).
@@ -147,7 +149,7 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Param(ws.PathParameter("workspace", "workspace name")).
 		Doc("Create GroupBinding to add a user to the group").
 		Reads([]GroupMember{}).
-		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.GroupBinding{}))
+		Returns(http.StatusOK, api.StatusOK, iamv1beta1.GroupBinding{}))
 
 	container.Add(ws)
 	return nil

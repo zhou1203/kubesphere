@@ -21,7 +21,7 @@ import (
 
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/api/errors"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
@@ -95,7 +95,7 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 		return
 	}
 	for i, item := range result.Items {
-		user := item.(*iamv1alpha2.User)
+		user := item.(*iamv1beta1.User)
 		user = user.DeepCopy()
 		globalRole, err := h.am.GetGlobalRoleOfUser(user.Name)
 		// ignore not found error
@@ -111,11 +111,11 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 	response.WriteEntity(result)
 }
 
-func appendGlobalRoleAnnotation(user *iamv1alpha2.User, globalRole string) *iamv1alpha2.User {
+func appendGlobalRoleAnnotation(user *iamv1beta1.User, globalRole string) *iamv1beta1.User {
 	if user.Annotations == nil {
 		user.Annotations = make(map[string]string, 0)
 	}
-	user.Annotations[iamv1alpha2.GlobalRoleAnnotation] = globalRole
+	user.Annotations[iamv1beta1.GlobalRoleAnnotation] = globalRole
 	return user
 }
 
@@ -209,7 +209,7 @@ func (h *iamHandler) ListWorkspaceGroups(request *restful.Request, response *res
 
 func (h *iamHandler) CreateGroup(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
-	var group iamv1alpha2.Group
+	var group iamv1beta1.Group
 
 	err := request.ReadEntity(&group)
 	if err != nil {
@@ -256,7 +256,7 @@ func (h *iamHandler) UpdateGroup(request *restful.Request, response *restful.Res
 	workspaceName := request.PathParameter("workspace")
 	groupName := request.PathParameter("group")
 
-	var group iamv1alpha2.Group
+	var group iamv1beta1.Group
 	err := request.ReadEntity(&group)
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
@@ -282,7 +282,7 @@ func (h *iamHandler) PatchGroup(request *restful.Request, response *restful.Resp
 	workspaceName := request.PathParameter("workspace")
 	groupName := request.PathParameter("group")
 
-	var group iamv1alpha2.Group
+	var group iamv1beta1.Group
 	err := request.ReadEntity(&group)
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
@@ -346,7 +346,7 @@ func (h *iamHandler) CreateGroupBinding(request *restful.Request, response *rest
 		return
 	}
 
-	var results []iamv1alpha2.GroupBinding
+	var results []iamv1beta1.GroupBinding
 	for _, item := range members {
 		b, err := h.group.CreateGroupBinding(workspace, item.GroupName, item.UserName)
 		if err != nil {

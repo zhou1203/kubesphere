@@ -17,22 +17,23 @@ limitations under the License.
 package clusterclient
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"reflect"
 	"sync"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
+
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
-
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-	clusterinformer "kubesphere.io/kubesphere/pkg/client/informers/externalversions/cluster/v1alpha1"
-	clusterlister "kubesphere.io/kubesphere/pkg/client/listers/cluster/v1alpha1"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 )
 
@@ -44,29 +45,36 @@ type innerCluster struct {
 
 type clusterClients struct {
 	sync.RWMutex
-	clusterLister clusterlister.ClusterLister
-
-	// build a in memory cluster cache to speed things up
+	// build an in memory cluster cache to speed things up
 	innerClusters map[string]*innerCluster
+	cache         runtimecache.Cache
 }
 
-type ClusterClients interface {
+type Interface interface {
 	IsHostCluster(cluster *clusterv1alpha1.Cluster) bool
 	IsClusterReady(cluster *clusterv1alpha1.Cluster) bool
 	GetClusterKubeconfig(string) (string, error)
 	Get(string) (*clusterv1alpha1.Cluster, error)
 	GetInnerCluster(string) *innerCluster
 	GetKubernetesClientSet(string) (*kubernetes.Clientset, error)
-	GetKubeSphereClientSet(string) (*kubesphere.Clientset, error)
 }
 
-func NewClusterClient(clusterInformer clusterinformer.ClusterInformer) ClusterClients {
+func NewClusterClient(runtimeCache runtimecache.Cache) (Interface, error) {
 	c := &clusterClients{
 		innerClusters: make(map[string]*innerCluster),
-		clusterLister: clusterInformer.Lister(),
+		cache:         runtimeCache,
 	}
 
-	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	clusterInformer, err := runtimeCache.GetInformerForKind(context.Background(), schema.GroupVersionKind{
+		Group:   "cluster.kubesphere.io",
+		Version: "v1alpha1",
+		Kind:    "Cluster",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = clusterInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			c.addCluster(obj)
 		},
@@ -79,7 +87,12 @@ func NewClusterClient(clusterInformer clusterinformer.ClusterInformer) ClusterCl
 		},
 		DeleteFunc: c.removeCluster,
 	})
-	return c
+
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }
 
 func (c *clusterClients) removeCluster(obj interface{}) {
@@ -146,11 +159,13 @@ func (c *clusterClients) addCluster(obj interface{}) *innerCluster {
 }
 
 func (c *clusterClients) Get(clusterName string) (*clusterv1alpha1.Cluster, error) {
-	return c.clusterLister.Get(clusterName)
+	cluster := &clusterv1alpha1.Cluster{}
+	err := c.cache.Get(context.Background(), types.NamespacedName{Name: clusterName}, cluster)
+	return cluster, err
 }
 
 func (c *clusterClients) GetClusterKubeconfig(clusterName string) (string, error) {
-	cluster, err := c.clusterLister.Get(clusterName)
+	cluster, err := c.Get(clusterName)
 	if err != nil {
 		return "", err
 	}
@@ -162,7 +177,7 @@ func (c *clusterClients) GetInnerCluster(name string) *innerCluster {
 	defer c.RUnlock()
 	if inner, ok := c.innerClusters[name]; ok {
 		return inner
-	} else if cluster, err := c.clusterLister.Get(name); err == nil {
+	} else if cluster, err := c.Get(name); err == nil {
 		// double check if the cluster exists but is not cached
 		return c.addCluster(cluster)
 	}
@@ -178,23 +193,6 @@ func (c *clusterClients) IsHostCluster(cluster *clusterv1alpha1.Cluster) bool {
 		return true
 	}
 	return false
-}
-
-func (c *clusterClients) GetKubeSphereClientSet(name string) (*kubesphere.Clientset, error) {
-	kubeconfig, err := c.GetClusterKubeconfig(name)
-	if err != nil {
-		return nil, err
-	}
-	restConfig, err := newRestConfigFromString(kubeconfig)
-	if err != nil {
-		return nil, err
-	}
-	clientSet, err := kubesphere.NewForConfig(restConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return clientSet, nil
 }
 
 func (c *clusterClients) GetKubernetesClientSet(name string) (*kubernetes.Clientset, error) {

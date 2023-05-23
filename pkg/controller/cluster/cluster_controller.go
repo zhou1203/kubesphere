@@ -46,7 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/simple/client/multicluster"
@@ -514,7 +514,7 @@ func (r *Reconciler) updateKubeConfigExpirationDateCondition(cluster *clusterv1a
 
 // syncClusterMembers Sync granted clusters for users periodically
 func (r *Reconciler) syncClusterMembers(ctx context.Context, clusterClient kubernetes.Interface, cluster *clusterv1alpha1.Cluster) error {
-	users := &iamv1alpha2.UserList{}
+	users := &iamv1beta1.UserList{}
 	if err := r.List(ctx, users); err != nil {
 		return err
 	}
@@ -523,13 +523,13 @@ func (r *Reconciler) syncClusterMembers(ctx context.Context, clusterClient kuber
 	clusterName := cluster.Name
 	if cluster.DeletionTimestamp.IsZero() {
 		list, err := clusterClient.RbacV1().ClusterRoleBindings().List(context.Background(),
-			metav1.ListOptions{LabelSelector: iamv1alpha2.UserReferenceLabel})
+			metav1.ListOptions{LabelSelector: iamv1beta1.UserReferenceLabel})
 		if err != nil {
 			return fmt.Errorf("failed to list clusterrolebindings: %s", err)
 		}
 		for _, clusterRoleBinding := range list.Items {
 			for _, sub := range clusterRoleBinding.Subjects {
-				if sub.Kind == iamv1alpha2.ResourceKindUser {
+				if sub.Kind == iamv1beta1.ResourceKindUser {
 					grantedUsers.Insert(sub.Name)
 				}
 			}
@@ -538,7 +538,7 @@ func (r *Reconciler) syncClusterMembers(ctx context.Context, clusterClient kuber
 
 	for i := range users.Items {
 		user := &users.Items[i]
-		grantedClustersAnnotation := user.Annotations[iamv1alpha2.GrantedClustersAnnotation]
+		grantedClustersAnnotation := user.Annotations[iamv1beta1.GrantedClustersAnnotation]
 		var grantedClusters sets.Set[string]
 		if len(grantedClustersAnnotation) > 0 {
 			grantedClusters = sets.New(strings.Split(grantedClustersAnnotation, ",")...)
@@ -551,11 +551,11 @@ func (r *Reconciler) syncClusterMembers(ctx context.Context, clusterClient kuber
 			grantedClusters.Delete(clusterName)
 		}
 		grantedClustersAnnotation = strings.Join(grantedClusters.UnsortedList(), ",")
-		if user.Annotations[iamv1alpha2.GrantedClustersAnnotation] != grantedClustersAnnotation {
+		if user.Annotations[iamv1beta1.GrantedClustersAnnotation] != grantedClustersAnnotation {
 			if user.Annotations == nil {
 				user.Annotations = make(map[string]string, 0)
 			}
-			user.Annotations[iamv1alpha2.GrantedClustersAnnotation] = grantedClustersAnnotation
+			user.Annotations[iamv1beta1.GrantedClustersAnnotation] = grantedClustersAnnotation
 			if err := r.Update(ctx, user); err != nil {
 				return err
 			}

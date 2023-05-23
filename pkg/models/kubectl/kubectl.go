@@ -21,14 +21,15 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	coreinfomers "k8s.io/client-go/informers/core/v1"
-	"k8s.io/client-go/kubernetes"
 
-	iamv1alpha2informers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/iam/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models"
 )
@@ -38,17 +39,13 @@ type Interface interface {
 }
 
 type operator struct {
-	k8sClient    kubernetes.Interface
-	podInformer  coreinfomers.PodInformer
-	userInformer iamv1alpha2informers.UserInformer
+	client       runtimeclient.Client
 	kubectlImage string
 }
 
-func NewOperator(k8sClient kubernetes.Interface, podInformer coreinfomers.PodInformer, userInformer iamv1alpha2informers.UserInformer, kubectlImage string) Interface {
+func NewOperator(cacheClient runtimeclient.Client, kubectlImage string) Interface {
 	return &operator{
-		k8sClient:    k8sClient,
-		podInformer:  podInformer,
-		userInformer: userInformer,
+		client:       cacheClient,
 		kubectlImage: kubectlImage,
 	}
 }
@@ -64,7 +61,8 @@ func (o *operator) GetKubectlPod(username string) (models.PodInfo, error) {
 
 	podName := fmt.Sprintf("%s-%s", constants.KubectlPodNamePrefix, username)
 	if err := wait.PollImmediateUntil(2*time.Second, func() (bool, error) {
-		pod, err := o.k8sClient.CoreV1().Pods(constants.KubeSphereNamespace).Get(ctx, podName, metav1.GetOptions{})
+		pod := &corev1.Pod{}
+		err := o.client.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: podName}, pod)
 		if err != nil || !isPodReady(pod) {
 			return false, err
 		}
@@ -85,7 +83,7 @@ func isPodReady(pod *corev1.Pod) bool {
 }
 
 func (o *operator) createKubectlPod(username string) error {
-	if _, err := o.userInformer.Lister().Get(username); err != nil {
+	if err := o.client.Get(context.Background(), types.NamespacedName{Name: username}, &iamv1beta1.User{}); err != nil {
 		// ignore if user not exist
 		if errors.IsNotFound(err) {
 			return nil
@@ -126,7 +124,7 @@ func (o *operator) createKubectlPod(username string) error {
 		},
 	}
 
-	if _, err := o.k8sClient.CoreV1().Pods(constants.KubeSphereNamespace).Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
+	if err := o.client.Create(context.Background(), pod); err != nil {
 		if errors.IsAlreadyExists(err) {
 			return nil
 		}

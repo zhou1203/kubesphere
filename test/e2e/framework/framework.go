@@ -17,7 +17,7 @@ limitations under the License.
 package framework
 
 import (
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 	"k8s.io/apimachinery/pkg/runtime"
 	"kubesphere.io/client-go/kubesphere/scheme"
 	"kubesphere.io/client-go/rest"

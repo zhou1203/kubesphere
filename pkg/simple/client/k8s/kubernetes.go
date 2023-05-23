@@ -23,13 +23,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 )
 
 type Client interface {
 	Kubernetes() kubernetes.Interface
-	KubeSphere() kubesphere.Interface
 	ApiExtensions() apiextensionsclient.Interface
 	Master() string
 	Config() *rest.Config
@@ -38,9 +35,6 @@ type Client interface {
 type kubernetesClient struct {
 	// kubernetes client interface
 	k8s kubernetes.Interface
-
-	// generated clientset
-	ks kubesphere.Interface
 
 	apiextensions apiextensionsclient.Interface
 
@@ -61,7 +55,6 @@ func NewKubernetesClientOrDie(options *KubernetesOptions) Client {
 
 	k := &kubernetesClient{
 		k8s:           kubernetes.NewForConfigOrDie(config),
-		ks:            kubesphere.NewForConfigOrDie(config),
 		apiextensions: apiextensionsclient.NewForConfigOrDie(config),
 		master:        config.Host,
 		config:        config,
@@ -95,11 +88,6 @@ func NewKubernetesClient(options *KubernetesOptions) (Client, error) {
 		return nil, err
 	}
 
-	k.ks, err = kubesphere.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-
 	k.apiextensions, err = apiextensionsclient.NewForConfig(config)
 	if err != nil {
 		return nil, err
@@ -115,15 +103,11 @@ func (k *kubernetesClient) Kubernetes() kubernetes.Interface {
 	return k.k8s
 }
 
-func (k *kubernetesClient) KubeSphere() kubesphere.Interface {
-	return k.ks
-}
-
 func (k *kubernetesClient) ApiExtensions() apiextensionsclient.Interface {
 	return k.apiextensions
 }
 
-// master address used to generate kubeconfig for downloading
+// Master address used to generate kubeconfig for downloading
 func (k *kubernetesClient) Master() string {
 	return k.master
 }

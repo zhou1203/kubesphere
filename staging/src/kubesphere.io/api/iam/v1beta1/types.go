@@ -47,16 +47,10 @@ type AggregationRoleTemplates struct {
 }
 
 //+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
-//+kubebuilder:skipversion
 
-// SubjectAccessReview checks whether or not a user or group can perform an action.
+// SubjectAccessReview checks whether a user or group can perform an action.
 type SubjectAccessReview struct {
 	metav1.TypeMeta `json:",inline"`
-	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec holds information about the request being evaluated
 	Spec SubjectAccessReviewSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`

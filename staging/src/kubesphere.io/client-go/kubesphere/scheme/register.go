@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package scheme
 
 import (
@@ -28,7 +29,6 @@ import (
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 	gatewayv1alpha2 "kubesphere.io/api/gateway/v1alpha2"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	storagev1alpha1 "kubesphere.io/api/storage/v1alpha1"
@@ -44,7 +44,6 @@ var localSchemeBuilder = runtime.SchemeBuilder{
 	clusterv1alpha1.AddToScheme,
 	corev1alpha1.AddToScheme,
 	extensionsv1alpha1.AddToScheme,
-	iamv1alpha2.AddToScheme,
 	iamv1beta1.AddToScheme,
 	quotav1alpha2.AddToScheme,
 	storagev1alpha1.AddToScheme,

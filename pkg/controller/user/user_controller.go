@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/constants"
@@ -84,13 +84,13 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).
-		For(&iamv1alpha2.User{}).
+		For(&iamv1beta1.User{}).
 		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	logger := r.Logger.WithValues("user", req.NamespacedName)
-	user := &iamv1alpha2.User{}
+	user := &iamv1beta1.User{}
 	err := r.Get(ctx, req.NamespacedName, user)
 	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -174,7 +174,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	r.Recorder.Event(user, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 
 	// block user for AuthenticateRateLimiterDuration duration, after that put it back to the queue to unblock
-	if user.Status.State == iamv1alpha2.UserAuthLimitExceeded {
+	if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
 		return ctrl.Result{Requeue: true, RequeueAfter: r.AuthenticationOptions.AuthenticateRateLimiterDuration}, nil
 	}
 
@@ -182,7 +182,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 }
 
 // encryptPassword Encrypt and update the user password
-func (r *Reconciler) encryptPassword(ctx context.Context, user *iamv1alpha2.User) error {
+func (r *Reconciler) encryptPassword(ctx context.Context, user *iamv1beta1.User) error {
 	// password is not empty and not encrypted
 	if user.Spec.EncryptedPassword != "" && !isEncrypted(user.Spec.EncryptedPassword) {
 		password, err := encrypt(user.Spec.EncryptedPassword)
@@ -194,7 +194,7 @@ func (r *Reconciler) encryptPassword(ctx context.Context, user *iamv1alpha2.User
 		if user.Annotations == nil {
 			user.Annotations = make(map[string]string)
 		}
-		user.Annotations[iamv1alpha2.LastPasswordChangeTimeAnnotation] = time.Now().UTC().Format(time.RFC3339)
+		user.Annotations[iamv1beta1.LastPasswordChangeTimeAnnotation] = time.Now().UTC().Format(time.RFC3339)
 		// ensure plain text password won't be kept anywhere
 		delete(user.Annotations, corev1.LastAppliedConfigAnnotation)
 		err = r.Update(ctx, user, &client.UpdateOptions{})
@@ -206,7 +206,7 @@ func (r *Reconciler) encryptPassword(ctx context.Context, user *iamv1alpha2.User
 }
 
 // nolint
-func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, user *iamv1alpha2.User) error {
+func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, user *iamv1beta1.User) error {
 	if user.Labels[constants.KubefedManagedLabel] != "false" {
 		if user.Labels == nil {
 			user.Labels = make(map[string]string, 0)
@@ -221,38 +221,38 @@ func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, user *iam
 	return nil
 }
 
-func (r *Reconciler) deleteGroupBindings(ctx context.Context, user *iamv1alpha2.User) error {
+func (r *Reconciler) deleteGroupBindings(ctx context.Context, user *iamv1beta1.User) error {
 	// groupBindings that created by kubeshpere will be deleted directly.
-	groupBindings := &iamv1alpha2.GroupBinding{}
-	return r.Client.DeleteAllOf(ctx, groupBindings, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name})
+	groupBindings := &iamv1beta1.GroupBinding{}
+	return r.Client.DeleteAllOf(ctx, groupBindings, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 }
 
-func (r *Reconciler) deleteRoleBindings(ctx context.Context, user *iamv1alpha2.User) error {
+func (r *Reconciler) deleteRoleBindings(ctx context.Context, user *iamv1beta1.User) error {
 	if len(user.Name) > validation.LabelValueMaxLength {
 		// ignore invalid label value error
 		return nil
 	}
 
-	globalRoleBinding := &iamv1alpha2.GlobalRoleBinding{}
-	err := r.Client.DeleteAllOf(ctx, globalRoleBinding, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name})
+	globalRoleBinding := &iamv1beta1.GlobalRoleBinding{}
+	err := r.Client.DeleteAllOf(ctx, globalRoleBinding, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 	if err != nil {
 		return err
 	}
 
-	workspaceRoleBinding := &iamv1alpha2.WorkspaceRoleBinding{}
-	err = r.Client.DeleteAllOf(ctx, workspaceRoleBinding, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name})
+	workspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{}
+	err = r.Client.DeleteAllOf(ctx, workspaceRoleBinding, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 	if err != nil {
 		return err
 	}
 
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
-	err = r.Client.DeleteAllOf(ctx, clusterRoleBinding, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name})
+	err = r.Client.DeleteAllOf(ctx, clusterRoleBinding, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 	if err != nil {
 		return err
 	}
 
 	roleBindingList := &rbacv1.RoleBindingList{}
-	err = r.Client.List(ctx, roleBindingList, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name})
+	err = r.Client.List(ctx, roleBindingList, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 	if err != nil {
 		return err
 	}
@@ -266,24 +266,24 @@ func (r *Reconciler) deleteRoleBindings(ctx context.Context, user *iamv1alpha2.U
 	return nil
 }
 
-func (r *Reconciler) deleteLoginRecords(ctx context.Context, user *iamv1alpha2.User) error {
-	loginRecord := &iamv1alpha2.LoginRecord{}
-	return r.Client.DeleteAllOf(ctx, loginRecord, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name})
+func (r *Reconciler) deleteLoginRecords(ctx context.Context, user *iamv1beta1.User) error {
+	loginRecord := &iamv1beta1.LoginRecord{}
+	return r.Client.DeleteAllOf(ctx, loginRecord, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 }
 
 // syncUserStatus Update the user status
-func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1alpha2.User) error {
+func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) error {
 	// skip status sync if the user is disabled
-	if user.Status.State == iamv1alpha2.UserDisabled {
+	if user.Status.State == iamv1beta1.UserDisabled {
 		return nil
 	}
 
 	if user.Spec.EncryptedPassword == "" {
-		if user.Labels[iamv1alpha2.IdentifyProviderLabel] != "" {
+		if user.Labels[iamv1beta1.IdentifyProviderLabel] != "" {
 			// mapped user from other identity provider always active until disabled
-			if user.Status.State != iamv1alpha2.UserActive {
-				user.Status = iamv1alpha2.UserStatus{
-					State:              iamv1alpha2.UserActive,
+			if user.Status.State != iamv1beta1.UserActive {
+				user.Status = iamv1beta1.UserStatus{
+					State:              iamv1beta1.UserActive,
 					LastTransitionTime: &metav1.Time{Time: time.Now()},
 				}
 				err := r.Update(ctx, user, &client.UpdateOptions{})
@@ -293,9 +293,9 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1alpha2.User)
 			}
 		} else {
 			// empty password is not allowed for normal user
-			if user.Status.State != iamv1alpha2.UserDisabled {
-				user.Status = iamv1alpha2.UserStatus{
-					State:              iamv1alpha2.UserDisabled,
+			if user.Status.State != iamv1beta1.UserDisabled {
+				user.Status = iamv1beta1.UserStatus{
+					State:              iamv1beta1.UserDisabled,
 					LastTransitionTime: &metav1.Time{Time: time.Now()},
 				}
 				err := r.Update(ctx, user, &client.UpdateOptions{})
@@ -310,8 +310,8 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1alpha2.User)
 
 	// becomes active after password encrypted
 	if user.Status.State == "" && isEncrypted(user.Spec.EncryptedPassword) {
-		user.Status = iamv1alpha2.UserStatus{
-			State:              iamv1alpha2.UserActive,
+		user.Status = iamv1beta1.UserStatus{
+			State:              iamv1beta1.UserActive,
 			LastTransitionTime: &metav1.Time{Time: time.Now()},
 		}
 		err := r.Update(ctx, user, &client.UpdateOptions{})
@@ -321,12 +321,12 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1alpha2.User)
 	}
 
 	// blocked user, check if need to unblock user
-	if user.Status.State == iamv1alpha2.UserAuthLimitExceeded {
+	if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
 		if user.Status.LastTransitionTime != nil &&
 			user.Status.LastTransitionTime.Add(r.AuthenticationOptions.AuthenticateRateLimiterDuration).Before(time.Now()) {
 			// unblock user
-			user.Status = iamv1alpha2.UserStatus{
-				State:              iamv1alpha2.UserActive,
+			user.Status = iamv1beta1.UserStatus{
+				State:              iamv1beta1.UserActive,
 				LastTransitionTime: &metav1.Time{Time: time.Now()},
 			}
 			err := r.Update(ctx, user, &client.UpdateOptions{})
@@ -337,9 +337,9 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1alpha2.User)
 		}
 	}
 
-	records := &iamv1alpha2.LoginRecordList{}
+	records := &iamv1beta1.LoginRecordList{}
 	// normal user, check user's login records see if we need to block
-	err := r.List(ctx, records, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name})
+	err := r.List(ctx, records, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -359,8 +359,8 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1alpha2.User)
 
 	// block user if failed login attempts exceeds maximum tries setting
 	if failedLoginAttempts >= r.AuthenticationOptions.AuthenticateRateLimiterMaxTries {
-		user.Status = iamv1alpha2.UserStatus{
-			State:              iamv1alpha2.UserAuthLimitExceeded,
+		user.Status = iamv1beta1.UserStatus{
+			State:              iamv1beta1.UserAuthLimitExceeded,
 			Reason:             fmt.Sprintf("Failed login attempts exceed %d in last %s", failedLoginAttempts, r.AuthenticationOptions.AuthenticateRateLimiterDuration),
 			LastTransitionTime: &metav1.Time{Time: time.Now()},
 		}

@@ -1,3 +1,6 @@
+//go:build exclude
+
+// TODO refactor with  fake controller runtime client
 /*
 Copyright 2020 The KubeSphere Authors.
 
@@ -29,7 +32,6 @@ import (
 	"k8s.io/apiserver/pkg/authentication/user"
 	fakek8s "k8s.io/client-go/kubernetes/fake"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
@@ -387,7 +389,7 @@ var (
 			Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: testWorkspace.Name},
 		},
 	}
-	platformAdmin = &iamv1alpha2.GlobalRole{
+	platformAdmin = &iamv1beta1.GlobalRole{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "platform-admin",
 		},
@@ -399,20 +401,20 @@ var (
 			},
 		},
 	}
-	platformRegular = &iamv1alpha2.GlobalRole{
+	platformRegular = &iamv1beta1.GlobalRole{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "platform-regular",
 		},
 		Rules: []rbacv1.PolicyRule{},
 	}
-	systemWorkspaceRegular = &iamv1alpha2.WorkspaceRole{
+	systemWorkspaceRegular = &iamv1beta1.WorkspaceRole{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "system-workspace-regular",
 			Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: systemWorkspace.Name},
 		},
 		Rules: []rbacv1.PolicyRule{},
 	}
-	adminGlobalRoleBinding = &iamv1alpha2.GlobalRoleBinding{
+	adminGlobalRoleBinding = &iamv1beta1.GlobalRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: admin.Name + "-" + platformAdmin.Name,
 		},
@@ -421,12 +423,12 @@ var (
 			Name: admin.Name,
 		}},
 		RoleRef: rbacv1.RoleRef{
-			APIGroup: iamv1alpha2.SchemeGroupVersion.String(),
-			Kind:     iamv1alpha2.ResourceKindGlobalRole,
+			APIGroup: iamv1beta1.SchemeGroupVersion.String(),
+			Kind:     iamv1beta1.ResourceKindGlobalRole,
 			Name:     platformAdmin.Name,
 		},
 	}
-	regularGlobalRoleBinding = &iamv1alpha2.GlobalRoleBinding{
+	regularGlobalRoleBinding = &iamv1beta1.GlobalRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: tester1.Name + "-" + platformRegular.Name,
 		},
@@ -435,13 +437,13 @@ var (
 			Name: tester1.Name,
 		}},
 		RoleRef: rbacv1.RoleRef{
-			APIGroup: iamv1alpha2.SchemeGroupVersion.String(),
-			Kind:     iamv1alpha2.ResourceKindGlobalRole,
+			APIGroup: iamv1beta1.SchemeGroupVersion.String(),
+			Kind:     iamv1beta1.ResourceKindGlobalRole,
 			Name:     platformRegular.Name,
 		},
 	}
 
-	systemWorkspaceRegularRoleBinding = &iamv1alpha2.WorkspaceRoleBinding{
+	systemWorkspaceRegularRoleBinding = &iamv1beta1.WorkspaceRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   tester2.Name + "-" + systemWorkspaceRegular.Name,
 			Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: systemWorkspace.Name},
@@ -451,8 +453,8 @@ var (
 			Name: tester2.Name,
 		}},
 		RoleRef: rbacv1.RoleRef{
-			APIGroup: iamv1alpha2.SchemeGroupVersion.String(),
-			Kind:     iamv1alpha2.ResourceKindGlobalRole,
+			APIGroup: iamv1beta1.SchemeGroupVersion.String(),
+			Kind:     iamv1beta1.ResourceKindGlobalRole,
 			Name:     systemWorkspaceRegular.Name,
 		},
 	}

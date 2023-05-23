@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 
@@ -22,16 +21,14 @@ const labelResourceServed = "kubesphere.io/resource-served"
 
 // Note that: If delete the crd at the cluster when is running, the client.cache does not return err but empty result
 
-func New(client client.Client, cache cache.Cache) ResourceManager {
+func New(cacheClient client.Client) ResourceManager {
 	return &resourceManager{
-		client: client,
-		cache:  cache,
+		client: cacheClient,
 	}
 }
 
 type resourceManager struct {
 	client client.Client
-	cache  cache.Cache
 }
 
 func (h *resourceManager) GetResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (client.Object, error) {
@@ -179,7 +176,7 @@ func (h *resourceManager) IsServed(gvr schema.GroupVersionResource) (bool, error
 	}
 
 	crd := &extv1.CustomResourceDefinition{}
-	if err := h.cache.Get(context.Background(), client.ObjectKey{Name: gvr.GroupResource().String()}, crd); err != nil {
+	if err := h.client.Get(context.Background(), client.ObjectKey{Name: gvr.GroupResource().String()}, crd); err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
@@ -194,7 +191,7 @@ func (h *resourceManager) IsServed(gvr schema.GroupVersionResource) (bool, error
 }
 
 func (h *resourceManager) Get(ctx context.Context, namespace, name string, object client.Object) error {
-	return h.cache.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, object)
+	return h.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, object)
 }
 
 func (h *resourceManager) List(ctx context.Context, namespace string, query *query.Query, list client.ObjectList) error {
@@ -203,7 +200,7 @@ func (h *resourceManager) List(ctx context.Context, namespace string, query *que
 		Namespace:     namespace,
 	}
 
-	err := h.cache.List(ctx, list, listOpt)
+	err := h.client.List(ctx, list, listOpt)
 	if err != nil {
 		return err
 	}

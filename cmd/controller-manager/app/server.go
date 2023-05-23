@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	"kubesphere.io/kubesphere/pkg/utils/metrics"
+
 	"github.com/google/gops/agent"
 	"github.com/spf13/cobra"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -36,10 +38,8 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/user"
-	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/utils/metrics"
 	"kubesphere.io/kubesphere/pkg/utils/term"
 	"kubesphere.io/kubesphere/pkg/version"
 )
@@ -150,11 +150,6 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 		return err
 	}
 
-	informerFactory := informers.NewInformerFactories(
-		kubernetesClient.Kubernetes(),
-		kubernetesClient.KubeSphere(),
-		kubernetesClient.ApiExtensions())
-
 	mgrOptions := manager.Options{
 		Scheme:  scheme.Scheme,
 		CertDir: s.WebhookCertDir,
@@ -185,17 +180,9 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 
 	// TODO(jeff): refactor config with CRD
 	// install all controllers
-	if err = addAllControllers(mgr,
-		kubernetesClient,
-		informerFactory,
-		s,
-		ctx.Done()); err != nil {
+	if err = addAllControllers(mgr, kubernetesClient, s); err != nil {
 		klog.Fatalf("unable to register controllers to the manager: %v", err)
 	}
-
-	// Start cache data after all informer is registered
-	klog.V(0).Info("Starting cache resource from apiserver...")
-	informerFactory.Start(ctx.Done())
 
 	// Setup webhooks
 	klog.V(2).Info("setting up webhook server")
@@ -205,7 +192,7 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	if s.IsControllerEnabled("cluster") {
 		hookServer.Register("/validate-cluster-kubesphere-io-v1alpha1", &webhook.Admission{Handler: &cluster.ValidatingHandler{Client: mgr.GetClient()}})
 	}
-	hookServer.Register("/validate-email-iam-kubesphere-io-v1alpha2", &webhook.Admission{Handler: &user.EmailValidator{Client: mgr.GetClient()}})
+	hookServer.Register("/validate-email-iam-kubesphere-io-v1beta1", &webhook.Admission{Handler: &user.EmailValidator{Client: mgr.GetClient()}})
 
 	resourceQuotaAdmission, err := quota.NewResourceQuotaAdmission(mgr.GetClient(), mgr.GetScheme())
 	if err != nil {
@@ -217,7 +204,9 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	klog.V(2).Info("registering metrics to the webhook server")
 	// Add an extra metric endpoint, so we can use the same metric definition with ks-apiserver
 	// /kapis/metrics is independent of controller-manager's built-in /metrics
-	mgr.AddMetricsExtraHandler("/metrics", metrics.Handler())
+	if err := mgr.AddMetricsExtraHandler("/metrics", metrics.Handler()); err != nil {
+		klog.Fatalf("unable to create metrics endpoint: %v", err)
+	}
 
 	klog.V(0).Info("Starting the controllers.")
 	if err = mgr.Start(ctx); err != nil {

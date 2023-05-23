@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
@@ -131,20 +131,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) initWorkspaceRoles(ctx context.Context, logger logr.Logger, workspace *tenantv1alpha2.WorkspaceTemplate) error {
-	var templates iamv1alpha2.RoleBaseList
+	var templates iamv1beta1.RoleBaseList
 	if err := r.List(ctx, &templates); err != nil {
 		logger.Error(err, "list role base failed")
 		return err
 	}
 	for _, template := range templates.Items {
-		var expected iamv1alpha2.WorkspaceRole
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&expected); err == nil && expected.Kind == iamv1alpha2.ResourceKindWorkspaceRole {
+		var expected iamv1beta1.WorkspaceRole
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&expected); err == nil && expected.Kind == iamv1beta1.ResourceKindWorkspaceRole {
 			expected.Name = fmt.Sprintf("%s-%s", workspace.Name, expected.Name)
 			if expected.Labels == nil {
 				expected.Labels = make(map[string]string)
 			}
 			expected.Labels[tenantv1alpha1.WorkspaceLabel] = workspace.Name
-			workspaceRole := &iamv1alpha2.WorkspaceRole{}
+			workspaceRole := &iamv1beta1.WorkspaceRole{}
 			if err := r.Get(ctx, types.NamespacedName{Name: expected.Name}, workspaceRole); err != nil {
 				if errors.IsNotFound(err) {
 					logger.V(4).Info("create workspace role", "workspacerole", expected.Name)
@@ -183,7 +183,7 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, logger logr.Log
 		return nil
 	}
 
-	var user iamv1alpha2.User
+	var user iamv1beta1.User
 	if err := r.Get(ctx, types.NamespacedName{Name: manager}, &user); err != nil {
 		return client.IgnoreNotFound(err)
 	}
@@ -194,7 +194,7 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, logger logr.Log
 	}
 
 	workspaceAdminRoleName := fmt.Sprintf("%s-admin", workspace.Name)
-	managerRoleBinding := &iamv1alpha2.WorkspaceRoleBinding{
+	managerRoleBinding := &iamv1beta1.WorkspaceRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: workspaceAdminRoleName,
 		},
@@ -225,16 +225,16 @@ func (r *Reconciler) deleteNamespacesInWorkspace(ctx context.Context, template *
 	return nil
 }
 
-func workspaceRoleBindingChanger(workspaceRoleBinding *iamv1alpha2.WorkspaceRoleBinding, workspace, username, workspaceRoleName string) controllerutil.MutateFn {
+func workspaceRoleBindingChanger(workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding, workspace, username, workspaceRoleName string) controllerutil.MutateFn {
 	return func() error {
 		workspaceRoleBinding.Labels = map[string]string{
-			tenantv1alpha1.WorkspaceLabel:  workspace,
-			iamv1alpha2.UserReferenceLabel: username,
+			tenantv1alpha1.WorkspaceLabel: workspace,
+			iamv1beta1.UserReferenceLabel: username,
 		}
 
 		workspaceRoleBinding.RoleRef = rbacv1.RoleRef{
-			APIGroup: iamv1alpha2.SchemeGroupVersion.Group,
-			Kind:     iamv1alpha2.ResourceKindWorkspaceRole,
+			APIGroup: iamv1beta1.SchemeGroupVersion.Group,
+			Kind:     iamv1beta1.ResourceKindWorkspaceRole,
 			Name:     workspaceRoleName,
 		}
 

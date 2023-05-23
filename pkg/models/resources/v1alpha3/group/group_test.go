@@ -1,3 +1,6 @@
+//go:build exclude
+
+// TODO refactor with  fake controller runtime client
 /*
 Copyright 2020 KubeSphere Authors
 

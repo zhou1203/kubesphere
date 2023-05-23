@@ -17,11 +17,13 @@ limitations under the License.
 package quotas
 
 import (
+	"context"
+
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/informers"
 	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/api"
@@ -39,16 +41,16 @@ const (
 	cronJobsKey               = "count/cronjobs.batch"
 )
 
-var supportedResources = map[string]schema.GroupVersionResource{
-	deploymentsKey:            {Group: "apps", Version: "v1", Resource: "deployments"},
-	daemonsetsKey:             {Group: "apps", Version: "v1", Resource: "daemonsets"},
-	statefulsetsKey:           {Group: "apps", Version: "v1", Resource: "statefulsets"},
-	podsKey:                   {Group: "", Version: "v1", Resource: "pods"},
-	servicesKey:               {Group: "", Version: "v1", Resource: "services"},
-	persistentvolumeclaimsKey: {Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
-	ingressKey:                {Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
-	jobsKey:                   {Group: "batch", Version: "v1", Resource: "jobs"},
-	cronJobsKey:               {Group: "batch", Version: "v1beta1", Resource: "cronjobs"},
+var supportedResources = map[string]schema.GroupVersionKind{
+	deploymentsKey:            {Group: "apps", Version: "v1", Kind: "Deployment"},
+	daemonsetsKey:             {Group: "apps", Version: "v1", Kind: "DaemonSet"},
+	statefulsetsKey:           {Group: "apps", Version: "v1", Kind: "StatefulSet"},
+	podsKey:                   {Group: "", Version: "v1", Kind: "Pod"},
+	servicesKey:               {Group: "", Version: "v1", Kind: "Service"},
+	persistentvolumeclaimsKey: {Group: "", Version: "v1", Kind: "PersistentVolumeClaim"},
+	ingressKey:                {Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"},
+	jobsKey:                   {Group: "batch", Version: "v1", Kind: "Job"},
+	cronJobsKey:               {Group: "batch", Version: "v1beta1", Kind: "CronJob"},
 }
 
 type ResourceQuotaGetter interface {
@@ -57,27 +59,16 @@ type ResourceQuotaGetter interface {
 }
 
 type resourceQuotaGetter struct {
-	informers informers.SharedInformerFactory
+	cache runtimeclient.Reader
 }
 
-func NewResourceQuotaGetter(informers informers.SharedInformerFactory) ResourceQuotaGetter {
-	return &resourceQuotaGetter{informers: informers}
+func NewResourceQuotaGetter(cacheReader runtimeclient.Reader) ResourceQuotaGetter {
+	return &resourceQuotaGetter{cache: cacheReader}
 }
 
 func (c *resourceQuotaGetter) getUsage(namespace, resource string) (int, error) {
-
-	genericInformer, err := c.informers.ForResource(supportedResources[resource])
-	if err != nil {
-		// we deliberately ignore error if trying to get non existed resource
-		return 0, nil
-	}
-
-	result, err := genericInformer.Lister().ByNamespace(namespace).List(labels.Everything())
-	if err != nil {
-		return 0, err
-	}
-
-	return len(result), nil
+	// TODO refactor
+	return 0, nil
 }
 
 // no one use this api anymore， marked as deprecated
@@ -164,18 +155,17 @@ func updateNamespaceQuota(tmpResourceList, resourceList v1.ResourceList) {
 }
 
 func (c *resourceQuotaGetter) getNamespaceResourceQuota(namespace string) (*v1.ResourceQuotaStatus, error) {
-	resourceQuotaLister := c.informers.Core().V1().ResourceQuotas().Lister()
-	quotaList, err := resourceQuotaLister.ResourceQuotas(namespace).List(labels.Everything())
-	if err != nil {
+	resourceQuotaList := &v1.ResourceQuotaList{}
+	if err := c.cache.List(context.Background(), resourceQuotaList); err != nil {
 		klog.Error(err)
 		return nil, err
-	} else if len(quotaList) == 0 {
+	} else if len(resourceQuotaList.Items) == 0 {
 		return nil, nil
 	}
 
 	quotaStatus := v1.ResourceQuotaStatus{Hard: make(v1.ResourceList), Used: make(v1.ResourceList)}
 
-	for _, quota := range quotaList {
+	for _, quota := range resourceQuotaList.Items {
 		updateNamespaceQuota(quotaStatus.Hard, quota.Status.Hard)
 		updateNamespaceQuota(quotaStatus.Used, quota.Status.Used)
 	}

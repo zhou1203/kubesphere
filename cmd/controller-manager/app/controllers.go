@@ -46,7 +46,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
 	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
-	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 )
 
@@ -83,14 +82,7 @@ var allControllers = []string{
 }
 
 // setup all available controllers one by one
-func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory informers.InformerFactory,
-	cmOptions *options.KubeSphereControllerManagerOptions,
-	stopCh <-chan struct{}) error {
-
-	// begin init necessary informers
-	kubernetesInformer := informerFactory.KubernetesSharedInformerFactory()
-	// end informers
-
+func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *options.KubeSphereControllerManagerOptions) error {
 	// begin init necessary clients
 
 	// TODO refactor
@@ -180,7 +172,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		resourceQuotaReconciler := &quota.Reconciler{
 			MaxConcurrentReconciles: quota.DefaultMaxConcurrentReconciles,
 			ResyncPeriod:            quota.DefaultResyncPeriod,
-			InformerFactory:         informerFactory.KubernetesSharedInformerFactory(),
 		}
 		addControllerWithSetup(mgr, "resourcequota", resourceQuotaReconciler)
 	}
@@ -205,7 +196,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "csr" controller
 	if cmOptions.IsControllerEnabled("csr") {
-		csrController := certificatesigningrequest.NewReconciler(client.Kubernetes(), kubernetesInformer.Core().V1().ConfigMaps().Lister(), client.Config())
+		csrController := certificatesigningrequest.NewReconciler(client.Config())
 		addControllerWithSetup(mgr, "csr", csrController)
 	}
 

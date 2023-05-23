@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 )
@@ -79,7 +79,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if _, ok := sa.Annotations[iamv1alpha2.RoleAnnotation]; ok && sa.ObjectMeta.DeletionTimestamp.IsZero() {
+	if _, ok := sa.Annotations[iamv1beta1.RoleAnnotation]; ok && sa.ObjectMeta.DeletionTimestamp.IsZero() {
 		if err := r.CreateOrUpdateRoleBinding(ctx, logger, sa); err != nil {
 			r.recorder.Event(sa, corev1.EventTypeWarning, constants.FailedSynced, err.Error())
 			return ctrl.Result{}, err
@@ -90,7 +90,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) CreateOrUpdateRoleBinding(ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount) error {
-	roleName := sa.Annotations[iamv1alpha2.RoleAnnotation]
+	roleName := sa.Annotations[iamv1beta1.RoleAnnotation]
 	if roleName == "" {
 		return nil
 	}
@@ -101,17 +101,17 @@ func (r *Reconciler) CreateOrUpdateRoleBinding(ctx context.Context, logger logr.
 
 	// Delete existing rolebindings.
 	saRoleBinding := &rbacv1.RoleBinding{}
-	_ = r.Client.DeleteAllOf(ctx, saRoleBinding, client.InNamespace(sa.Namespace), client.MatchingLabels{iamv1alpha2.ServiceAccountReferenceLabel: sa.Name})
+	_ = r.Client.DeleteAllOf(ctx, saRoleBinding, client.InNamespace(sa.Namespace), client.MatchingLabels{iamv1beta1.ServiceAccountReferenceLabel: sa.Name})
 
 	saRoleBinding = &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: fmt.Sprintf("%s-%s-", sa.Name, roleName),
-			Labels:       map[string]string{iamv1alpha2.ServiceAccountReferenceLabel: sa.Name},
+			Labels:       map[string]string{iamv1beta1.ServiceAccountReferenceLabel: sa.Name},
 			Namespace:    sa.Namespace,
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
-			Kind:     iamv1alpha2.ResourceKindRole,
+			Kind:     iamv1beta1.ResourceKindRole,
 			Name:     roleName,
 		},
 		Subjects: []rbacv1.Subject{

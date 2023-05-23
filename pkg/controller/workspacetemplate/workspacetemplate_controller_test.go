@@ -20,7 +20,7 @@ import (
 	"context"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 )
@@ -57,7 +57,7 @@ var _ = Describe("WorkspaceTemplate", func() {
 		err := reconciler.Create(context.Background(), &workspaceAdmin)
 		Expect(err).NotTo(HaveOccurred())
 
-		admin := iamv1alpha2.User{ObjectMeta: metav1.ObjectMeta{Name: "admin"}}
+		admin := iamv1beta1.User{ObjectMeta: metav1.ObjectMeta{Name: "admin"}}
 		err = reconciler.Create(context.Background(), &admin)
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -104,7 +104,7 @@ var _ = Describe("WorkspaceTemplate", func() {
 			// List workspace roles
 			By("Expecting to create workspace role successfully")
 			Eventually(func() bool {
-				f := &iamv1alpha2.WorkspaceRoleList{}
+				f := &iamv1beta1.WorkspaceRoleList{}
 				reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: key.Name})})
 				return len(f.Items) == 1
 			}, timeout, interval).Should(BeTrue())
@@ -121,7 +121,7 @@ var _ = Describe("WorkspaceTemplate", func() {
 			// List workspace role bindings
 			By("Expecting to create workspace manager role binding successfully")
 			Eventually(func() bool {
-				f := &iamv1alpha2.WorkspaceRoleBindingList{}
+				f := &iamv1beta1.WorkspaceRoleBindingList{}
 				reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: key.Name})})
 				return len(f.Items) == 1
 			}, timeout, interval).Should(BeTrue())
@@ -142,8 +142,8 @@ var _ = Describe("WorkspaceTemplate", func() {
 	})
 })
 
-func newWorkspaceAdmin() iamv1alpha2.RoleBase {
-	return iamv1alpha2.RoleBase{
+func newWorkspaceAdmin() iamv1beta1.RoleBase {
+	return iamv1beta1.RoleBase{
 		ObjectMeta: metav1.ObjectMeta{Name: "workspace-admin"},
 		Role: runtime.RawExtension{
 			Raw: []byte(`{

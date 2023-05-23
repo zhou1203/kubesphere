@@ -23,21 +23,18 @@ import (
 	"net/http"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/emicklei/go-restful/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	k8sinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	v1 "k8s.io/client-go/listers/core/v1"
-
 	"kubesphere.io/api/cluster/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	clusterv1alpha1 "kubesphere.io/kubesphere/pkg/api/cluster/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/apiserver/config"
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-	"kubesphere.io/kubesphere/pkg/client/informers/externalversions"
-	clusterlister "kubesphere.io/kubesphere/pkg/client/listers/cluster/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/version"
@@ -46,16 +43,12 @@ import (
 const defaultTimeout = 10 * time.Second
 
 type handler struct {
-	ksclient        kubesphere.Interface
-	clusterLister   clusterlister.ClusterLister
-	configMapLister v1.ConfigMapLister
+	client runtimeclient.Client
 }
 
-func newHandler(ksclient kubesphere.Interface, k8sInformers k8sinformers.SharedInformerFactory, ksInformers externalversions.SharedInformerFactory) *handler {
+func newHandler(cacheClient runtimeclient.Client) *handler {
 	return &handler{
-		ksclient:        ksclient,
-		clusterLister:   ksInformers.Cluster().V1alpha1().Clusters().Lister(),
-		configMapLister: k8sInformers.Core().V1().ConfigMaps().Lister(),
+		client: cacheClient,
 	}
 }
 
@@ -68,12 +61,12 @@ func (h *handler) updateKubeConfig(request *restful.Request, response *restful.R
 	}
 
 	clusterName := request.PathParameter("cluster")
-	obj, err := h.clusterLister.Get(clusterName)
-	if err != nil {
+
+	cluster := &v1alpha1.Cluster{}
+	if err := h.client.Get(context.Background(), types.NamespacedName{Name: clusterName}, cluster); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
 	}
-	cluster := obj.DeepCopy()
 	if _, ok := cluster.Labels[v1alpha1.HostCluster]; ok {
 		api.HandleBadRequest(response, request, fmt.Errorf("update kubeconfig of the host cluster is not allowed"))
 		return
@@ -131,8 +124,9 @@ func (h *handler) updateKubeConfig(request *restful.Request, response *restful.R
 		return
 	}
 
+	cluster = cluster.DeepCopy()
 	cluster.Spec.Connection.KubeConfig = req.KubeConfig
-	if _, err = h.ksclient.ClusterV1alpha1().Clusters().Update(context.TODO(), cluster, metav1.UpdateOptions{}); err != nil {
+	if err = h.client.Update(context.TODO(), cluster); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
 	}
@@ -186,14 +180,14 @@ func (h *handler) validateKubeConfig(clusterName string, clientSet kubernetes.In
 		return err
 	}
 
-	clusters, err := h.clusterLister.List(labels.Everything())
-	if err != nil {
+	clusterList := &v1alpha1.ClusterList{}
+	if err := h.client.List(context.Background(), clusterList); err != nil {
 		return err
 	}
 
 	// clusters with the exactly same kube-system namespace UID considered to be one
 	// MUST not import the same cluster twice
-	for _, existedCluster := range clusters {
+	for _, existedCluster := range clusterList.Items {
 		if existedCluster.Status.UID == kubeSystem.UID {
 			return fmt.Errorf("cluster %s already exists (%s), MUST not import the same cluster twice", clusterName, existedCluster.Name)
 		}
@@ -251,9 +245,12 @@ func (h *handler) getMemberClusterConfig(clientSet kubernetes.Interface) (*confi
 
 // getHostClusterConfig returns KubeSphere running config from host cluster ConfigMap
 func (h *handler) getHostClusterConfig() (*config.Config, error) {
-	hostCm, err := h.configMapLister.ConfigMaps(constants.KubeSphereNamespace).Get(constants.KubeSphereConfigName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get host cluster %s/configmap/%s, err: %s", constants.KubeSphereNamespace, constants.KubeSphereConfigName, err)
+	hostCm := &v1.ConfigMap{}
+
+	if err := h.client.Get(context.Background(),
+		types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: constants.KubeSphereConfigName}, hostCm); err != nil {
+		return nil, fmt.Errorf("failed to get host cluster %s/configmap/%s, err: %s",
+			constants.KubeSphereNamespace, constants.KubeSphereConfigName, err)
 	}
 
 	return config.GetFromConfigMap(hostCm)

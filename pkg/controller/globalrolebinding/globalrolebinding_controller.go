@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/scheme"
@@ -46,12 +46,12 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	globalRoleBinding := &iamv1alpha2.GlobalRoleBinding{}
+	globalRoleBinding := &iamv1beta1.GlobalRoleBinding{}
 	if err := r.Get(ctx, req.NamespacedName, globalRoleBinding); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if globalRoleBinding.RoleRef.Name == iamv1alpha2.PlatformAdmin {
+	if globalRoleBinding.RoleRef.Name == iamv1beta1.PlatformAdmin {
 		if err := r.assignClusterAdminRole(ctx, globalRoleBinding); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -67,7 +67,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBinding *iamv1alpha2.GlobalRoleBinding) error {
+func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
 	username := findExpectUsername(globalRoleBinding)
 	if username == "" {
 		return nil
@@ -76,13 +76,13 @@ func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBindi
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("%s-%s", username, iamv1alpha2.ClusterAdmin),
+			Name: fmt.Sprintf("%s-%s", username, iamv1beta1.ClusterAdmin),
 		},
 		Subjects: ensureSubjectAPIVersionIsValid(globalRoleBinding.Subjects),
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     iamv1alpha2.ResourceKindClusterRole,
-			Name:     iamv1alpha2.ClusterAdmin,
+			Kind:     iamv1beta1.ResourceKindClusterRole,
+			Name:     iamv1beta1.ClusterAdmin,
 		},
 	}
 
@@ -93,9 +93,9 @@ func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBindi
 	return client.IgnoreAlreadyExists(r.Create(ctx, clusterRoleBinding))
 }
 
-func findExpectUsername(globalRoleBinding *iamv1alpha2.GlobalRoleBinding) string {
+func findExpectUsername(globalRoleBinding *iamv1beta1.GlobalRoleBinding) string {
 	for _, subject := range globalRoleBinding.Subjects {
-		if subject.Kind == iamv1alpha2.ResourceKindUser {
+		if subject.Kind == iamv1beta1.ResourceKindUser {
 			return subject.Name
 		}
 	}
@@ -105,9 +105,9 @@ func findExpectUsername(globalRoleBinding *iamv1alpha2.GlobalRoleBinding) string
 func ensureSubjectAPIVersionIsValid(subjects []rbacv1.Subject) []rbacv1.Subject {
 	validSubjects := make([]rbacv1.Subject, 0)
 	for _, subject := range subjects {
-		if subject.Kind == iamv1alpha2.ResourceKindUser {
+		if subject.Kind == iamv1beta1.ResourceKindUser {
 			validSubject := rbacv1.Subject{
-				Kind:     iamv1alpha2.ResourceKindUser,
+				Kind:     iamv1beta1.ResourceKindUser,
 				APIGroup: "rbac.authorization.k8s.io",
 				Name:     subject.Name,
 			}
@@ -128,7 +128,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return builder.
 		ControllerManagedBy(mgr).
 		For(
-			&iamv1alpha2.GlobalRoleBinding{},
+			&iamv1beta1.GlobalRoleBinding{},
 			builder.WithPredicates(
 				predicate.ResourceVersionChangedPredicate{},
 			),

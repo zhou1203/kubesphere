@@ -20,11 +20,11 @@ import (
 	"context"
 	"time"
 
+	"k8s.io/utils/pointer"
+
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -41,16 +41,15 @@ const controllerName = "csr-controller"
 
 type Reconciler struct {
 	client.Client
-	k8sclient kubernetes.Interface
-	recorder  record.EventRecorder
+	recorder record.EventRecorder
 
 	kubeconfigOperator kubeconfig.Interface
+	config             *rest.Config
 }
 
-func NewReconciler(k8sClient kubernetes.Interface, configMapLister corev1listers.ConfigMapLister, config *rest.Config) *Reconciler {
+func NewReconciler(config *rest.Config) *Reconciler {
 	return &Reconciler{
-		k8sclient:          k8sClient,
-		kubeconfigOperator: kubeconfig.NewOperator(k8sClient, configMapLister, config),
+		config: config,
 	}
 }
 
@@ -73,7 +72,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				return ctrl.Result{}, err
 			}
 			// release
-			if err := r.k8sclient.CertificatesV1().CertificateSigningRequests().Delete(context.Background(), csr.Name, *metav1.NewDeleteOptions(0)); err != nil {
+			if err := r.Client.Delete(context.Background(), csr, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)}); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -90,6 +89,7 @@ func (r *Reconciler) InjectClient(c client.Client) error {
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.kubeconfigOperator = kubeconfig.NewOperator(mgr.GetClient(), r.config)
 
 	return builder.
 		ControllerManagedBy(mgr).
@@ -124,7 +124,7 @@ func (r *Reconciler) Approve(csr *certificatesv1.CertificateSigningRequest) erro
 	}
 
 	// approve csr
-	if _, err := r.k8sclient.CertificatesV1().CertificateSigningRequests().UpdateApproval(context.Background(), csr.Name, csr, metav1.UpdateOptions{}); err != nil {
+	if err := r.Status().Update(context.Background(), csr); err != nil {
 		return err
 	}
 	return nil

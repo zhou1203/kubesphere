@@ -19,23 +19,21 @@ package v1alpha2
 import (
 	"net/http"
 
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/api/resource/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
 	"kubesphere.io/kubesphere/pkg/constants"
-	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/models"
 	gitmodel "kubesphere.io/kubesphere/pkg/models/git"
 	registriesmodel "kubesphere.io/kubesphere/pkg/models/registries"
 	"kubesphere.io/kubesphere/pkg/server/errors"
-	"kubesphere.io/kubesphere/pkg/server/params"
 )
 
 const (
@@ -44,45 +42,9 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
 
-func AddToContainer(c *restful.Container, k8sClient kubernetes.Interface, factory informers.InformerFactory, masterURL, kubectlImage string) error {
+func AddToContainer(c *restful.Container, cacheClient runtimeclient.Client, masterURL, kubectlImage string) error {
 	webservice := runtime.NewWebService(GroupVersion)
-	handler := newResourceHandler(k8sClient, factory, masterURL, kubectlImage)
-
-	webservice.Route(webservice.GET("/namespaces/{namespace}/{resources}").
-		To(handler.handleListNamespaceResources).
-		Deprecate().
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Doc("Namespace level resource query").
-		Param(webservice.PathParameter("namespace", "the name of the project")).
-		Param(webservice.PathParameter("resources", "namespace level resource type, e.g. pods,jobs,configmaps,services.")).
-		Param(webservice.QueryParameter(params.ConditionsParam, "query conditions,connect multiple conditions with commas, equal symbol for exact query, wave symbol for fuzzy query e.g. name~a").
-			Required(false).
-			DataFormat("key=%s,key~%s")).
-		Param(webservice.QueryParameter(params.PagingParam, "paging query, e.g. limit=100,page=1").
-			Required(false).
-			DataFormat("limit=%d,page=%d").
-			DefaultValue("limit=10,page=1")).
-		Param(webservice.QueryParameter(params.ReverseParam, "sort parameters, e.g. reverse=true")).
-		Param(webservice.QueryParameter(params.OrderByParam, "sort parameters, e.g. orderBy=createTime")).
-		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}))
-
-	webservice.Route(webservice.GET("/{resources}").
-		To(handler.handleListNamespaceResources).
-		Deprecate().
-		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ClusterResourcesTag}).
-		Doc("Cluster level resources").
-		Param(webservice.PathParameter("resources", "cluster level resource type, e.g. nodes,workspaces,storageclasses,clusterrole.")).
-		Param(webservice.QueryParameter(params.ConditionsParam, "query conditions, connect multiple conditions with commas, equal symbol for exact query, wave symbol for fuzzy query e.g. name~a").
-			Required(false).
-			DataFormat("key=value,key~value").
-			DefaultValue("")).
-		Param(webservice.QueryParameter(params.PagingParam, "paging query, e.g. limit=100,page=1").
-			Required(false).
-			DataFormat("limit=%d,page=%d").
-			DefaultValue("limit=10,page=1")).
-		Param(webservice.QueryParameter(params.ReverseParam, "sort parameters, e.g. reverse=true")).
-		Param(webservice.QueryParameter(params.OrderByParam, "sort parameters, e.g. orderBy=createTime")))
+	handler := newResourceHandler(cacheClient, masterURL, kubectlImage)
 
 	webservice.Route(webservice.GET("/users/{user}/kubectl").
 		To(handler.GetKubectlPod).
@@ -189,50 +151,6 @@ func AddToContainer(c *restful.Container, k8sClient kubernetes.Interface, factor
 		Param(webservice.PathParameter("namespace", "the namespace of the statefulset")).
 		Param(webservice.PathParameter("revision", "the revision of the statefulset")).
 		Returns(http.StatusOK, api.StatusOK, appsv1.StatefulSet{}))
-
-	webservice.Route(webservice.GET("/namespaces/{namespace}/router").
-		Deprecate().
-		To(handler.handleGetRouter).
-		Doc("List router of a specified project").
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Returns(http.StatusOK, api.StatusOK, corev1.Service{}).
-		Param(webservice.PathParameter("namespace", "the name of the project")))
-
-	webservice.Route(webservice.DELETE("/namespaces/{namespace}/router").
-		Deprecate().
-		To(handler.handleDeleteRouter).
-		Doc("List router of a specified project").
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Returns(http.StatusOK, api.StatusOK, corev1.Service{}).
-		Param(webservice.PathParameter("namespace", "the name of the project")))
-
-	webservice.Route(webservice.POST("/namespaces/{namespace}/router").
-		Deprecate().
-		To(handler.handleCreateRouter).
-		Doc("Create a router for a specified project").
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Returns(http.StatusOK, api.StatusOK, corev1.Service{}).
-		Param(webservice.PathParameter("namespace", "the name of the project")))
-
-	webservice.Route(webservice.PUT("/namespaces/{namespace}/router").
-		Deprecate().
-		To(handler.handleUpdateRouter).
-		Doc("Update a router for a specified project").
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Returns(http.StatusOK, api.StatusOK, corev1.Service{}).
-		Param(webservice.PathParameter("namespace", "the name of the project")))
-
-	webservice.Route(webservice.GET("/abnormalworkloads").
-		Doc("get abnormal workloads' count of whole cluster").
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ClusterResourcesTag}).
-		Returns(http.StatusOK, api.StatusOK, api.Workloads{}).
-		To(handler.handleGetNamespacedAbnormalWorkloads))
-	webservice.Route(webservice.GET("/namespaces/{namespace}/abnormalworkloads").
-		Doc("get abnormal workloads' count of specified namespace").
-		Param(webservice.PathParameter("namespace", "the name of the project")).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Returns(http.StatusOK, api.StatusOK, api.Workloads{}).
-		To(handler.handleGetNamespacedAbnormalWorkloads))
 
 	c.Add(webservice)
 

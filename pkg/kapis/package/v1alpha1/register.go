@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
 )
@@ -31,8 +31,8 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
 
-func AddToContainer(container *restful.Container, cache cache.Cache) error {
-	handler := newHandler(cache)
+func AddToContainer(container *restful.Container, cacheReader runtimeclient.Reader) error {
+	handler := newHandler(cacheReader)
 	ws := runtime.NewWebService(GroupVersion)
 	ws.Route(ws.GET("/extensionversions/{version}/files").To(handler.handleFiles))
 	container.Add(ws)

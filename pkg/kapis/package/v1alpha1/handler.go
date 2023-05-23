@@ -20,22 +20,22 @@ import (
 	"bytes"
 	"net/http"
 
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/emicklei/go-restful/v3"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/api"
 )
 
 type handler struct {
-	cache cache.Cache
+	cache runtimeclient.Reader
 }
 
-func newHandler(cache cache.Cache) *handler {
+func newHandler(cache runtimeclient.Reader) *handler {
 	return &handler{
 		cache: cache,
 	}

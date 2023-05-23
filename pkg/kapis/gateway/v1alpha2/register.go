@@ -19,10 +19,11 @@ package v1alpha2
 import (
 	"net/http"
 
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	gatewayv1alpha2 "kubesphere.io/api/gateway/v1alpha2"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
@@ -35,8 +36,8 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: Version}
 
-func AddToContainer(container *restful.Container, cache cache.Cache) error {
-	handler := newHandler(cache)
+func AddToContainer(container *restful.Container, cacheReader runtimeclient.Reader) error {
+	handler := newHandler(cacheReader)
 	ws := runtime.NewWebService(GroupVersion)
 
 	ws.Route(ws.GET("/namespaces/{namespace}/availableingressclassscopes").

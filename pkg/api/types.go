@@ -18,11 +18,12 @@ package api
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type ListResult struct {
-	Items      []interface{} `json:"items"`
-	TotalItems int           `json:"totalItems"`
+	Items      []runtime.Object `json:"items"`
+	TotalItems int              `json:"totalItems"`
 }
 
 type ResourceQuota struct {

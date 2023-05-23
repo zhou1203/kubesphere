@@ -19,33 +19,32 @@ package v1alpha3
 import (
 	"fmt"
 
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
+
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/models/tenant"
-	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 )
 
 type tenantHandler struct {
 	tenant tenant.Interface
 }
 
-func newTenantHandler(factory informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface,
-	auditingclient auditing.Client, am am.AccessManagementInterface,
-	im im.IdentityManagementInterface, authorizer authorizer.Authorizer) *tenantHandler {
-
+func newTenantHandler(client runtimeclient.Client, auditingClient auditingclient.Client, clusterClient clusterclient.Interface,
+	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer) *tenantHandler {
 	return &tenantHandler{
-		tenant: tenant.New(factory, k8sclient, ksclient, auditingclient, am, im, authorizer),
+		tenant: tenant.New(client, auditingClient, clusterClient, am, im, authorizer),
 	}
 }
 

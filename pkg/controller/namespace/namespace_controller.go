@@ -36,7 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/constants"
@@ -203,11 +203,11 @@ func (r *Reconciler) unbindWorkspace(ctx context.Context, logger logr.Logger, na
 }
 
 func (r *Reconciler) initRoles(ctx context.Context, logger logr.Logger, namespace *corev1.Namespace) error {
-	var templates iamv1alpha2.RoleBaseList
+	var templates iamv1beta1.RoleBaseList
 	var labelKey string
 
 	// scope.kubesphere.io/namespace: ""
-	labelKey = fmt.Sprintf(iamv1alpha2.ScopeLabelFormat, iamv1alpha2.ScopeNamespace)
+	labelKey = fmt.Sprintf(iamv1beta1.ScopeLabelFormat, iamv1beta1.ScopeNamespace)
 
 	if err := r.List(ctx, &templates, client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{labelKey: ""})}); err != nil {
 		logger.Error(err, "list role bases failed")
@@ -215,7 +215,7 @@ func (r *Reconciler) initRoles(ctx context.Context, logger logr.Logger, namespac
 	}
 	for _, template := range templates.Items {
 		var role rbacv1.Role
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&role); err == nil && role.Kind == iamv1alpha2.ResourceKindRole {
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&role); err == nil && role.Kind == iamv1beta1.ResourceKindRole {
 			var old rbacv1.Role
 			if err := r.Client.Get(ctx, types.NamespacedName{Namespace: namespace.Name, Name: role.Name}, &old); err != nil {
 				if errors.IsNotFound(err) {
@@ -254,7 +254,7 @@ func (r *Reconciler) initCreatorRoleBinding(ctx context.Context, logger logr.Log
 	if creator == "" {
 		return nil
 	}
-	var user iamv1alpha2.User
+	var user iamv1beta1.User
 	if err := r.Get(ctx, types.NamespacedName{Name: creator}, &user); err != nil {
 		return client.IgnoreNotFound(err)
 	}
@@ -273,19 +273,19 @@ func (r *Reconciler) initCreatorRoleBinding(ctx context.Context, logger logr.Log
 func newCreatorRoleBinding(creator string, namespace string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", creator, iamv1alpha2.NamespaceAdmin),
-			Labels:    map[string]string{iamv1alpha2.UserReferenceLabel: creator},
+			Name:      fmt.Sprintf("%s-%s", creator, iamv1beta1.NamespaceAdmin),
+			Labels:    map[string]string{iamv1beta1.UserReferenceLabel: creator},
 			Namespace: namespace,
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
-			Kind:     iamv1alpha2.ResourceKindRole,
-			Name:     iamv1alpha2.NamespaceAdmin,
+			Kind:     iamv1beta1.ResourceKindRole,
+			Name:     iamv1beta1.NamespaceAdmin,
 		},
 		Subjects: []rbacv1.Subject{
 			{
 				Name:     creator,
-				Kind:     iamv1alpha2.ResourceKindUser,
+				Kind:     iamv1beta1.ResourceKindUser,
 				APIGroup: rbacv1.GroupName,
 			},
 		},

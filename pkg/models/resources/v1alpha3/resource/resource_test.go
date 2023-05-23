@@ -19,16 +19,17 @@ package resource
 import (
 	"testing"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"kubesphere.io/kubesphere/pkg/scheme"
+
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
-	fakeapiextensions "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	fakek8s "k8s.io/client-go/kubernetes/fake"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
-	fakeks "kubesphere.io/kubesphere/pkg/client/clientset/versioned/fake"
-	"kubesphere.io/kubesphere/pkg/informers"
 )
 
 func TestResourceGetter(t *testing.T) {
@@ -58,16 +59,14 @@ func TestResourceGetter(t *testing.T) {
 			},
 			ExpectError: nil,
 			ExpectResponse: &api.ListResult{
-				Items:      []interface{}{foo2, foo1, bar1},
+				Items:      []runtime.Object{foo2, foo1, bar1},
 				TotalItems: 3,
 			},
 		},
 	}
 
 	for _, test := range tests {
-
 		result, err := resource.List(test.Resource, test.Namespace, test.Query)
-
 		if err != test.ExpectError {
 			t.Errorf("expected error: %s, got: %s", test.ExpectError, err)
 		}
@@ -98,20 +97,12 @@ var (
 		},
 	}
 
-	namespaces = []interface{}{foo1, foo2, bar1}
+	namespaces = []runtime.Object{foo1, foo2, bar1}
 )
 
 func prepare() *ResourceGetter {
-
-	ksClient := fakeks.NewSimpleClientset()
-	k8sClient := fakek8s.NewSimpleClientset()
-	apiextensionsClient := fakeapiextensions.NewSimpleClientset()
-	fakeInformerFactory := informers.NewInformerFactories(k8sClient, ksClient, apiextensionsClient)
-
-	for _, namespace := range namespaces {
-		fakeInformerFactory.KubernetesSharedInformerFactory().Core().V1().
-			Namespaces().Informer().GetIndexer().Add(namespace)
-	}
-
-	return NewResourceGetter(fakeInformerFactory)
+	client := runtimefakeclient.NewClientBuilder().
+		WithScheme(scheme.Scheme).
+		WithRuntimeObjects(namespaces...).Build()
+	return NewResourceGetter(client)
 }

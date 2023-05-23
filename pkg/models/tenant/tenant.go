@@ -23,6 +23,10 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/utils/pointer"
+	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/mitchellh/mapstructure"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -33,23 +37,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/authentication/user"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
-
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	auditingv1alpha1 "kubesphere.io/kubesphere/pkg/api/auditing/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
-	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/models/auditing"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
@@ -91,25 +90,23 @@ type tenantOperator struct {
 	am             am.AccessManagementInterface
 	im             im.IdentityManagementInterface
 	authorizer     authorizer.Authorizer
-	k8sclient      kubernetes.Interface
-	ksclient       kubesphere.Interface
-	resourceGetter *resourcesv1alpha3.ResourceGetter
 	auditing       auditing.Interface
-	clusterClient  clusterclient.ClusterClients
+	resourceGetter *resourcesv1alpha3.ResourceGetter
+	clusterClient  clusterclient.Interface
+	client         runtimeclient.Client
+	cache          runtimecache.Cache
 }
 
-func New(informers informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface,
-	auditingclient auditingclient.Client, am am.AccessManagementInterface, im im.IdentityManagementInterface,
-	authorizer authorizer.Authorizer) Interface {
+func New(cacheClient runtimeclient.Client, auditingClient auditingclient.Client, clusterClient clusterclient.Interface,
+	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer) Interface {
 	return &tenantOperator{
 		am:             am,
 		im:             im,
 		authorizer:     authorizer,
-		resourceGetter: resourcesv1alpha3.NewResourceGetter(informers),
-		k8sclient:      k8sclient,
-		ksclient:       ksclient,
-		auditing:       auditing.NewEventsOperator(auditingclient),
-		clusterClient:  clusterclient.NewClusterClient(informers.KubeSphereSharedInformerFactory().Cluster().V1alpha1().Clusters()),
+		resourceGetter: resourcesv1alpha3.NewResourceGetter(cacheClient),
+		client:         cacheClient,
+		auditing:       auditing.NewEventsOperator(auditingClient),
+		clusterClient:  clusterClient,
 	}
 }
 
@@ -318,7 +315,8 @@ func (t *tenantOperator) ListNamespaces(user user.Info, workspace string, queryP
 // The reason here why don't check the existence of workspace anymore is this function is only executed in host cluster.
 // but if the host cluster is not authorized to workspace, there will be no workspace in host cluster.
 func (t *tenantOperator) CreateNamespace(workspace string, namespace *corev1.Namespace) (*corev1.Namespace, error) {
-	return t.k8sclient.CoreV1().Namespaces().Create(context.Background(), labelNamespaceWithWorkspaceName(namespace, workspace), metav1.CreateOptions{})
+	namespace = labelNamespaceWithWorkspaceName(namespace, workspace)
+	return namespace, t.client.Create(context.Background(), namespace)
 }
 
 // labelNamespaceWithWorkspaceName adds a kubesphere.io/workspace=[workspaceName] label to namespace which
@@ -347,12 +345,12 @@ func (t *tenantOperator) DescribeNamespace(workspace, namespace string) (*corev1
 	return ns, nil
 }
 
-func (t *tenantOperator) DeleteNamespace(workspace, namespace string) error {
-	_, err := t.DescribeNamespace(workspace, namespace)
+func (t *tenantOperator) DeleteNamespace(workspace, namespaceName string) error {
+	namespace, err := t.DescribeNamespace(workspace, namespaceName)
 	if err != nil {
 		return err
 	}
-	return t.k8sclient.CoreV1().Namespaces().Delete(context.Background(), namespace, *metav1.NewDeleteOptions(0))
+	return t.client.Delete(context.Background(), namespace, &runtimeclient.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})
 }
 
 func (t *tenantOperator) UpdateNamespace(workspace string, namespace *corev1.Namespace) (*corev1.Namespace, error) {
@@ -361,22 +359,19 @@ func (t *tenantOperator) UpdateNamespace(workspace string, namespace *corev1.Nam
 		return nil, err
 	}
 	namespace = labelNamespaceWithWorkspaceName(namespace, workspace)
-	return t.k8sclient.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+	return namespace, t.client.Update(context.Background(), namespace)
 }
 
 func (t *tenantOperator) PatchNamespace(workspace string, namespace *corev1.Namespace) (*corev1.Namespace, error) {
-	_, err := t.DescribeNamespace(workspace, namespace.Name)
+	old, err := t.DescribeNamespace(workspace, namespace.Name)
 	if err != nil {
 		return nil, err
 	}
-	if namespace.Labels != nil {
-		namespace.Labels[tenantv1alpha1.WorkspaceLabel] = workspace
+	newNamespace := old.DeepCopy()
+	if newNamespace.Labels != nil {
+		newNamespace.Labels[tenantv1alpha1.WorkspaceLabel] = workspace
 	}
-	data, err := json.Marshal(namespace)
-	if err != nil {
-		return nil, err
-	}
-	return t.k8sclient.CoreV1().Namespaces().Patch(context.Background(), namespace.Name, types.MergePatchType, data, metav1.PatchOptions{})
+	return newNamespace, t.client.Patch(context.Background(), newNamespace, runtimeclient.MergeFrom(old))
 }
 
 func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string, data json.RawMessage) (*tenantv1alpha2.WorkspaceTemplate, error) {
@@ -452,10 +447,16 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 		}
 	}
 
-	return t.ksclient.TenantV1alpha2().WorkspaceTemplates().Patch(context.Background(), workspace, types.JSONPatchType, data, metav1.PatchOptions{})
+	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
+	if err := t.cache.Get(context.Background(), types.NamespacedName{Name: workspace}, workspaceTemplate); err != nil {
+		return nil, err
+	}
+
+	return workspaceTemplate, t.client.Patch(context.Background(), workspaceTemplate, runtimeclient.RawPatch(types.JSONPatchType, data))
 }
 
 func (t *tenantOperator) CreateWorkspaceTemplate(user user.Info, workspace *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha2.WorkspaceTemplate, error) {
+	workspace = workspace.DeepCopy()
 	if len(workspace.Spec.Placement.Clusters) != 0 {
 		clusters := make([]string, 0)
 		for _, v := range workspace.Spec.Placement.Clusters {
@@ -468,10 +469,11 @@ func (t *tenantOperator) CreateWorkspaceTemplate(user user.Info, workspace *tena
 		}
 
 	}
-	return t.ksclient.TenantV1alpha2().WorkspaceTemplates().Create(context.Background(), workspace, metav1.CreateOptions{})
+	return workspace, t.client.Create(context.Background(), workspace)
 }
 
 func (t *tenantOperator) UpdateWorkspaceTemplate(user user.Info, workspace *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha2.WorkspaceTemplate, error) {
+	workspace = workspace.DeepCopy()
 	if len(workspace.Spec.Placement.Clusters) != 0 {
 		clusters := make([]string, 0)
 		for _, v := range workspace.Spec.Placement.Clusters {
@@ -484,16 +486,12 @@ func (t *tenantOperator) UpdateWorkspaceTemplate(user user.Info, workspace *tena
 		}
 
 	}
-	return t.ksclient.TenantV1alpha2().WorkspaceTemplates().Update(context.Background(), workspace, metav1.UpdateOptions{})
+	return workspace, t.client.Update(context.Background(), workspace)
 }
 
-func (t *tenantOperator) DescribeWorkspaceTemplate(workspace string) (*tenantv1alpha2.WorkspaceTemplate, error) {
-	obj, err := t.resourceGetter.Get(tenantv1alpha2.ResourcePluralWorkspaceTemplate, "", workspace)
-	if err != nil {
-		klog.Error(err)
-		return nil, err
-	}
-	return obj.(*tenantv1alpha2.WorkspaceTemplate), nil
+func (t *tenantOperator) DescribeWorkspaceTemplate(workspaceName string) (*tenantv1alpha2.WorkspaceTemplate, error) {
+	workspace := &tenantv1alpha2.WorkspaceTemplate{}
+	return workspace, t.cache.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspace)
 }
 
 func (t *tenantOperator) ListWorkspaceClusters(workspaceName string) (*api.ListResult, error) {
@@ -505,7 +503,7 @@ func (t *tenantOperator) ListWorkspaceClusters(workspaceName string) (*api.ListR
 
 	// In this case, spec.placement.clusterSelector will be ignored, since spec.placement.clusters is provided.
 	if workspace.Spec.Placement.Clusters != nil {
-		clusters := make([]interface{}, 0)
+		clusters := make([]runtime.Object, 0)
 		for _, cluster := range workspace.Spec.Placement.Clusters {
 			obj, err := t.resourceGetter.Get(clusterv1alpha1.ResourcesPluralCluster, "", cluster.Name)
 			if err != nil {
@@ -535,7 +533,7 @@ func (t *tenantOperator) ListWorkspaceClusters(workspaceName string) (*api.ListR
 	}
 
 	// In this case, you can either set spec: {} as above or remove spec field from your placement policy. The resource will not be propagated to member clusters.
-	return &api.ListResult{Items: []interface{}{}, TotalItems: 0}, nil
+	return &api.ListResult{Items: []runtime.Object{}, TotalItems: 0}, nil
 }
 
 func (t *tenantOperator) ListClusters(user user.Info, queryParam *query.Query) (*api.ListResult, error) {
@@ -563,7 +561,7 @@ func (t *tenantOperator) ListClusters(user user.Info, queryParam *query.Query) (
 		return nil, fmt.Errorf("failed to describe user: %s", err)
 	}
 
-	grantedClustersAnnotation := userDetail.Annotations[iamv1alpha2.GrantedClustersAnnotation]
+	grantedClustersAnnotation := userDetail.Annotations[iamv1beta1.GrantedClustersAnnotation]
 	var grantedClusters sets.Set[string]
 	if len(grantedClustersAnnotation) > 0 {
 		grantedClusters = sets.New(strings.Split(grantedClustersAnnotation, ",")...)
@@ -603,22 +601,20 @@ func (t *tenantOperator) ListClusters(user user.Info, queryParam *query.Query) (
 	return result, nil
 }
 
-func (t *tenantOperator) DeleteWorkspaceTemplate(workspace string, opts metav1.DeleteOptions) error {
-
+func (t *tenantOperator) DeleteWorkspaceTemplate(workspaceName string, opts metav1.DeleteOptions) error {
+	workspace := &tenantv1alpha2.WorkspaceTemplate{}
+	if err := t.cache.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspace); err != nil {
+		return err
+	}
 	if opts.PropagationPolicy != nil && *opts.PropagationPolicy == metav1.DeletePropagationOrphan {
-		wsp, err := t.DescribeWorkspaceTemplate(workspace)
-		if err != nil {
-			klog.Error(err)
-			return err
-		}
-		wsp.Finalizers = append(wsp.Finalizers, orphanFinalizer)
-		_, err = t.ksclient.TenantV1alpha2().WorkspaceTemplates().Update(context.Background(), wsp, metav1.UpdateOptions{})
-		if err != nil {
+
+		workspace.Finalizers = append(workspace.Finalizers, orphanFinalizer)
+		if err := t.client.Update(context.Background(), workspace); err != nil {
 			klog.Error(err)
 			return err
 		}
 	}
-	return t.ksclient.TenantV1alpha2().WorkspaceTemplates().Delete(context.Background(), workspace, opts)
+	return t.client.Delete(context.Background(), workspace, &runtimeclient.DeleteOptions{Raw: &opts})
 }
 
 // listIntersectedNamespaces returns a list of namespaces that MUST meet ALL the following filters:
@@ -866,9 +862,8 @@ func (t *tenantOperator) checkClusterPermission(user user.Info, clusters []strin
 	// and then check whether the user has relevant cluster permissions in the target cluster
 
 	for _, clusterName := range clusters {
-
-		cluster, err := t.ksclient.ClusterV1alpha1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
-		if err != nil {
+		cluster := &clusterv1alpha1.Cluster{}
+		if err := t.client.Get(context.Background(), types.NamespacedName{Name: clusterName}, cluster); err != nil {
 			return err
 		}
 		if cluster.Labels["cluster.kubesphere.io/visibility"] == "public" {
@@ -900,8 +895,8 @@ func (t *tenantOperator) checkClusterPermission(user user.Info, clusters []strin
 		}
 
 		allowed := false
-		for _, clusterRolebinding := range list.Items {
-			if clusterRolebinding.RoleRef.Name == iamv1alpha2.ClusterAdmin {
+		for _, clusterRoleBinding := range list.Items {
+			if clusterRoleBinding.RoleRef.Name == iamv1beta1.ClusterAdmin {
 				allowed = true
 				break
 			}

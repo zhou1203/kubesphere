@@ -19,15 +19,14 @@ package jwt
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
-
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"kubesphere.io/kubesphere/pkg/models/auth"
-
-	iamv1alpha2listers "kubesphere.io/kubesphere/pkg/client/listers/iam/v1alpha2"
 )
 
 // TokenAuthenticator implements kubernetes token authenticate interface with our custom logic.
@@ -37,13 +36,13 @@ import (
 // because some resources are public accessible.
 type tokenAuthenticator struct {
 	tokenOperator auth.TokenManagementInterface
-	userLister    iamv1alpha2listers.UserLister
+	cache         runtimecache.Cache
 }
 
-func NewTokenAuthenticator(tokenOperator auth.TokenManagementInterface, userLister iamv1alpha2listers.UserLister) authenticator.Token {
+func NewTokenAuthenticator(cache runtimecache.Cache, tokenOperator auth.TokenManagementInterface) authenticator.Token {
 	return &tokenAuthenticator{
 		tokenOperator: tokenOperator,
-		userLister:    userLister,
+		cache:         cache,
 	}
 }
 
@@ -54,19 +53,19 @@ func (t *tokenAuthenticator) AuthenticateToken(ctx context.Context, token string
 		return nil, false, err
 	}
 
-	if verified.User.GetName() == iamv1alpha2.PreRegistrationUser {
+	if verified.User.GetName() == iamv1beta1.PreRegistrationUser {
 		return &authenticator.Response{
 			User: verified.User,
 		}, true, nil
 	}
 
-	userInfo, err := t.userLister.Get(verified.User.GetName())
-	if err != nil {
+	userInfo := &iamv1beta1.User{}
+	if err := t.cache.Get(ctx, types.NamespacedName{Name: verified.User.GetName()}, userInfo); err != nil {
 		return nil, false, err
 	}
 
 	// AuthLimitExceeded state should be ignored
-	if userInfo.Status.State == iamv1alpha2.UserDisabled {
+	if userInfo.Status.State == iamv1beta1.UserDisabled {
 		return nil, false, auth.AccountIsNotActiveError
 	}
 	return &authenticator.Response{

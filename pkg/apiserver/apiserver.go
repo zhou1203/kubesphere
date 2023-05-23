@@ -26,21 +26,20 @@ import (
 	"sync"
 	"time"
 
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
+
+	"kubesphere.io/kubesphere/pkg/models/iam/group"
+
 	"github.com/emicklei/go-restful/v3"
-	"k8s.io/apimachinery/pkg/api/errors"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	urlruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	unionauth "k8s.io/apiserver/pkg/authentication/request/union"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 
 	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
@@ -59,11 +58,11 @@ import (
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/apiserver/filters"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
-	"kubesphere.io/kubesphere/pkg/informers"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
 	gatewayv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha2"
-	iamapi "kubesphere.io/kubesphere/pkg/kapis/iam/v1beta1"
+	iamapiv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/iam/v1alpha2"
+	iamapiv1beta1 "kubesphere.io/kubesphere/pkg/kapis/iam/v1beta1"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/overview"
@@ -77,8 +76,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/auth"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/loginrecord"
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/user"
 	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 	"kubesphere.io/kubesphere/pkg/server/healthz"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
@@ -106,10 +103,6 @@ type APIServer struct {
 	// kubeClient is a collection of all kubernetes(include CRDs) objects clientset
 	KubernetesClient k8s.Client
 
-	// informerFactory is a collection of all kubernetes(include CRDs) objects informers,
-	// mainly for fast query
-	InformerFactory informers.InformerFactory
-
 	// cache is used for short-lived objects, like session
 	CacheClient cache.Interface
 
@@ -121,10 +114,10 @@ type APIServer struct {
 	// entity that issues tokens
 	Issuer token.Issuer
 
-	// controller-runtime client
+	// controller-runtime client with informer cache
 	RuntimeClient runtimeclient.Client
 
-	ClusterClient clusterclient.ClusterClients
+	ClusterClient clusterclient.Interface
 
 	ResourceManager resourcev1beta1.ResourceManager
 }
@@ -138,7 +131,7 @@ func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
 		logStackOnRecover(panicReason, httpWriter)
 	})
 	s.installDynamicResourceAPI()
-	s.installKubeSphereAPIs(stopCh)
+	s.installKubeSphereAPIs()
 	s.installMetricsAPI()
 	s.installHealthz()
 
@@ -174,41 +167,34 @@ func (s *APIServer) installMetricsAPI() {
 // Install all kubesphere api groups
 // Installation happens before all informers start to cache objects,
 // so any attempt to list objects using listers will get empty results.
-func (s *APIServer) installKubeSphereAPIs(stopCh <-chan struct{}) {
-	imOperator := im.NewOperator(s.KubernetesClient.KubeSphere(),
-		user.New(s.InformerFactory.KubeSphereSharedInformerFactory(),
-			s.InformerFactory.KubernetesSharedInformerFactory()),
-		loginrecord.New(s.InformerFactory.KubeSphereSharedInformerFactory()),
-		s.Config.AuthenticationOptions)
+func (s *APIServer) installKubeSphereAPIs() {
+	imOperator := im.NewOperator(s.RuntimeClient, s.Config.AuthenticationOptions)
 	amOperator := am.NewOperator(s.ResourceManager)
 	rbacAuthorizer := rbac.NewRBACAuthorizer(amOperator)
 
 	counter := overviewclient.New(s.ResourceManager)
 	counter.RegisterResource(overviewclient.NewDefaultRegisterOptions()...)
-
 	urlruntime.Must(configv1alpha2.AddToContainer(s.container, s.Config))
-	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.InformerFactory))
-	urlruntime.Must(operationsv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes()))
-	urlruntime.Must(resourcesv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes(), s.InformerFactory,
+	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.RuntimeCache))
+	urlruntime.Must(operationsv1alpha2.AddToContainer(s.container, s.RuntimeClient))
+	urlruntime.Must(resourcesv1alpha2.AddToContainer(s.container, s.RuntimeClient,
 		s.KubernetesClient.Master(), s.Config.AuthenticationOptions.KubectlImage))
-	urlruntime.Must(tenantv1alpha2.AddToContainer(s.container, s.InformerFactory, s.KubernetesClient.Kubernetes(),
-		s.KubernetesClient.KubeSphere(), s.AuditingClient, amOperator, imOperator, rbacAuthorizer))
-	urlruntime.Must(tenantv1alpha3.AddToContainer(s.container, s.InformerFactory, s.KubernetesClient.Kubernetes(),
-		s.KubernetesClient.KubeSphere(), s.AuditingClient, amOperator, imOperator, rbacAuthorizer))
-	urlruntime.Must(terminalv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes(), rbacAuthorizer, s.KubernetesClient.Config(), s.Config.TerminalOptions))
-	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(s.container,
-		s.KubernetesClient.KubeSphere(),
-		s.InformerFactory.KubernetesSharedInformerFactory(),
-		s.InformerFactory.KubeSphereSharedInformerFactory()))
-	urlruntime.Must(iamapi.AddToContainer(s.container, imOperator, amOperator))
+	urlruntime.Must(tenantv1alpha2.AddToContainer(s.container, s.RuntimeClient,
+		s.AuditingClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer))
+	urlruntime.Must(tenantv1alpha3.AddToContainer(s.container, s.RuntimeClient,
+		s.AuditingClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer))
+	urlruntime.Must(terminalv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes(),
+		rbacAuthorizer, s.KubernetesClient.Config(), s.Config.TerminalOptions))
+	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(s.container, s.RuntimeClient))
+	urlruntime.Must(iamapiv1beta1.AddToContainer(s.container, imOperator, amOperator))
+	// TODO remove iam v1alpha2
+	urlruntime.Must(iamapiv1alpha2.AddToContainer(s.container, imOperator, amOperator, group.New(s.RuntimeClient), rbacAuthorizer))
 
-	userLister := s.InformerFactory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users().Lister()
 	urlruntime.Must(oauth.AddToContainer(s.container, imOperator,
 		auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions),
-		auth.NewPasswordAuthenticator(s.KubernetesClient.KubeSphere(), userLister, s.Config.AuthenticationOptions),
-		auth.NewOAuthAuthenticator(s.KubernetesClient.KubeSphere(), userLister, s.Config.AuthenticationOptions),
-		auth.NewLoginRecorder(s.KubernetesClient.KubeSphere(), userLister),
-		s.Config.AuthenticationOptions))
+		auth.NewPasswordAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
+		auth.NewOAuthAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
+		auth.NewLoginRecorder(s.RuntimeClient), s.Config.AuthenticationOptions))
 	urlruntime.Must(version.AddToContainer(s.container, s.KubernetesClient.Kubernetes().Discovery()))
 	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
 	urlruntime.Must(gatewayv1alpha2.AddToContainer(s.container, s.RuntimeCache))
@@ -221,11 +207,7 @@ func (s *APIServer) installHealthz() {
 }
 
 func (s *APIServer) Run(ctx context.Context) (err error) {
-
-	err = s.waitForResourceSync(ctx)
-	if err != nil {
-		return err
-	}
+	go s.RuntimeCache.Start(ctx)
 
 	shutdownCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -250,9 +232,9 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 		APIPrefixes:          sets.New("api", "apis", "kapis", "kapi"),
 		GrouplessAPIPrefixes: sets.New("api", "kapi"),
 		GlobalResources: []schema.GroupResource{
-			iamv1alpha2.Resource(iamv1alpha2.ResourcesPluralUser),
-			iamv1alpha2.Resource(iamv1alpha2.ResourcesPluralGlobalRole),
-			iamv1alpha2.Resource(iamv1alpha2.ResourcesPluralGlobalRoleBinding),
+			iamv1beta1.Resource(iamv1beta1.ResourcesPluralUser),
+			iamv1beta1.Resource(iamv1beta1.ResourcesPluralGlobalRole),
+			iamv1beta1.Resource(iamv1beta1.ResourcesPluralGlobalRoleBinding),
 			tenantv1alpha1.Resource(tenantv1alpha1.ResourcePluralWorkspace),
 			tenantv1alpha2.Resource(tenantv1alpha1.ResourcePluralWorkspace),
 			tenantv1alpha2.Resource(clusterv1alpha1.ResourcesPluralCluster),
@@ -268,8 +250,7 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	handler = filters.WithJSBundle(handler, s.RuntimeCache)
 
 	if s.Config.AuditingOptions.Enable {
-		handler = filters.WithAuditing(handler,
-			audit.NewAuditing(s.InformerFactory, s.Config.AuditingOptions, stopCh))
+		handler = filters.WithAuditing(handler, audit.NewAuditing(s.RuntimeCache, s.Config.AuditingOptions, stopCh))
 	}
 
 	var authorizers authorizer.Authorizer
@@ -290,177 +271,17 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	handler = filters.WithAuthorization(handler, authorizers)
 	handler = filters.WithMulticluster(handler, s.ClusterClient)
 
-	userLister := s.InformerFactory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users().Lister()
-	loginRecorder := auth.NewLoginRecorder(s.KubernetesClient.KubeSphere(), userLister)
-
 	// authenticators are unordered
 	authn := unionauth.New(anonymous.NewAuthenticator(),
-		basictoken.New(basic.NewBasicAuthenticator(auth.NewPasswordAuthenticator(
-			s.KubernetesClient.KubeSphere(),
-			userLister,
-			s.Config.AuthenticationOptions),
-			loginRecorder)),
-		bearertoken.New(jwt.NewTokenAuthenticator(
-			auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions),
-			userLister)))
+		basictoken.New(basic.NewBasicAuthenticator(
+			auth.NewPasswordAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
+			auth.NewLoginRecorder(s.RuntimeClient))),
+		bearertoken.New(jwt.NewTokenAuthenticator(s.RuntimeCache,
+			auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions))))
 	handler = filters.WithAuthentication(handler, authn)
 	handler = filters.WithRequestInfo(handler, requestInfoResolver)
 	s.Server.Handler = handler
 	return nil
-}
-
-func isResourceExists(apiResources []v1.APIResource, resource schema.GroupVersionResource) bool {
-	for _, apiResource := range apiResources {
-		if apiResource.Name == resource.Resource {
-			return true
-		}
-	}
-	return false
-}
-
-type informerForResourceFunc func(resource schema.GroupVersionResource) (interface{}, error)
-
-func waitForCacheSync(discoveryClient discovery.DiscoveryInterface, sharedInformerFactory informers.GenericInformerFactory, informerForResourceFunc informerForResourceFunc, GVRs map[schema.GroupVersion][]string, stopCh <-chan struct{}) error {
-	for groupVersion, resourceNames := range GVRs {
-		var apiResourceList *v1.APIResourceList
-		var err error
-		err = retry.OnError(retry.DefaultRetry, func(err error) bool {
-			return !errors.IsNotFound(err)
-		}, func() error {
-			apiResourceList, err = discoveryClient.ServerResourcesForGroupVersion(groupVersion.String())
-			return err
-		})
-		if err != nil {
-			if errors.IsNotFound(err) {
-				klog.Warningf("group version %s not exists in the cluster", groupVersion)
-				continue
-			}
-			return fmt.Errorf("failed to fetch group version %s: %s", groupVersion, err)
-		}
-		for _, resourceName := range resourceNames {
-			groupVersionResource := groupVersion.WithResource(resourceName)
-			if !isResourceExists(apiResourceList.APIResources, groupVersionResource) {
-				klog.Warningf("resource %s not exists in the cluster", groupVersionResource)
-			} else {
-				// reflect.ValueOf(sharedInformerFactory).MethodByName("ForResource").Call([]reflect.Value{reflect.ValueOf(groupVersionResource)})
-				if _, err = informerForResourceFunc(groupVersionResource); err != nil {
-					return fmt.Errorf("failed to create informer for %s: %s", groupVersionResource, err)
-				}
-			}
-		}
-	}
-	sharedInformerFactory.Start(stopCh)
-	sharedInformerFactory.WaitForCacheSync(stopCh)
-	return nil
-}
-
-func (s *APIServer) waitForResourceSync(ctx context.Context) error {
-	klog.V(0).Info("Start cache objects")
-
-	stopCh := ctx.Done()
-	// resources we have to create informer first
-	k8sGVRs := map[schema.GroupVersion][]string{
-		{Group: "", Version: "v1"}: {
-			"namespaces",
-			"nodes",
-			"resourcequotas",
-			"pods",
-			"services",
-			"persistentvolumeclaims",
-			"persistentvolumes",
-			"secrets",
-			"configmaps",
-			"serviceaccounts",
-		},
-		{Group: "rbac.authorization.k8s.io", Version: "v1"}: {
-			"roles",
-			"rolebindings",
-			"clusterroles",
-			"clusterrolebindings",
-		},
-		{Group: "apps", Version: "v1"}: {
-			"deployments",
-			"daemonsets",
-			"replicasets",
-			"statefulsets",
-			"controllerrevisions",
-		},
-		{Group: "storage.k8s.io", Version: "v1"}: {
-			"storageclasses",
-		},
-		{Group: "batch", Version: "v1"}: {
-			"jobs",
-			"cronjobs",
-		},
-		{Group: "networking.k8s.io", Version: "v1"}: {
-			"ingresses",
-			"networkpolicies",
-		},
-		{Group: "autoscaling", Version: "v2beta2"}: {
-			"horizontalpodautoscalers",
-		},
-	}
-
-	if err := waitForCacheSync(s.KubernetesClient.Kubernetes().Discovery(),
-		s.InformerFactory.KubernetesSharedInformerFactory(),
-		func(resource schema.GroupVersionResource) (interface{}, error) {
-			return s.InformerFactory.KubernetesSharedInformerFactory().ForResource(resource)
-		},
-		k8sGVRs, stopCh); err != nil {
-		return err
-	}
-
-	ksGVRs := map[schema.GroupVersion][]string{
-		{Group: "tenant.kubesphere.io", Version: "v1alpha1"}: {
-			"workspaces",
-		},
-		{Group: "tenant.kubesphere.io", Version: "v1alpha2"}: {
-			"workspacetemplates",
-		},
-		{Group: "iam.kubesphere.io", Version: "v1alpha2"}: {
-			"users",
-			"globalroles",
-			"globalrolebindings",
-			"groups",
-			"groupbindings",
-			"workspaceroles",
-			"workspacerolebindings",
-			"loginrecords",
-		},
-		{Group: "cluster.kubesphere.io", Version: "v1alpha1"}: {
-			"clusters",
-		},
-	}
-
-	if err := waitForCacheSync(s.KubernetesClient.Kubernetes().Discovery(),
-		s.InformerFactory.KubeSphereSharedInformerFactory(),
-		func(resource schema.GroupVersionResource) (interface{}, error) {
-			return s.InformerFactory.KubeSphereSharedInformerFactory().ForResource(resource)
-		},
-		ksGVRs, stopCh); err != nil {
-		return err
-	}
-
-	apiextensionsGVRs := map[schema.GroupVersion][]string{
-		{Group: "apiextensions.k8s.io", Version: "v1"}: {
-			"customresourcedefinitions",
-		},
-	}
-
-	if err := waitForCacheSync(s.KubernetesClient.Kubernetes().Discovery(),
-		s.InformerFactory.ApiExtensionSharedInformerFactory(), func(resource schema.GroupVersionResource) (interface{}, error) {
-			return s.InformerFactory.ApiExtensionSharedInformerFactory().ForResource(resource)
-		},
-		apiextensionsGVRs, stopCh); err != nil {
-		return err
-	}
-
-	go s.RuntimeCache.Start(ctx)
-	s.RuntimeCache.WaitForCacheSync(ctx)
-
-	klog.V(0).Info("Finished caching objects")
-	return nil
-
 }
 
 func (s *APIServer) installDynamicResourceAPI() {
@@ -471,7 +292,7 @@ func (s *APIServer) installDynamicResourceAPI() {
 			}
 		}
 		resp.WriteErrorString(err.Code, err.Message)
-	}, resourcev1beta1.New(s.RuntimeClient, s.RuntimeCache))
+	}, resourcev1beta1.New(s.RuntimeClient))
 	s.container.ServiceErrorHandler(dynamicResourceHandler.HandleServiceError)
 }
 

@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 )
 
 type EmailValidator struct {
@@ -34,13 +34,13 @@ type EmailValidator struct {
 }
 
 func (a *EmailValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
-	user := &v1alpha2.User{}
+	user := &iamv1beta1.User{}
 	err := a.decoder.Decode(req, user)
 	if err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	allUsers := v1alpha2.UserList{}
+	allUsers := iamv1beta1.UserList{}
 	if err = a.Client.List(ctx, &allUsers, &client.ListOptions{}); err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
@@ -57,7 +57,7 @@ func (a *EmailValidator) Handle(ctx context.Context, req admission.Request) admi
 	return admission.Allowed("")
 }
 
-func emailAlreadyExist(users v1alpha2.UserList, user *v1alpha2.User) bool {
+func emailAlreadyExist(users iamv1beta1.UserList, user *iamv1beta1.User) bool {
 	// empty email is allowed
 	if user.Spec.Email == "" {
 		return false

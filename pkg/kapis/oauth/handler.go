@@ -31,7 +31,7 @@ import (
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
@@ -348,7 +348,7 @@ func (h *handler) oauthCallback(req *restful.Request, response *restful.Response
 	}
 
 	requestInfo, _ := request.RequestInfoFrom(req.Request.Context())
-	if err = h.loginRecorder.RecordLogin(authenticated.GetName(), iamv1alpha2.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, nil); err != nil {
+	if err = h.loginRecorder.RecordLogin(authenticated.GetName(), iamv1beta1.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, nil); err != nil {
 		klog.Errorf("Failed to record successful login for user %s, error: %v", authenticated.GetName(), err)
 	}
 
@@ -426,7 +426,7 @@ func (h *handler) passwordGrant(provider, username string, password string, req 
 			return
 		case auth.IncorrectPasswordError:
 			requestInfo, _ := request.RequestInfoFrom(req.Request.Context())
-			if err := h.loginRecorder.RecordLogin(username, iamv1alpha2.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, err); err != nil {
+			if err := h.loginRecorder.RecordLogin(username, iamv1beta1.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, err); err != nil {
 				klog.Errorf("Failed to record unsuccessful login attempt for user %s, error: %v", username, err)
 			}
 			response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant(err))
@@ -447,7 +447,7 @@ func (h *handler) passwordGrant(provider, username string, password string, req 
 	}
 
 	requestInfo, _ := request.RequestInfoFrom(req.Request.Context())
-	if err = h.loginRecorder.RecordLogin(authenticated.GetName(), iamv1alpha2.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, nil); err != nil {
+	if err = h.loginRecorder.RecordLogin(authenticated.GetName(), iamv1beta1.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, nil); err != nil {
 		klog.Errorf("Failed to record successful login for user %s, error: %v", authenticated.GetName(), err)
 	}
 
@@ -504,17 +504,17 @@ func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Resp
 
 	authenticated := verified.User
 	// update token after registration
-	if authenticated.GetName() == iamv1alpha2.PreRegistrationUser &&
+	if authenticated.GetName() == iamv1beta1.PreRegistrationUser &&
 		authenticated.GetExtra() != nil &&
-		len(authenticated.GetExtra()[iamv1alpha2.ExtraIdentityProvider]) > 0 &&
-		len(authenticated.GetExtra()[iamv1alpha2.ExtraUID]) > 0 {
+		len(authenticated.GetExtra()[iamv1beta1.ExtraIdentityProvider]) > 0 &&
+		len(authenticated.GetExtra()[iamv1beta1.ExtraUID]) > 0 {
 
-		idp := authenticated.GetExtra()[iamv1alpha2.ExtraIdentityProvider][0]
-		uid := authenticated.GetExtra()[iamv1alpha2.ExtraUID][0]
+		idp := authenticated.GetExtra()[iamv1beta1.ExtraIdentityProvider][0]
+		uid := authenticated.GetExtra()[iamv1beta1.ExtraUID][0]
 		queryParam := query.New()
 		queryParam.LabelSelector = labels.SelectorFromSet(labels.Set{
-			iamv1alpha2.IdentifyProviderLabel: idp,
-			iamv1alpha2.OriginUIDLabel:        uid}).String()
+			iamv1beta1.IdentifyProviderLabel: idp,
+			iamv1beta1.OriginUIDLabel:        uid}).String()
 		result, err := h.im.ListUsers(queryParam)
 		if err != nil {
 			response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(err))
@@ -525,7 +525,7 @@ func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Resp
 			return
 		}
 
-		authenticated = &user.DefaultInfo{Name: result.Items[0].(*iamv1alpha2.User).Name}
+		authenticated = &user.DefaultInfo{Name: result.Items[0].(*iamv1beta1.User).Name}
 	}
 
 	result, err := h.issueTokenTo(authenticated)

@@ -48,7 +48,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 
-	k8sinformers "k8s.io/client-go/informers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"
@@ -75,21 +74,21 @@ type Reconciler struct {
 
 	MaxConcurrentReconciles int
 	// Controls full recalculation of quota usage
-	ResyncPeriod    time.Duration
-	InformerFactory k8sinformers.SharedInformerFactory
+	ResyncPeriod time.Duration
 
 	scheme *runtime.Scheme
+}
+
+func (r *Reconciler) InjectClient(c client.Client) error {
+	r.Client = c
+	return nil
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.logger = ctrl.Log.WithName("controllers").WithName(ControllerName)
 	r.recorder = mgr.GetEventRecorderFor(ControllerName)
 	r.scheme = mgr.GetScheme()
-	r.registry = generic.NewRegistry(install.NewQuotaConfigurationForControllers(
-		generic.ListerFuncForResourceFunc(r.InformerFactory.ForResource)).Evaluators())
-	if r.Client == nil {
-		r.Client = mgr.GetClient()
-	}
+	r.registry = generic.NewRegistry(install.NewQuotaConfigurationForControllers(mgr.GetClient()).Evaluators())
 	if r.MaxConcurrentReconciles <= 0 {
 		r.MaxConcurrentReconciles = DefaultMaxConcurrentReconciles
 	}

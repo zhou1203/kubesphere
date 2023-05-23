@@ -38,7 +38,7 @@ type Interface interface {
 	List(namespace string, query *query.Query) (*api.ListResult, error)
 }
 
-// CompareFunc return true is left great than right
+// CompareFunc return true is left greater than right
 type CompareFunc func(runtime.Object, runtime.Object, query.Field) bool
 
 type FilterFunc func(runtime.Object, query.Filter) bool
@@ -83,7 +83,7 @@ func DefaultList(objects []runtime.Object, q *query.Query, compareFunc CompareFu
 
 	return &api.ListResult{
 		TotalItems: len(filtered),
-		Items:      objectsToInterfaces(filtered[start:end]),
+		Items:      filtered[start:end],
 	}
 }
 
@@ -160,12 +160,4 @@ func labelMatch(m map[string]string, filter string) bool {
 		return false
 	}
 	return labelSelector.Matches(labels.Set(m))
-}
-
-func objectsToInterfaces(objs []runtime.Object) []interface{} {
-	res := make([]interface{}, 0)
-	for _, obj := range objs {
-		res = append(res, obj)
-	}
-	return res
 }

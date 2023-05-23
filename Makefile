@@ -5,9 +5,7 @@
 
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:allowDangerousTypes=true"
-
-GV="tenant:v1alpha1 tenant:v1alpha2 iam:v1alpha2 cluster:v1alpha1 storage:v1alpha1 auditing:v1alpha1 quota:v1alpha2 gateway:v1alpha2"
-MANIFESTS="cluster/v1alpha1 iam/... quota/v1alpha2 storage/v1alpha1 tenant/... extensions/v1alpha1 core/v1alpha1  gateway:v1alpha2"
+MANIFESTS="auditing/v1alpha1 cluster/v1alpha1 iam/... quota/v1alpha2 storage/v1alpha1 tenant/... extensions/v1alpha1 core/v1alpha1  gateway/v1alpha2"
 
 # App Version
 APP_VERSION = v3.2.0
@@ -139,24 +137,19 @@ helm-uninstall: ; $(info $(M)...Begin to helm-uninstall.)  @ ## Helm-uninstall.
 	kubectl delete -f https://raw.githubusercontent.com/kubesphere/ks-installer/master/roles/ks-core/prepare/files/ks-init/role-templates.yaml
 
 # Run tests
-ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: vet test-env ;$(info $(M)...Begin to run tests.)  @ ## Run tests.
-	export KUBEBUILDER_ASSETS=$(shell pwd)/testbin/bin; go test ./pkg/... ./cmd/... -covermode=atomic -coverprofile=coverage.txt
+	go test ./pkg/... ./cmd/... -covermode=atomic -coverprofile=coverage.txt
 	cd staging/src/kubesphere.io/api ; GOFLAGS="" go test ./...
 	cd staging/src/kubesphere.io/client-go ; GOFLAGS="" go test ./...
 
 .PHONY: test-env
 test-env: ;$(info $(M)...Begin to setup test env) @ ## Download unit test libraries e.g. kube-apiserver etcd.
-	@hack/setup-kubebuilder-env.sh
+	@hack/setup-envtest.sh
 
 .PHONY: clean
 clean: ;$(info $(M)...Begin to clean.)  @ ## Clean.
 	-make -C ./pkg/version clean
 	@echo "ok"
-
-# Deprecated clientset cause we will replace code-generate with controller-runtime cache
-clientset:  ;$(info $(M)...Begin to find or download controller-gen.)  @ ## Find or download controller-gen,download controller-gen if necessary.
-	./hack/generate_client.sh ${GV}
 
 # Fix invalid file's license.
 update-licenses: ;$(info $(M)...Begin to update licenses.)
