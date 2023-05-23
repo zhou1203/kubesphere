@@ -463,10 +463,21 @@ func (r *SubscriptionReconciler) postRemove(ctx context.Context, sub *corev1alph
 
 func (r *SubscriptionReconciler) updateSubscription(ctx context.Context, sub *corev1alpha1.Subscription) error {
 	logger := klog.FromContext(ctx)
-	if err := r.Update(ctx, sub); err != nil {
+
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		newSub := &corev1alpha1.Subscription{}
+		if err := r.Client.Get(ctx, client.ObjectKey{Name: sub.Name}, newSub); err != nil {
+			return err
+		}
+
+		newSub.Annotations = sub.Annotations
+		newSub.Status = sub.Status
+		return r.Update(ctx, newSub)
+	}); err != nil {
 		logger.Error(err, "failed to update subscription")
 		return err
 	}
+
 	// sync extension status
 	if err := r.syncExtensionStatus(ctx, sub); err != nil {
 		logger.Error(err, "failed sync extension status")

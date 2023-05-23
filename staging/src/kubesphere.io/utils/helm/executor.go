@@ -605,7 +605,6 @@ func (e *executor) Release(options ...HelmOption) (*helmrelease.Release, error) 
 	get := action.NewGet(helmConf)
 	rel, err := get.Run(e.releaseName)
 	if err != nil {
-		klog.Errorf("namespace: %s, name: %s, run command failed, error: %v", e.namespace, e.releaseName, err)
 		return nil, err
 	}
 	klog.V(2).Infof("namespace: %s, name: %s, run command success", e.namespace, e.releaseName)
@@ -649,10 +648,8 @@ func (e *executor) status(helmConf *action.Configuration) (*helmrelease.Release,
 	rel, err := helmStatus.Run(e.releaseName)
 	if err != nil {
 		if err.Error() == statusNotFoundFormat {
-			klog.V(2).Infof("namespace: %s, name: %s, run command failed, error: %v", e.namespace, e.releaseName, err)
 			return nil, err
 		}
-		klog.Errorf("namespace: %s, name: %s, run command failed, error: %v", e.namespace, e.releaseName, err)
 		return nil, err
 	}
 
