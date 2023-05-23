@@ -470,6 +470,7 @@ func (r *SubscriptionReconciler) updateSubscription(ctx context.Context, sub *co
 			return err
 		}
 
+		newSub.Finalizers = sub.Finalizers
 		newSub.Annotations = sub.Annotations
 		newSub.Status = sub.Status
 		return r.Update(ctx, newSub)
