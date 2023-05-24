@@ -26,21 +26,17 @@ import (
 	"sync"
 	"time"
 
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
-
-	"kubesphere.io/kubesphere/pkg/models/iam/group"
-
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	urlruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	unionauth "k8s.io/apiserver/pkg/authentication/request/union"
 	"k8s.io/klog/v2"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/basic"
@@ -188,7 +184,8 @@ func (s *APIServer) installKubeSphereAPIs() {
 	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(s.container, s.RuntimeClient))
 	urlruntime.Must(iamapiv1beta1.AddToContainer(s.container, imOperator, amOperator))
 	// TODO remove iam v1alpha2
-	urlruntime.Must(iamapiv1alpha2.AddToContainer(s.container, imOperator, amOperator, group.New(s.RuntimeClient), rbacAuthorizer))
+	urlruntime.Must(iamapiv1alpha2.AddToContainer(s.container,
+		im.NewLegacyOperator(s.RuntimeClient), am.NewLegacyOperator(s.RuntimeClient), rbacAuthorizer))
 
 	urlruntime.Must(oauth.AddToContainer(s.container, imOperator,
 		auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions),

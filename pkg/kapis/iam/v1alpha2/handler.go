@@ -18,18 +18,20 @@ package v1alpha2
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/emicklei/go-restful/v3"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
+	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	apirequest "kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/models/auth"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
-	"kubesphere.io/kubesphere/pkg/models/iam/group"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	servererr "kubesphere.io/kubesphere/pkg/server/errors"
 )
@@ -50,17 +52,15 @@ type PasswordReset struct {
 }
 
 type iamHandler struct {
-	am         am.AccessManagementInterface
-	im         im.IdentityManagementInterface
-	group      group.GroupOperator
+	am         am.LegacyAccessManagementInterface
+	im         im.LegacyIdentityManagementInterface
 	authorizer authorizer.Authorizer
 }
 
-func newIAMHandler(im im.IdentityManagementInterface, am am.AccessManagementInterface, group group.GroupOperator, authorizer authorizer.Authorizer) *iamHandler {
+func newIAMHandler(im im.LegacyIdentityManagementInterface, am am.LegacyAccessManagementInterface, authorizer authorizer.Authorizer) *iamHandler {
 	return &iamHandler{
 		am:         am,
 		im:         im,
-		group:      group,
 		authorizer: authorizer,
 	}
 }
@@ -84,7 +84,91 @@ func (h *iamHandler) DescribeUser(request *restful.Request, response *restful.Re
 		user = appendGlobalRoleAnnotation(user, globalRole.Name)
 	}
 
-	response.WriteEntity(user)
+	_ = response.WriteEntity(user)
+}
+
+func (h *iamHandler) RetrieveMemberRoleTemplates(request *restful.Request, response *restful.Response) {
+	if strings.HasSuffix(request.Request.URL.Path, iamv1alpha2.ResourcesPluralGlobalRole) {
+		username := request.PathParameter("user")
+		globalRole, err := h.am.GetGlobalRoleOfUser(username)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		if globalRole == nil {
+			_ = response.WriteEntity([]iamv1alpha2.GlobalRole{})
+			return
+		}
+		result, err := h.am.ListAggregatedGlobalRoleTemplates(globalRole)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		_ = response.WriteEntity(result)
+		return
+	}
+
+	if strings.HasSuffix(request.Request.URL.Path, iamv1alpha2.ResourcesPluralClusterRole) {
+		username := request.PathParameter("clustermember")
+		clusterRole, err := h.am.GetClusterRoleOfUser(username)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		if clusterRole == nil {
+			_ = response.WriteEntity([]rbacv1.ClusterRole{})
+			return
+		}
+		result, err := h.am.ListAggregatedClusterRoleTemplates(clusterRole)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		_ = response.WriteEntity(result)
+		return
+	}
+
+	if strings.HasSuffix(request.Request.URL.Path, iamv1alpha2.ResourcesPluralWorkspaceRole) {
+		workspace := request.PathParameter("workspace")
+		username := request.PathParameter("workspacemember")
+		workspaceRole, err := h.am.GetWorkspaceRoleOfUser(username, workspace)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		if workspaceRole == nil {
+			_ = response.WriteEntity([]iamv1alpha2.WorkspaceRole{})
+			return
+		}
+		result, err := h.am.ListAggregatedWorkspaceRoleTemplates(workspaceRole)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		_ = response.WriteEntity(result)
+		return
+	}
+
+	if strings.HasSuffix(request.Request.URL.Path, iamv1alpha2.ResourcesPluralRole) {
+		namespace := request.PathParameter("namespace")
+		username := request.PathParameter("member")
+		role, err := h.am.GetNamespaceRoleOfUser(username, namespace)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		if role == nil {
+			_ = response.WriteEntity([]rbacv1.Role{})
+			return
+		}
+		result, err := h.am.ListAggregatedRoleTemplates(role)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		_ = response.WriteEntity(result)
+		return
+	}
 }
 
 func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Response) {
@@ -95,11 +179,11 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 		return
 	}
 	for i, item := range result.Items {
-		user := item.(*iamv1beta1.User)
+		user := item.(*iamv1alpha2.User)
 		user = user.DeepCopy()
 		globalRole, err := h.am.GetGlobalRoleOfUser(user.Name)
 		// ignore not found error
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil {
 			api.HandleInternalError(response, request, err)
 			return
 		}
@@ -108,15 +192,80 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 		}
 		result.Items[i] = user
 	}
-	response.WriteEntity(result)
+	_ = response.WriteEntity(result)
 }
 
-func appendGlobalRoleAnnotation(user *iamv1beta1.User, globalRole string) *iamv1beta1.User {
+func appendGlobalRoleAnnotation(user *iamv1alpha2.User, globalRole string) *iamv1alpha2.User {
 	if user.Annotations == nil {
 		user.Annotations = make(map[string]string, 0)
 	}
-	user.Annotations[iamv1beta1.GlobalRoleAnnotation] = globalRole
+	user.Annotations[iamv1alpha2.GlobalRoleAnnotation] = globalRole
 	return user
+}
+
+func (h *iamHandler) CreateUser(req *restful.Request, resp *restful.Response) {
+	var user iamv1alpha2.User
+	err := req.ReadEntity(&user)
+	if err != nil {
+		api.HandleBadRequest(resp, req, err)
+		return
+	}
+	operator, ok := request.UserFrom(req.Request.Context())
+	if ok && operator.GetName() == iamv1alpha2.PreRegistrationUser {
+		extra := operator.GetExtra()
+		// The token used for registration must contain additional information
+		if len(extra[iamv1alpha2.ExtraIdentityProvider]) != 1 || len(extra[iamv1alpha2.ExtraUID]) != 1 {
+			err = errors.NewBadRequest("invalid registration token")
+			api.HandleBadRequest(resp, req, err)
+			return
+		}
+		if user.Labels == nil {
+			user.Labels = make(map[string]string)
+		}
+		user.Labels[iamv1alpha2.IdentifyProviderLabel] = extra[iamv1alpha2.ExtraIdentityProvider][0]
+		user.Labels[iamv1alpha2.OriginUIDLabel] = extra[iamv1alpha2.ExtraUID][0]
+		// default role
+		delete(user.Annotations, iamv1alpha2.GlobalRoleAnnotation)
+	}
+
+	created, err := h.im.CreateUser(&user)
+	if err != nil {
+		api.HandleError(resp, req, err)
+		return
+	}
+
+	// ensure encrypted password will not be output
+	created.Spec.EncryptedPassword = ""
+
+	_ = resp.WriteEntity(created)
+}
+
+func (h *iamHandler) UpdateUser(request *restful.Request, response *restful.Response) {
+	username := request.PathParameter("user")
+
+	var user iamv1alpha2.User
+
+	err := request.ReadEntity(&user)
+	if err != nil {
+		api.HandleBadRequest(response, request, err)
+		return
+	}
+
+	if username != user.Name {
+		err := fmt.Errorf("the name of the object (%s) does not match the name on the URL (%s)", user.Name, username)
+		api.HandleBadRequest(response, request, err)
+		return
+	}
+
+	delete(user.Annotations, iamv1alpha2.GlobalRoleAnnotation)
+
+	updated, err := h.im.UpdateUser(&user)
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+
+	_ = response.WriteEntity(updated)
 }
 
 func (h *iamHandler) ModifyPassword(request *restful.Request, response *restful.Response) {
@@ -168,7 +317,7 @@ func (h *iamHandler) ModifyPassword(request *restful.Request, response *restful.
 		return
 	}
 
-	response.WriteEntity(servererr.None)
+	_ = response.WriteEntity(servererr.None)
 }
 
 func (h *iamHandler) DeleteUser(request *restful.Request, response *restful.Response) {
@@ -180,194 +329,5 @@ func (h *iamHandler) DeleteUser(request *restful.Request, response *restful.Resp
 		return
 	}
 
-	response.WriteEntity(servererr.None)
-}
-
-func (h *iamHandler) ListUserLoginRecords(request *restful.Request, response *restful.Response) {
-	username := request.PathParameter("user")
-	queryParam := query.ParseQueryParameter(request)
-	result, err := h.im.ListLoginRecords(username, queryParam)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-	response.WriteEntity(result)
-}
-
-func (h *iamHandler) ListWorkspaceGroups(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	queryParam := query.ParseQueryParameter(request)
-	result, err := h.group.ListGroups(workspaceName, queryParam)
-
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(result)
-}
-
-func (h *iamHandler) CreateGroup(request *restful.Request, response *restful.Response) {
-	workspace := request.PathParameter("workspace")
-	var group iamv1beta1.Group
-
-	err := request.ReadEntity(&group)
-	if err != nil {
-		api.HandleBadRequest(response, request, err)
-		return
-	}
-
-	created, err := h.group.CreateGroup(workspace, &group)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(created)
-}
-
-func (h *iamHandler) DescribeGroup(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	groupName := request.PathParameter("group")
-	ns, err := h.group.DescribeGroup(workspaceName, groupName)
-
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(ns)
-}
-
-func (h *iamHandler) DeleteGroup(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	groupName := request.PathParameter("group")
-
-	err := h.group.DeleteGroup(workspaceName, groupName)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(servererr.None)
-}
-
-func (h *iamHandler) UpdateGroup(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	groupName := request.PathParameter("group")
-
-	var group iamv1beta1.Group
-	err := request.ReadEntity(&group)
-	if err != nil {
-		api.HandleBadRequest(response, request, err)
-		return
-	}
-
-	if groupName != group.Name {
-		err := fmt.Errorf("the name of the object (%s) does not match the name on the URL (%s)", group.Name, groupName)
-		api.HandleBadRequest(response, request, err)
-		return
-	}
-
-	updated, err := h.group.UpdateGroup(workspaceName, &group)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(updated)
-}
-
-func (h *iamHandler) PatchGroup(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	groupName := request.PathParameter("group")
-
-	var group iamv1beta1.Group
-	err := request.ReadEntity(&group)
-	if err != nil {
-		api.HandleBadRequest(response, request, err)
-		return
-	}
-
-	group.Name = groupName
-	patched, err := h.group.PatchGroup(workspaceName, &group)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(patched)
-}
-
-func (h *iamHandler) ListGroupBindings(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	queryParam := query.ParseQueryParameter(request)
-	result, err := h.group.ListGroupBindings(workspaceName, queryParam)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(result)
-}
-
-func (h *iamHandler) ListGroupRoleBindings(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	queryParam := query.ParseQueryParameter(request)
-	result, err := h.am.ListGroupRoleBindings(workspaceName, queryParam)
-	if err != nil {
-		api.HandleInternalError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(result)
-}
-
-func (h *iamHandler) ListGroupWorkspaceRoleBindings(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	queryParam := query.ParseQueryParameter(request)
-	result, err := h.am.ListGroupWorkspaceRoleBindings(workspaceName, queryParam)
-	if err != nil {
-		api.HandleInternalError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(result)
-}
-
-func (h *iamHandler) CreateGroupBinding(request *restful.Request, response *restful.Response) {
-
-	workspace := request.PathParameter("workspace")
-
-	var members []GroupMember
-	err := request.ReadEntity(&members)
-	if err != nil {
-		api.HandleBadRequest(response, request, err)
-		return
-	}
-
-	var results []iamv1beta1.GroupBinding
-	for _, item := range members {
-		b, err := h.group.CreateGroupBinding(workspace, item.GroupName, item.UserName)
-		if err != nil {
-			api.HandleError(response, request, err)
-			return
-		}
-		results = append(results, *b)
-	}
-
-	response.WriteEntity(results)
-}
-
-func (h *iamHandler) DeleteGroupBinding(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
-	name := request.PathParameter("groupbinding")
-
-	err := h.group.DeleteGroupBinding(workspaceName, name)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	response.WriteEntity(servererr.None)
+	_ = response.WriteEntity(servererr.None)
 }
