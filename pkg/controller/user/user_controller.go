@@ -143,7 +143,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// synchronization through kubefed-controller when multi cluster is enabled
 	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
 	// if err = r.multiClusterSync(ctx, user); err != nil {
-	// 	r.Recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
+	// 	r.recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
 	// 	return ctrl.Result{}, err
 	// }
 

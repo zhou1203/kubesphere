@@ -70,6 +70,20 @@ type ExtensionVersionSpec struct {
 	ChartURL     string           `json:"chartURL,omitempty"`
 	// +kubebuilder:default:=HostOnly
 	InstallationMode InstallationMode `json:"installationMode,omitempty"`
+	// ExternalDependencies
+	ExternalDependencies []ExternalDependency `json:"externalDependencies,omitempty"`
+}
+
+type ExternalDependency struct {
+	// Name of the external dependency
+	Name string `json:"name"`
+	// Type of dependency, default to extension
+	// +optional
+	Type string `json:"type,omitempty"`
+	// SemVer
+	Version string `json:"version"`
+	// Indicates if the dependency is required
+	Required bool `json:"required"`
 }
 
 type ConfigMapKeyRef struct {
