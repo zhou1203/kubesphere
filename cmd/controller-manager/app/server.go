@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	"kubesphere.io/kubesphere/pkg/utils/metrics"
-
 	"github.com/google/gops/agent"
 	"github.com/spf13/cobra"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -200,13 +198,6 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	}
 	hookServer.Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
 	hookServer.Register("/convert", &conversion.Webhook{})
-
-	klog.V(2).Info("registering metrics to the webhook server")
-	// Add an extra metric endpoint, so we can use the same metric definition with ks-apiserver
-	// /kapis/metrics is independent of controller-manager's built-in /metrics
-	if err := mgr.AddMetricsExtraHandler("/metrics", metrics.Handler()); err != nil {
-		klog.Fatalf("unable to create metrics endpoint: %v", err)
-	}
 
 	klog.V(0).Info("Starting the controllers.")
 	if err = mgr.Start(ctx); err != nil {
