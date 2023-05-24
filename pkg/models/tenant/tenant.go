@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"k8s.io/utils/pointer"
-	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/mitchellh/mapstructure"
@@ -94,7 +93,6 @@ type tenantOperator struct {
 	resourceGetter *resourcesv1alpha3.ResourceGetter
 	clusterClient  clusterclient.Interface
 	client         runtimeclient.Client
-	cache          runtimecache.Cache
 }
 
 func New(cacheClient runtimeclient.Client, auditingClient auditingclient.Client, clusterClient clusterclient.Interface,
@@ -448,7 +446,7 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 	}
 
 	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
-	if err := t.cache.Get(context.Background(), types.NamespacedName{Name: workspace}, workspaceTemplate); err != nil {
+	if err := t.client.Get(context.Background(), types.NamespacedName{Name: workspace}, workspaceTemplate); err != nil {
 		return nil, err
 	}
 
@@ -491,7 +489,7 @@ func (t *tenantOperator) UpdateWorkspaceTemplate(user user.Info, workspace *tena
 
 func (t *tenantOperator) DescribeWorkspaceTemplate(workspaceName string) (*tenantv1alpha2.WorkspaceTemplate, error) {
 	workspace := &tenantv1alpha2.WorkspaceTemplate{}
-	return workspace, t.cache.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspace)
+	return workspace, t.client.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspace)
 }
 
 func (t *tenantOperator) ListWorkspaceClusters(workspaceName string) (*api.ListResult, error) {
@@ -603,7 +601,7 @@ func (t *tenantOperator) ListClusters(user user.Info, queryParam *query.Query) (
 
 func (t *tenantOperator) DeleteWorkspaceTemplate(workspaceName string, opts metav1.DeleteOptions) error {
 	workspace := &tenantv1alpha2.WorkspaceTemplate{}
-	if err := t.cache.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspace); err != nil {
+	if err := t.client.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspace); err != nil {
 		return err
 	}
 	if opts.PropagationPolicy != nil && *opts.PropagationPolicy == metav1.DeletePropagationOrphan {
