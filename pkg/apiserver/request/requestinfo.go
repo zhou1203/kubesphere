@@ -160,6 +160,8 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 	if currentParts[0] == "clusters" {
 		if len(currentParts) > 1 {
 			requestInfo.Cluster = currentParts[1]
+			// resolve the real path behind the cluster dispatcher
+			requestInfo.Path = strings.TrimPrefix(requestInfo.Path, fmt.Sprintf("/clusters/%s", requestInfo.Cluster))
 		}
 		if len(currentParts) > 2 {
 			currentParts = currentParts[2:]
@@ -172,6 +174,22 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 	}
 	requestInfo.APIPrefix = currentParts[0]
 	currentParts = currentParts[1:]
+
+	// fallback to legacy cluster API
+	// TODO remove the following codes
+	if requestInfo.Cluster == "" {
+		// URL forms: /(kapis|apis|api)/clusters/{cluster}/*
+		if currentParts[0] == "clusters" {
+			if len(currentParts) > 1 {
+				requestInfo.Cluster = currentParts[1]
+				// resolve the real path behind the cluster dispatcher
+				requestInfo.Path = strings.Replace(requestInfo.Path, fmt.Sprintf("/clusters/%s", requestInfo.Cluster), "", 1)
+			}
+			if len(currentParts) > 2 {
+				currentParts = currentParts[2:]
+			}
+		}
+	}
 
 	if !r.GrouplessAPIPrefixes.Has(requestInfo.APIPrefix) {
 		// one part (APIPrefix) has already been consumed, so this is actually "do we have four parts?"
