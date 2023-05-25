@@ -53,6 +53,7 @@ import (
 	unionauthorizer "kubesphere.io/kubesphere/pkg/apiserver/authorization/union"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/apiserver/filters"
+	"kubesphere.io/kubesphere/pkg/apiserver/metrics"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
@@ -80,7 +81,6 @@ import (
 	overviewclient "kubesphere.io/kubesphere/pkg/simple/client/overview"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/iputil"
-	"kubesphere.io/kubesphere/pkg/utils/metrics"
 )
 
 var initMetrics sync.Once
@@ -157,7 +157,7 @@ func monitorRequest(r *restful.Request, response *restful.Response, chain *restf
 
 func (s *APIServer) installMetricsAPI() {
 	initMetrics.Do(registerMetrics)
-	metrics.Defaults.Install(s.container)
+	metrics.Install(s.container)
 }
 
 // Install all kubesphere api groups
