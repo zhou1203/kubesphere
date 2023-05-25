@@ -45,7 +45,10 @@ func New(cache runtimeclient.Reader) v1alpha3.Interface {
 
 func (s *storageClassesGetter) Get(_, name string) (runtime.Object, error) {
 	storageClass := &v1.StorageClass{}
-	return s.transform(storageClass), s.cache.Get(context.Background(), types.NamespacedName{Name: name}, storageClass)
+	if err := s.cache.Get(context.Background(), types.NamespacedName{Name: name}, storageClass); err != nil {
+		return nil, err
+	}
+	return s.transform(storageClass), nil
 }
 
 func (s *storageClassesGetter) List(_ string, query *query.Query) (*api.ListResult, error) {

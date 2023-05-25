@@ -59,7 +59,6 @@ func (d *loginRecordsGetter) List(_ string, query *query.Query) (*api.ListResult
 }
 
 func (d *loginRecordsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftRecord, ok := left.(*iamv1beta1.LoginRecord)
 	if !ok {
 		return false

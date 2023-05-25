@@ -63,7 +63,6 @@ func (s *secretSearcher) List(namespace string, query *query.Query) (*api.ListRe
 }
 
 func (s *secretSearcher) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftSecret, ok := left.(*v1.Secret)
 	if !ok {
 		return false

@@ -67,7 +67,6 @@ func (d *deploymentsGetter) List(namespace string, query *query.Query) (*api.Lis
 }
 
 func (d *deploymentsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftDeployment, ok := left.(*appsv1.Deployment)
 	if !ok {
 		return false

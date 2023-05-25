@@ -57,7 +57,6 @@ func (d *groupGetter) List(_ string, query *query.Query) (*api.ListResult, error
 }
 
 func (d *groupGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftGroup, ok := left.(*iamv1beta1.Group)
 	if !ok {
 		return false

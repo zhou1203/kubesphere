@@ -57,7 +57,6 @@ func (d *globalRoleBindingsGetter) List(_ string, query *query.Query) (*api.List
 }
 
 func (d *globalRoleBindingsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftRoleBinding, ok := left.(*iamv1beta1.GlobalRoleBinding)
 	if !ok {
 		return false

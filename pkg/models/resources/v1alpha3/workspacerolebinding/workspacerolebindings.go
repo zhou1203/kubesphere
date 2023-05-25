@@ -46,7 +46,7 @@ func (d *workspaceRoleBindingsGetter) Get(_, name string) (runtime.Object, error
 }
 
 func (d *workspaceRoleBindingsGetter) List(_ string, query *query.Query) (*api.ListResult, error) {
-	workspaceRoleBindings := &iamv1beta1.GlobalRoleBindingList{}
+	workspaceRoleBindings := &iamv1beta1.WorkspaceRoleBindingList{}
 	if err := d.cache.List(context.Background(), workspaceRoleBindings,
 		client.MatchingLabelsSelector{Selector: query.Selector()}); err != nil {
 		return nil, err
@@ -59,7 +59,6 @@ func (d *workspaceRoleBindingsGetter) List(_ string, query *query.Query) (*api.L
 }
 
 func (d *workspaceRoleBindingsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftRoleBinding, ok := left.(*iamv1beta1.WorkspaceRoleBinding)
 	if !ok {
 		return false

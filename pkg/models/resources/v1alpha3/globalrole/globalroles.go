@@ -78,7 +78,6 @@ func (d *globalRolesGetter) List(_ string, query *query.Query) (*api.ListResult,
 }
 
 func (d *globalRolesGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftRole, ok := left.(*iamv1beta1.GlobalRole)
 	if !ok {
 		return false

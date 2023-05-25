@@ -57,7 +57,6 @@ func (d *servicesGetter) List(namespace string, query *query.Query) (*api.ListRe
 }
 
 func (d *servicesGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftService, ok := left.(*corev1.Service)
 	if !ok {
 		return false

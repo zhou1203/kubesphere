@@ -57,7 +57,6 @@ func (g *ingressGetter) List(namespace string, query *query.Query) (*api.ListRes
 }
 
 func (g *ingressGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftIngress, ok := left.(*v1.Ingress)
 	if !ok {
 		return false

@@ -19,7 +19,6 @@ package user
 import (
 	"context"
 
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -44,7 +43,7 @@ func New(cache runtimeclient.Reader) v1alpha3.Interface {
 }
 
 func (d *usersGetter) Get(_, name string) (runtime.Object, error) {
-	user := &apiextensionsv1.CustomResourceDefinition{}
+	user := &iamv1beta1.User{}
 	return user, d.cache.Get(context.Background(), types.NamespacedName{Name: name}, user)
 }
 

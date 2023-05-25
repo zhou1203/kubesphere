@@ -50,7 +50,6 @@ func (d *clusterRolesGetter) Get(_, name string) (runtime.Object, error) {
 }
 
 func (d *clusterRolesGetter) List(namespace string, query *query.Query) (*api.ListResult, error) {
-
 	var roles []*rbacv1.ClusterRole
 	var err error
 	if aggregateTo := query.Filters[iamv1beta1.AggregateTo]; aggregateTo != "" {
@@ -80,7 +79,6 @@ func (d *clusterRolesGetter) List(namespace string, query *query.Query) (*api.Li
 }
 
 func (d *clusterRolesGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftClusterRole, ok := left.(*rbacv1.ClusterRole)
 	if !ok {
 		return false

@@ -22,7 +22,6 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -36,21 +35,20 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3"
 )
 
-type workspacerolesGetter struct {
+type workspaceRolesGetter struct {
 	cache runtimeclient.Reader
 }
 
 func New(cache runtimeclient.Reader) v1alpha3.Interface {
-	return &workspacerolesGetter{cache: cache}
+	return &workspaceRolesGetter{cache: cache}
 }
 
-func (d *workspacerolesGetter) Get(_, name string) (runtime.Object, error) {
-	globalRole := &apiextensionsv1.CustomResourceDefinition{}
-	return globalRole, d.cache.Get(context.Background(), types.NamespacedName{Name: name}, globalRole)
+func (d *workspaceRolesGetter) Get(_, name string) (runtime.Object, error) {
+	workspaceRole := &iamv1beta1.WorkspaceRole{}
+	return workspaceRole, d.cache.Get(context.Background(), types.NamespacedName{Name: name}, workspaceRole)
 }
 
-func (d *workspacerolesGetter) List(_ string, query *query.Query) (*api.ListResult, error) {
-
+func (d *workspaceRolesGetter) List(_ string, query *query.Query) (*api.ListResult, error) {
 	var roles []*iamv1beta1.WorkspaceRole
 	var err error
 	if aggregateTo := query.Filters[iamv1beta1.AggregateTo]; aggregateTo != "" {
@@ -79,7 +77,7 @@ func (d *workspacerolesGetter) List(_ string, query *query.Query) (*api.ListResu
 	return v1alpha3.DefaultList(result, query, d.compare, d.filter), nil
 }
 
-func (d *workspacerolesGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
+func (d *workspaceRolesGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
 
 	leftRole, ok := left.(*iamv1beta1.WorkspaceRole)
 	if !ok {
@@ -94,7 +92,7 @@ func (d *workspacerolesGetter) compare(left runtime.Object, right runtime.Object
 	return v1alpha3.DefaultObjectMetaCompare(leftRole.ObjectMeta, rightRole.ObjectMeta, field)
 }
 
-func (d *workspacerolesGetter) filter(object runtime.Object, filter query.Filter) bool {
+func (d *workspaceRolesGetter) filter(object runtime.Object, filter query.Filter) bool {
 	role, ok := object.(*iamv1beta1.WorkspaceRole)
 
 	if !ok {
@@ -110,7 +108,7 @@ func (d *workspacerolesGetter) filter(object runtime.Object, filter query.Filter
 
 }
 
-func (d *workspacerolesGetter) fetchAggregationRoles(name string) ([]*iamv1beta1.WorkspaceRole, error) {
+func (d *workspaceRolesGetter) fetchAggregationRoles(name string) ([]*iamv1beta1.WorkspaceRole, error) {
 	roles := make([]*iamv1beta1.WorkspaceRole, 0)
 
 	obj, err := d.Get("", name)
