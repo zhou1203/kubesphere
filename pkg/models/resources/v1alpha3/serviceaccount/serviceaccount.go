@@ -57,18 +57,17 @@ func (d *serviceAccountsGetter) List(namespace string, query *query.Query) (*api
 }
 
 func (d *serviceAccountsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
-	leftCM, ok := left.(*corev1.ServiceAccount)
+	leftSA, ok := left.(*corev1.ServiceAccount)
 	if !ok {
 		return false
 	}
 
-	rightCM, ok := right.(*corev1.ServiceAccount)
+	rightSA, ok := right.(*corev1.ServiceAccount)
 	if !ok {
 		return false
 	}
 
-	return v1alpha3.DefaultObjectMetaCompare(leftCM.ObjectMeta, rightCM.ObjectMeta, field)
+	return v1alpha3.DefaultObjectMetaCompare(leftSA.ObjectMeta, rightSA.ObjectMeta, field)
 }
 
 func (d *serviceAccountsGetter) filter(object runtime.Object, filter query.Filter) bool {

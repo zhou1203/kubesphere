@@ -63,7 +63,6 @@ func (d *statefulSetGetter) List(namespace string, query *query.Query) (*api.Lis
 }
 
 func (d *statefulSetGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftStatefulSet, ok := left.(*appsv1.StatefulSet)
 	if !ok {
 		return false

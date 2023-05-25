@@ -30,20 +30,20 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3"
 )
 
-type rolebindingsGetter struct {
+type roleBindingsGetter struct {
 	cache runtimeclient.Reader
 }
 
 func New(cache runtimeclient.Reader) v1alpha3.Interface {
-	return &rolebindingsGetter{cache: cache}
+	return &roleBindingsGetter{cache: cache}
 }
 
-func (d *rolebindingsGetter) Get(namespace, name string) (runtime.Object, error) {
+func (d *roleBindingsGetter) Get(namespace, name string) (runtime.Object, error) {
 	roleBinding := &rbacv1.RoleBinding{}
 	return roleBinding, d.cache.Get(context.Background(), types.NamespacedName{Namespace: namespace, Name: name}, roleBinding)
 }
 
-func (d *rolebindingsGetter) List(namespace string, query *query.Query) (*api.ListResult, error) {
+func (d *roleBindingsGetter) List(namespace string, query *query.Query) (*api.ListResult, error) {
 	roleBindings := &rbacv1.RoleBindingList{}
 	if err := d.cache.List(context.Background(), roleBindings, client.InNamespace(namespace),
 		client.MatchingLabelsSelector{Selector: query.Selector()}); err != nil {
@@ -56,7 +56,7 @@ func (d *rolebindingsGetter) List(namespace string, query *query.Query) (*api.Li
 	return v1alpha3.DefaultList(result, query, d.compare, d.filter), nil
 }
 
-func (d *rolebindingsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
+func (d *roleBindingsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
 	leftRoleBinding, ok := left.(*rbacv1.RoleBinding)
 	if !ok {
 		return false
@@ -70,7 +70,7 @@ func (d *rolebindingsGetter) compare(left runtime.Object, right runtime.Object, 
 	return v1alpha3.DefaultObjectMetaCompare(leftRoleBinding.ObjectMeta, rightRoleBinding.ObjectMeta, field)
 }
 
-func (d *rolebindingsGetter) filter(object runtime.Object, filter query.Filter) bool {
+func (d *roleBindingsGetter) filter(object runtime.Object, filter query.Filter) bool {
 	role, ok := object.(*rbacv1.RoleBinding)
 
 	if !ok {

@@ -65,7 +65,6 @@ func (d *daemonSetGetter) List(namespace string, query *query.Query) (*api.ListR
 }
 
 func (d *daemonSetGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftDaemonSet, ok := left.(*appsv1.DaemonSet)
 	if !ok {
 		return false

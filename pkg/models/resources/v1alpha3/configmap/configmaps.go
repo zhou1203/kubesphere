@@ -57,7 +57,6 @@ func (d *configmapsGetter) List(namespace string, query *query.Query) (*api.List
 }
 
 func (d *configmapsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftCM, ok := left.(*corev1.ConfigMap)
 	if !ok {
 		return false

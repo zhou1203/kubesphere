@@ -74,7 +74,6 @@ func (p *podsGetter) List(namespace string, query *query.Query) (*api.ListResult
 }
 
 func (p *podsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftPod, ok := left.(*corev1.Pod)
 	if !ok {
 		return false

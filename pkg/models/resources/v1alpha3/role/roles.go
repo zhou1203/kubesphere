@@ -80,7 +80,6 @@ func (d *rolesGetter) List(namespace string, query *query.Query) (*api.ListResul
 }
 
 func (d *rolesGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftRole, ok := left.(*rbacv1.Role)
 	if !ok {
 		return false

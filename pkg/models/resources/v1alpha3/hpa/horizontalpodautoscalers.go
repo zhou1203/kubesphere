@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package hpa
 
 import (
@@ -56,7 +57,6 @@ func (s *hpaGetter) List(namespace string, query *query.Query) (*api.ListResult,
 }
 
 func (s *hpaGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftHPA, ok := left.(*autoscalingv2beta2.HorizontalPodAutoscaler)
 	if !ok {
 		return false

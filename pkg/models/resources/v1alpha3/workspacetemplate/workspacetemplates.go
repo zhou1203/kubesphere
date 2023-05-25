@@ -58,7 +58,6 @@ func (d *workspaceGetter) List(_ string, query *query.Query) (*api.ListResult, e
 }
 
 func (d *workspaceGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftWorkspace, ok := left.(*tenantv1alpha2.WorkspaceTemplate)
 	if !ok {
 		return false

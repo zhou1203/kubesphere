@@ -42,7 +42,10 @@ func New(cache runtimeclient.Reader) v1alpha3.Interface {
 
 func (c *clustersGetter) Get(_, name string) (runtime.Object, error) {
 	cluster := &clusterv1alpha1.Cluster{}
-	return c.transform(cluster), c.cache.Get(context.Background(), types.NamespacedName{Name: name}, cluster)
+	if err := c.cache.Get(context.Background(), types.NamespacedName{Name: name}, cluster); err != nil {
+		return nil, err
+	}
+	return c.transform(cluster), nil
 }
 
 func (c *clustersGetter) List(_ string, query *query.Query) (*api.ListResult, error) {

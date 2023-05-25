@@ -47,7 +47,7 @@ func (d *groupBindingGetter) Get(_, name string) (runtime.Object, error) {
 }
 
 func (d *groupBindingGetter) List(_ string, query *query.Query) (*api.ListResult, error) {
-	groupBindings := &iamv1beta1.GroupList{}
+	groupBindings := &iamv1beta1.GroupBindingList{}
 	if err := d.cache.List(context.Background(), groupBindings,
 		client.MatchingLabelsSelector{Selector: query.Selector()}); err != nil {
 		return nil, err
@@ -60,7 +60,6 @@ func (d *groupBindingGetter) List(_ string, query *query.Query) (*api.ListResult
 }
 
 func (d *groupBindingGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftGroupBinding, ok := left.(*iamv1beta1.GroupBinding)
 	if !ok {
 		return false
