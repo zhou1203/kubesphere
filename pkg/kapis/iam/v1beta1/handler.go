@@ -78,7 +78,6 @@ func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *re
 	}
 
 	_ = response.WriteEntity(result)
-
 }
 
 func (h *iamHandler) ListNamespaceMember(request *restful.Request, response *restful.Response) {

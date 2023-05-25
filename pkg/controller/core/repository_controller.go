@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/go-logr/logr"
 	"helm.sh/helm/v3/pkg/repo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -39,7 +40,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
-
 	"kubesphere.io/utils/helm"
 
 	"kubesphere.io/kubesphere/pkg/constants"
@@ -49,7 +49,7 @@ const (
 	RepositoryFinalizer         = "repositories.kubesphere.io"
 	minimumRegistryPollInterval = 15 * time.Minute
 	defaultRequeueInterval      = 15 * time.Second
-	RepositoryController        = "repository-controller"
+	repositoryController        = "repository-controller"
 	generateNameFormat          = "repository-%s"
 )
 
@@ -57,12 +57,12 @@ var _ reconcile.Reconciler = &RepositoryReconciler{}
 
 type RepositoryReconciler struct {
 	client.Client
-	Recorder record.EventRecorder
+	recorder record.EventRecorder
+	logger   logr.Logger
 }
 
 // reconcileDelete delete the repository and pod.
 func (r *RepositoryReconciler) reconcileDelete(ctx context.Context, repo *corev1alpha1.Repository) (ctrl.Result, error) {
-	klog.V(4).Infof("remove the finalizer for repository %s", repo.Name)
 	// Remove the finalizer from the subscription and update it.
 	controllerutil.RemoveFinalizer(repo, RepositoryFinalizer)
 	if err := r.Update(ctx, repo); err != nil {
@@ -74,8 +74,8 @@ func (r *RepositoryReconciler) reconcileDelete(ctx context.Context, repo *corev1
 // createOrUpdateExtension create a new extension if the extension does not exist.
 // Or it will update info of the extension.
 func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo *corev1alpha1.Repository, extensionName string, latestExtensionVersion *corev1alpha1.ExtensionVersion) (*corev1alpha1.Extension, error) {
+	logger := klog.FromContext(ctx)
 	extension := &corev1alpha1.Extension{}
-	klog.V(2).Infof("create of update extension: %s/%s ", repo.Name, extensionName)
 	if err := r.Get(ctx, types.NamespacedName{Name: extensionName}, extension); err != nil {
 		if apierrors.IsNotFound(err) {
 			extension = &corev1alpha1.Extension{
@@ -97,9 +97,9 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 			if err := controllerutil.SetOwnerReference(repo, extension, r.Scheme()); err != nil {
 				return nil, err
 			}
-			klog.V(2).Infof("create new extension: %s/%s", repo.Name, extensionName)
+			logger.V(4).Info("create extension", "repo", repo.Name, "extension", extensionName)
 			if err := r.Create(ctx, extension, &client.CreateOptions{}); err != nil {
-				klog.Errorf("failed to create extension: %s/%s", repo.Name, extensionName)
+				logger.Error(err, "failed to create extension", "repo", repo.Name, "extension", extensionName)
 				return nil, err
 			}
 		} else {
@@ -109,7 +109,7 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 
 	// conflict extension
 	if extension.ObjectMeta.Labels[corev1alpha1.RepositoryReferenceLabel] != repo.Name {
-		klog.Warningf("conflict extension: %s/%s already exists", extension.ObjectMeta.Labels[corev1alpha1.RepositoryReferenceLabel], extensionName)
+		logger.Info("conflict extension found", "repo", extension.ObjectMeta.Labels[corev1alpha1.RepositoryReferenceLabel], "extension", extensionName)
 		return nil, nil
 	}
 
@@ -137,17 +137,17 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 }
 
 func (r *RepositoryReconciler) createOrUpdateExtensionVersion(ctx context.Context, repo *corev1alpha1.Repository, extension *corev1alpha1.Extension, extensionVersion *corev1alpha1.ExtensionVersion) error {
+	logger := klog.FromContext(ctx)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		version := &corev1alpha1.ExtensionVersion{}
-		klog.V(2).Infof("update or create extension version: %s/%s ", repo.Name, extensionVersion.Name)
 		if err := r.Get(ctx, types.NamespacedName{Name: extensionVersion.Name}, version); err != nil {
 			if apierrors.IsNotFound(err) {
 				if err := controllerutil.SetOwnerReference(extension, extensionVersion, r.Scheme()); err != nil {
 					return err
 				}
-				klog.V(2).Infof("create new extension version: %s in repo: ", extensionVersion.Name)
+				logger.V(4).Info("create extension version", "repo", repo.Name, "version", extensionVersion.Name)
 				if err := r.Create(ctx, extensionVersion, &client.CreateOptions{}); err != nil {
-					klog.Errorf("failed to create extension version: %s/%s, error: %s", repo.Name, extensionVersion.Name, err)
+					logger.Error(err, "failed to create extension version", "repo", repo.Name, "version", extensionVersion.Name)
 					return err
 				}
 				return nil
@@ -157,9 +157,9 @@ func (r *RepositoryReconciler) createOrUpdateExtensionVersion(ctx context.Contex
 		}
 		if !reflect.DeepEqual(version.Spec, extensionVersion.Spec) {
 			version.Spec = extensionVersion.Spec
-			klog.V(2).Infof("update extension version: %s in repo: %s", repo.Name, extensionVersion.Name)
+			logger.V(4).Info("update extension version", "repo", repo.Name, "version", extensionVersion.Name)
 			if err := r.Update(ctx, version); err != nil {
-				klog.Errorf("failed to update extension version: %s/%s, error: %s", repo.Name, extensionVersion.Name, err)
+				logger.Error(err, "failed to update extension version", "repo", repo.Name, "version", extensionVersion.Name)
 				return err
 			}
 		}
@@ -168,14 +168,14 @@ func (r *RepositoryReconciler) createOrUpdateExtensionVersion(ctx context.Contex
 }
 
 func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.IndexFile, repo *corev1alpha1.Repository) error {
+	logger := klog.FromContext(ctx)
 	for extensionName, versions := range index.Entries {
 		extensionVersions := make([]corev1alpha1.ExtensionVersion, 0, len(versions))
 		for _, version := range versions {
 			if version.Metadata == nil {
-				klog.Warningf("version metadata is empty in repo: %s", repo.Name)
+				logger.Info("version metadata is empty", "repo", repo.Name)
 				continue
 			}
-			klog.V(2).Infof("find version: %s/%s", repo.Name, version.Name)
 			var vendor corev1alpha1.Vendor
 			if len(version.Maintainers) > 0 {
 				maintainer := version.Maintainers[0]
@@ -215,6 +215,13 @@ func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.I
 				installationMode = corev1alpha1.InstallationModeHostOnly
 			}
 
+			var externalDependencies []corev1alpha1.ExternalDependency
+			if externalDependenciesAnnotation := version.Annotations[corev1alpha1.ExternalDependenciesAnnotation]; externalDependenciesAnnotation != "" {
+				if err := json.Unmarshal([]byte(externalDependenciesAnnotation), &externalDependencies); err != nil {
+					logger.V(4).Info("invalid external dependencies annotation", "annotation", externalDependenciesAnnotation)
+				}
+			}
+
 			ksVersion := version.Annotations[corev1alpha1.KSVersionAnnotation]
 			extensionVersions = append(extensionVersions, corev1alpha1.ExtensionVersion{
 				ObjectMeta: metav1.ObjectMeta{
@@ -239,7 +246,8 @@ func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.I
 						Icon:        version.Icon,
 						Vendor:      vendor,
 					},
-					ChartURL: chartURL,
+					ChartURL:             chartURL,
+					ExternalDependencies: externalDependencies,
 				},
 			})
 		}
@@ -277,7 +285,6 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 }
 
 func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *corev1alpha1.Repository) (ctrl.Result, error) {
-
 	registryPollInterval := minimumRegistryPollInterval
 	if repo.Spec.UpdateStrategy != nil && repo.Spec.UpdateStrategy.Interval.Duration > minimumRegistryPollInterval {
 		registryPollInterval = repo.Spec.UpdateStrategy.Interval.Duration
@@ -292,10 +299,10 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 		if err := r.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: fmt.Sprintf(generateNameFormat, repo.Name)}, &deployment); err != nil {
 			if apierrors.IsNotFound(err) {
 				if err := r.deployRepository(ctx, repo); err != nil {
-					r.Recorder.Eventf(repo, corev1.EventTypeWarning, "RepositoryDeployFailed", err.Error())
+					r.recorder.Eventf(repo, corev1.EventTypeWarning, "RepositoryDeployFailed", err.Error())
 					return ctrl.Result{}, fmt.Errorf("failed to deploy repository: %s", err)
 				}
-				r.Recorder.Eventf(repo, corev1.EventTypeNormal, "RepositoryDeployed", "")
+				r.recorder.Eventf(repo, corev1.EventTypeNormal, "RepositoryDeployed", "")
 				return ctrl.Result{Requeue: true, RequeueAfter: defaultRequeueInterval}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to fetch deployment: %s", err)
@@ -311,7 +318,7 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 			if err := r.Patch(ctx, &deployment, client.RawPatch(types.StrategicMergePatchType, rawData)); err != nil {
 				return ctrl.Result{}, err
 			}
-			r.Recorder.Eventf(repo, corev1.EventTypeNormal, "RepositoryRestarted", "")
+			r.recorder.Eventf(repo, corev1.EventTypeNormal, "RepositoryRestarted", "")
 			return ctrl.Result{Requeue: true, RequeueAfter: defaultRequeueInterval}, nil
 		}
 
@@ -326,10 +333,10 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 
 	if repoURL != "" && time.Now().After(repo.Status.LastSyncTime.Add(registryPollInterval)) {
 		if err := r.syncExtensionsFromURL(ctx, repo, repoURL); err != nil {
-			r.Recorder.Eventf(repo, corev1.EventTypeWarning, "ExtensionsSyncFailed", err.Error())
+			r.recorder.Eventf(repo, corev1.EventTypeWarning, "ExtensionsSyncFailed", err.Error())
 			return ctrl.Result{}, fmt.Errorf("failed to sync extensions: %s", err)
 		}
-		r.Recorder.Eventf(repo, corev1.EventTypeNormal, "RepositorySynced", "")
+		r.recorder.Eventf(repo, corev1.EventTypeNormal, "RepositorySynced", "")
 		repo = repo.DeepCopy()
 		repo.Status.LastSyncTime = metav1.Now()
 		if err := r.Update(ctx, repo); err != nil {
@@ -341,7 +348,9 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 }
 
 func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	klog.V(4).Infof("sync repository: %s ", req.String())
+	logger := r.logger.WithValues("repository", req.String())
+	logger.V(4).Info("sync repository")
+	ctx = klog.NewContext(ctx, logger)
 
 	repo := &corev1alpha1.Repository{}
 	if err := r.Client.Get(ctx, req.NamespacedName, repo); err != nil {
@@ -363,9 +372,10 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 func (r *RepositoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
-	r.Recorder = mgr.GetEventRecorderFor(RepositoryController)
+	r.logger = ctrl.Log.WithName("controllers").WithName(subscriptionController)
+	r.recorder = mgr.GetEventRecorderFor(repositoryController)
 	return ctrl.NewControllerManagedBy(mgr).
-		Named(RepositoryController).
+		Named(repositoryController).
 		For(&corev1alpha1.Repository{}).Complete(r)
 }
 
