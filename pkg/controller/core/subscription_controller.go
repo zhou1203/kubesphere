@@ -52,6 +52,8 @@ import (
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	"kubesphere.io/utils/helm"
+
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 const (
@@ -915,6 +917,7 @@ func (r *SubscriptionReconciler) syncClusterStatus(ctx context.Context, sub *cor
 	logger := klog.FromContext(ctx).WithValues("cluster", cluster.Name)
 	clusterSchedulingStatus := sub.Status.ClusterSchedulingStatuses[cluster.Name]
 
+	// TODO using cached cluster client instead
 	// cluster client without cache
 	clusterClient, err := newClusterClient(cluster)
 	if err != nil {
@@ -1336,7 +1339,7 @@ func newClusterClient(cluster clusterv1alpha1.Cluster) (client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.New(config, client.Options{})
+	return client.New(config, client.Options{Scheme: scheme.Scheme})
 }
 
 func (r *SubscriptionReconciler) versionChanged(ctx context.Context, sub *corev1alpha1.Subscription) bool {
