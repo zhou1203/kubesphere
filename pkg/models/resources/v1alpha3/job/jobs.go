@@ -67,7 +67,6 @@ func (d *jobsGetter) List(namespace string, query *query.Query) (*api.ListResult
 }
 
 func (d *jobsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftJob, ok := left.(*batchv1.Job)
 	if !ok {
 		return false
