@@ -47,7 +47,7 @@ type TransformFunc func(runtime.Object) runtime.Object
 
 func DefaultList(objects []runtime.Object, q *query.Query, compareFunc CompareFunc, filterFunc FilterFunc, transformFuncs ...TransformFunc) *api.ListResult {
 	// selected matched ones
-	var filtered []runtime.Object
+	filtered := make([]runtime.Object, 0)
 	for _, object := range objects {
 		selected := true
 		for field, value := range q.Filters {
@@ -87,7 +87,7 @@ func DefaultList(objects []runtime.Object, q *query.Query, compareFunc CompareFu
 	}
 }
 
-// DefaultObjectMetaCompare return true is left great than right
+// DefaultObjectMetaCompare return true is left greater than right
 func DefaultObjectMetaCompare(left, right metav1.ObjectMeta, sortBy query.Field) bool {
 	switch sortBy {
 	// ?sortBy=name
@@ -107,7 +107,7 @@ func DefaultObjectMetaCompare(left, right metav1.ObjectMeta, sortBy query.Field)
 	}
 }
 
-// Default metadata filter
+// DefaultObjectMetaFilter is default metadata filter
 func DefaultObjectMetaFilter(item metav1.ObjectMeta, filter query.Filter) bool {
 	switch filter.Field {
 	case query.FieldNames:
@@ -148,8 +148,9 @@ func DefaultObjectMetaFilter(item metav1.ObjectMeta, filter query.Filter) bool {
 		// /namespaces?page=1&limit=10&label=kubesphere.io/workspace:system-workspace
 	case query.FieldLabel:
 		return labelMatch(item.Labels, string(filter.Value))
+		// not supported filter
 	default:
-		return false
+		return true
 	}
 }
 
