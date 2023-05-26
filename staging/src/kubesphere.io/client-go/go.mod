@@ -52,9 +52,6 @@ require (
 )
 
 replace (
-	github.com/go-logr/logr => github.com/go-logr/logr v1.2.3
-	github.com/golang/protobuf => github.com/golang/protobuf v1.5.2
-	github.com/onsi/gomega => github.com/onsi/gomega v1.27.1
 	golang.org/x/net => golang.org/x/net v0.7.0
 	golang.org/x/sys => golang.org/x/sys v0.5.0
 	golang.org/x/text => golang.org/x/text v0.7.0
