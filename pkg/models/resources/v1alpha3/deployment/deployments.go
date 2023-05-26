@@ -54,7 +54,7 @@ func (d *deploymentsGetter) Get(namespace, name string) (runtime.Object, error) 
 }
 
 func (d *deploymentsGetter) List(namespace string, query *query.Query) (*api.ListResult, error) {
-	deployments := &appsv1.DaemonSetList{}
+	deployments := &appsv1.DeploymentList{}
 	if err := d.cache.List(context.Background(), deployments, client.InNamespace(namespace),
 		client.MatchingLabelsSelector{Selector: query.Selector()}); err != nil {
 		return nil, err

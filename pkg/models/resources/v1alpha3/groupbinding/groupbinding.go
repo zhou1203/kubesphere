@@ -74,16 +74,15 @@ func (d *groupBindingGetter) compare(left runtime.Object, right runtime.Object, 
 }
 
 func (d *groupBindingGetter) filter(object runtime.Object, filter query.Filter) bool {
-	groupbinding, ok := object.(*iamv1beta1.GroupBinding)
-
+	groupBinding, ok := object.(*iamv1beta1.GroupBinding)
 	if !ok {
 		return false
 	}
 
 	switch filter.Field {
 	case User:
-		return sliceutil.HasString(groupbinding.Users, string(filter.Value))
+		return sliceutil.HasString(groupBinding.Users, string(filter.Value))
 	default:
-		return v1alpha3.DefaultObjectMetaFilter(groupbinding.ObjectMeta, filter)
+		return v1alpha3.DefaultObjectMetaFilter(groupBinding.ObjectMeta, filter)
 	}
 }
