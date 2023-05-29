@@ -77,6 +77,15 @@ func (q *Query) Selector() labels.Selector {
 	}
 }
 
+func (q *Query) AddLabels(ls map[string]string) error {
+	labelsMap, err := labels.ConvertSelectorToLabelsMap(q.LabelSelector)
+	if err != nil {
+		return err
+	}
+	q.LabelSelector = labels.Merge(labelsMap, ls).String()
+	return nil
+}
+
 func (p *Pagination) GetValidPagination(total int) (startIndex, endIndex int) {
 	// no pagination
 	if p.Limit == NoPagination.Limit {

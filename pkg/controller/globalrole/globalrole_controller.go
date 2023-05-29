@@ -57,13 +57,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 func (r *Reconciler) InjectClient(c client.Client) error {
 	r.Client = c
+	r.helper = rbachelper.NewHelper(r.Client)
 	return nil
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	r.helper = rbachelper.NewHelper(r.Client)
 	return builder.
 		ControllerManagedBy(mgr).
 		For(

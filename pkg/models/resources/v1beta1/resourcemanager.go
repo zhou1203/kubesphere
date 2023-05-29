@@ -232,6 +232,7 @@ func (h *resourceManager) Update(ctx context.Context, old, new client.Object) er
 }
 
 func (h *resourceManager) Patch(ctx context.Context, old, new client.Object) error {
+	new.SetResourceVersion(old.GetResourceVersion())
 	return h.client.Patch(ctx, new, client.MergeFrom(old))
 }
 

@@ -39,6 +39,9 @@ func NewHelper(c client.Client) *Helper {
 func (h *Helper) GetAggregationRoleTemplateRule(ctx context.Context, scopeKey string, templates *iamv1beta1.AggregationRoleTemplates) ([]rbacv1.PolicyRule, []string, error) {
 	rules := make([]rbacv1.PolicyRule, 0)
 	newTemplateNames := make([]string, 0)
+	if templates == nil {
+		return rules, newTemplateNames, nil
+	}
 	if templates.RoleSelector.Size() == 0 {
 		for _, name := range templates.TemplateNames {
 			roleTemplate := &iamv1beta1.RoleTemplate{}
@@ -91,6 +94,9 @@ func (h *Helper) GetAggregationRoleTemplateRule(ctx context.Context, scopeKey st
 }
 
 func (h *Helper) AggregationRole(ctx context.Context, ruleOwner RuleOwner, recorder record.EventRecorder) error {
+	if ruleOwner.GetAggregationRule() == nil {
+		return nil
+	}
 	newPolicyRules, newTemplateNames, err := h.GetAggregationRoleTemplateRule(ctx, ruleOwner.RuleOwnerScopeKey(), ruleOwner.GetAggregationRule())
 	if err != nil {
 		recorder.Event(ruleOwner.GetObject(), corev1.EventTypeWarning, AggregateRoleTemplateFailed, err.Error())
