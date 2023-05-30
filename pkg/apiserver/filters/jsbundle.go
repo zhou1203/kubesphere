@@ -21,16 +21,17 @@ package filters
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/proxy"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
+	"k8s.io/client-go/transport"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,7 +52,6 @@ func WithJSBundle(next http.Handler, cache cache.Cache) http.Handler {
 
 func (s *jsBundle) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	requestInfo, _ := request.RequestInfoFrom(req.Context())
-
 	if requestInfo.IsResourceRequest || requestInfo.IsKubernetesRequest {
 		s.next.ServeHTTP(w, req)
 		return
@@ -62,9 +62,9 @@ func (s *jsBundle) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	var jsBundles extensionsv1alpha1.JSBundleList
 	if err := s.cache.List(req.Context(), &jsBundles, &client.ListOptions{}); err != nil {
-		message := fmt.Errorf("failed to list js bundles")
-		klog.Errorf("%v: %v", message, err)
-		responsewriters.InternalError(w, req, message)
+		reason := "failed to list js bundles"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 		return
 	}
 	for _, jsBundle := range jsBundles.Items {
@@ -82,9 +82,8 @@ func (s *jsBundle) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				s.rawFromSecret(jsBundle.Spec.RawFrom.SecretKeyRef, w, req)
 				return
 			}
-			rawURL := jsBundle.Spec.RawFrom.RawURL()
-			if rawURL != "" {
-				s.rawFromRemote(rawURL, w, req)
+			if jsBundle.Spec.RawFrom.URL != nil || jsBundle.Spec.RawFrom.Service != nil {
+				s.rawFromRemote(jsBundle.Spec.RawFrom.Endpoint, w, req)
 				return
 			}
 		}
@@ -92,24 +91,39 @@ func (s *jsBundle) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	s.next.ServeHTTP(w, req)
 }
 
-func (s *jsBundle) rawFromRemote(rawURL string, w http.ResponseWriter, req *http.Request) {
-	location, err := url.Parse(rawURL)
+func (s *jsBundle) rawFromRemote(endpoint extensionsv1alpha1.Endpoint, w http.ResponseWriter, req *http.Request) {
+	location, err := url.Parse(endpoint.RawURL())
 	if err != nil {
-		message := "failed to fetch content"
-		klog.Errorf("%v: %v", message, err)
-		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, message, w)
+		reason := "failed to fetch content"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 		return
 	}
-	handler := proxy.NewUpgradeAwareHandler(location, http.DefaultTransport, false, false, &responder{})
+
+	tr, err := transport.New(&transport.Config{
+		TLS: transport.TLSConfig{
+			CAData:   endpoint.CABundle,
+			Insecure: endpoint.InsecureSkipVerify,
+		},
+	})
+
+	if err != nil {
+		reason := "failed to create transport.TLSConfig"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
+		return
+	}
+
+	handler := proxy.NewUpgradeAwareHandler(location, tr, false, false, &responder{})
 	handler.ServeHTTP(w, req)
 }
 
-func (s *jsBundle) rawContent(base64EncodedData []byte, w http.ResponseWriter, req *http.Request) {
+func (s *jsBundle) rawContent(base64EncodedData []byte, w http.ResponseWriter, _ *http.Request) {
 	dec := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(base64EncodedData))
 	if _, err := io.Copy(w, dec); err != nil {
-		message := fmt.Errorf("failed to decode raw content")
-		klog.Errorf("%v: %v", message, err)
-		responsewriters.InternalError(w, req, message)
+		reason := "failed to decode raw content"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 	}
 }
 
@@ -120,12 +134,16 @@ func (s *jsBundle) rawFromConfigMap(configMapRef *extensionsv1alpha1.ConfigMapKe
 		Name:      configMapRef.Name,
 	}
 	if err := s.cache.Get(req.Context(), ref, &cm); err != nil {
-		message := fmt.Errorf("failed to fetch content from configMap, ref: %s", ref)
-		klog.Errorf("%v: %v", message, err)
-		responsewriters.InternalError(w, req, message)
+		reason := "failed to fetch content from configMap"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 		return
 	}
-	w.Write([]byte(cm.Data[configMapRef.Key]))
+	if cm.Data != nil {
+		_, _ = w.Write([]byte(cm.Data[configMapRef.Key]))
+	} else if cm.BinaryData != nil {
+		_, _ = w.Write(cm.BinaryData[configMapRef.Key])
+	}
 }
 
 func (s *jsBundle) rawFromSecret(secretRef *extensionsv1alpha1.SecretKeyRef, w http.ResponseWriter, req *http.Request) {
@@ -135,10 +153,10 @@ func (s *jsBundle) rawFromSecret(secretRef *extensionsv1alpha1.SecretKeyRef, w h
 		Name:      secretRef.Name,
 	}
 	if err := s.cache.Get(req.Context(), ref, &secret); err != nil {
-		message := fmt.Errorf("failed to fetch content from secret, ref: %s", ref)
-		klog.Errorf("%v: %v", message, err)
-		responsewriters.InternalError(w, req, err)
+		reason := "failed to fetch content from secret"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 		return
 	}
-	w.Write(secret.Data[secretRef.Key])
+	_, _ = w.Write(secret.Data[secretRef.Key])
 }
