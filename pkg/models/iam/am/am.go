@@ -98,8 +98,11 @@ func NewOperator(manager resourcev1beta1.ResourceManager) AccessManagementInterf
 }
 
 func (am *amOperator) GetGlobalRoleOfUser(username string) (*iamv1beta1.GlobalRole, error) {
-	//nolint:ineffassign,staticcheck
 	globalRoleBindings, err := am.ListGlobalRoleBindings(username, "")
+	if err != nil {
+		klog.Error(err)
+		return nil, err
+	}
 	if len(globalRoleBindings) > 0 {
 		// Usually, only one globalRoleBinding will be found which is created from ks-console.
 		if len(globalRoleBindings) > 1 {
