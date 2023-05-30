@@ -53,6 +53,7 @@ const (
 	RoleTemplateLabel                     = "iam.kubesphere.io/role-template"
 	ScopeLabelFormat                      = "scope.iam.kubesphere.io/%s"
 	UserReferenceLabel                    = "iam.kubesphere.io/user-ref"
+	RoleReferenceLabel                    = "iam.kubesphere.io/role-ref"
 	IdentifyProviderLabel                 = "iam.kubesphere.io/identify-provider"
 	OriginUIDLabel                        = "iam.kubesphere.io/origin-uid"
 	ServiceAccountReferenceLabel          = "iam.kubesphere.io/serviceaccount-ref"
@@ -75,4 +76,5 @@ const (
 	GroupReferenceLabel                   = "iam.kubesphere.io/group-ref"
 	GroupParent                           = "iam.kubesphere.io/group-parent"
 	ResourcePluralGroupBinding            = "groupbindings"
+	GroupName                             = "iam.kubesphere.io"
 )

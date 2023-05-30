@@ -230,6 +230,7 @@ func workspaceRoleBindingChanger(workspaceRoleBinding *iamv1beta1.WorkspaceRoleB
 		workspaceRoleBinding.Labels = map[string]string{
 			tenantv1alpha1.WorkspaceLabel: workspace,
 			iamv1beta1.UserReferenceLabel: username,
+			iamv1beta1.RoleReferenceLabel: workspaceRoleName,
 		}
 
 		workspaceRoleBinding.RoleRef = rbacv1.RoleRef{
@@ -241,8 +242,8 @@ func workspaceRoleBindingChanger(workspaceRoleBinding *iamv1beta1.WorkspaceRoleB
 		workspaceRoleBinding.Subjects = []rbacv1.Subject{
 			{
 				Name:     username,
-				Kind:     rbacv1.UserKind,
-				APIGroup: rbacv1.GroupName,
+				Kind:     iamv1beta1.ResourceKindUser,
+				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
 			},
 		}
 		return nil

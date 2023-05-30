@@ -201,7 +201,7 @@ func (r *Authorizer) rulesFor(requestAttributes authorizer.Attributes) ([]rbacv1
 
 func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visitor func(source fmt.Stringer, regoPolicy string, rule *rbacv1.PolicyRule, err error) bool) {
 
-	if globalRoleBindings, err := r.am.ListGlobalRoleBindings(""); err != nil {
+	if globalRoleBindings, err := r.am.ListGlobalRoleBindings("", ""); err != nil {
 		if !visitor(nil, "", nil, err) {
 			return
 		}
@@ -251,7 +251,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 			workspace = requestAttributes.GetWorkspace()
 		}
 
-		if workspaceRoleBindings, err := r.am.ListWorkspaceRoleBindings("", nil, workspace); err != nil {
+		if workspaceRoleBindings, err := r.am.ListWorkspaceRoleBindings("", "", nil, workspace); err != nil {
 			if !visitor(nil, "", nil, err) {
 				return
 			}
@@ -283,7 +283,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 
 	if requestAttributes.GetResourceScope() == request.NamespaceScope {
 		namespace := requestAttributes.GetNamespace()
-		if roleBindings, err := r.am.ListRoleBindings("", nil, namespace); err != nil {
+		if roleBindings, err := r.am.ListRoleBindings("", "", nil, namespace); err != nil {
 			if !visitor(nil, "", nil, err) {
 				return
 			}
@@ -313,7 +313,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 		}
 	}
 
-	if clusterRoleBindings, err := r.am.ListClusterRoleBindings(""); err != nil {
+	if clusterRoleBindings, err := r.am.ListClusterRoleBindings("", ""); err != nil {
 		if !visitor(nil, "", nil, err) {
 			return
 		}

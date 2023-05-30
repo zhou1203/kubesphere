@@ -45,10 +45,10 @@ type AccessManagementInterface interface {
 	GetNamespaceRoleOfUser(username string, groups []string, namespace string) ([]*iamv1beta1.Role, error)
 	GetClusterRoleOfUser(username string) (*iamv1beta1.ClusterRole, error)
 
-	ListWorkspaceRoleBindings(username string, groups []string, workspace string) ([]*iamv1beta1.WorkspaceRoleBinding, error)
-	ListClusterRoleBindings(username string) ([]*iamv1beta1.ClusterRoleBinding, error)
-	ListGlobalRoleBindings(username string) ([]*iamv1beta1.GlobalRoleBinding, error)
-	ListRoleBindings(username string, groups []string, namespace string) ([]*iamv1beta1.RoleBinding, error)
+	ListWorkspaceRoleBindings(username, roleName string, groups []string, workspace string) ([]*iamv1beta1.WorkspaceRoleBinding, error)
+	ListClusterRoleBindings(username, roleName string) ([]*iamv1beta1.ClusterRoleBinding, error)
+	ListGlobalRoleBindings(username, roleName string) ([]*iamv1beta1.GlobalRoleBinding, error)
+	ListRoleBindings(username, roleName string, groups []string, namespace string) ([]*iamv1beta1.RoleBinding, error)
 
 	ListRoles(namespace string, query *query.Query) (*api.ListResult, error)
 	ListClusterRoles(query *query.Query) (*api.ListResult, error)
@@ -99,7 +99,7 @@ func NewOperator(manager resourcev1beta1.ResourceManager) AccessManagementInterf
 
 func (am *amOperator) GetGlobalRoleOfUser(username string) (*iamv1beta1.GlobalRole, error) {
 	//nolint:ineffassign,staticcheck
-	globalRoleBindings, err := am.ListGlobalRoleBindings(username)
+	globalRoleBindings, err := am.ListGlobalRoleBindings(username, "")
 	if len(globalRoleBindings) > 0 {
 		// Usually, only one globalRoleBinding will be found which is created from ks-console.
 		if len(globalRoleBindings) > 1 {
@@ -120,7 +120,7 @@ func (am *amOperator) GetGlobalRoleOfUser(username string) (*iamv1beta1.GlobalRo
 
 func (am *amOperator) GetWorkspaceRoleOfUser(username string, groups []string, workspace string) ([]*iamv1beta1.WorkspaceRole, error) {
 
-	userRoleBindings, err := am.ListWorkspaceRoleBindings(username, groups, workspace)
+	userRoleBindings, err := am.ListWorkspaceRoleBindings(username, "", groups, workspace)
 
 	if err != nil {
 		klog.Error(err)
@@ -143,7 +143,7 @@ func (am *amOperator) GetWorkspaceRoleOfUser(username string, groups []string, w
 			out.Annotations[iamv1beta1.WorkspaceRoleAnnotation] = role.Name
 			roles[i] = out
 		}
-		if len(userRoleBindings) > 1 {
+		if len(userRoleBindings) > 1 && workspace != "" {
 			klog.Infof("conflict workspace role binding, username: %s", username)
 		}
 		return roles, nil
@@ -155,7 +155,7 @@ func (am *amOperator) GetWorkspaceRoleOfUser(username string, groups []string, w
 }
 
 func (am *amOperator) GetNamespaceRoleOfUser(username string, groups []string, namespace string) ([]*iamv1beta1.Role, error) {
-	userRoleBindings, err := am.ListRoleBindings(username, groups, namespace)
+	userRoleBindings, err := am.ListRoleBindings(username, "", groups, namespace)
 	if err != nil {
 		klog.Error(err)
 		return nil, err
@@ -164,7 +164,7 @@ func (am *amOperator) GetNamespaceRoleOfUser(username string, groups []string, n
 	if len(userRoleBindings) > 0 {
 		roles := make([]*iamv1beta1.Role, len(userRoleBindings))
 		for i, roleBinding := range userRoleBindings {
-			role, err := am.GetNamespaceRole(namespace, roleBinding.RoleRef.Name)
+			role, err := am.GetNamespaceRole(roleBinding.Namespace, roleBinding.RoleRef.Name)
 			if err != nil {
 				klog.Error(err)
 				return nil, err
@@ -176,7 +176,7 @@ func (am *amOperator) GetNamespaceRoleOfUser(username string, groups []string, n
 			out.Annotations[iamv1beta1.RoleAnnotation] = role.Name
 			roles[i] = out
 		}
-		if len(userRoleBindings) > 1 {
+		if len(userRoleBindings) > 1 && namespace != "" {
 			klog.Infof("conflict role binding, username: %s", username)
 		}
 		return roles, nil
@@ -188,7 +188,7 @@ func (am *amOperator) GetNamespaceRoleOfUser(username string, groups []string, n
 }
 
 func (am *amOperator) GetClusterRoleOfUser(username string) (*iamv1beta1.ClusterRole, error) {
-	userRoleBindings, err := am.ListClusterRoleBindings(username)
+	userRoleBindings, err := am.ListClusterRoleBindings(username, "")
 
 	if err != nil {
 		klog.Error(err)
@@ -219,7 +219,7 @@ func (am *amOperator) GetClusterRoleOfUser(username string) (*iamv1beta1.Cluster
 	return nil, err
 }
 
-func (am *amOperator) ListWorkspaceRoleBindings(username string, groups []string, workspace string) ([]*iamv1beta1.WorkspaceRoleBinding, error) {
+func (am *amOperator) ListWorkspaceRoleBindings(username, roleName string, groups []string, workspace string) ([]*iamv1beta1.WorkspaceRoleBinding, error) {
 	roleBindings := &iamv1beta1.WorkspaceRoleBindingList{}
 	queryParam := query.New()
 	if workspace != "" {
@@ -231,6 +231,13 @@ func (am *amOperator) ListWorkspaceRoleBindings(username string, groups []string
 
 	if username != "" {
 		err := queryParam.AddLabels(map[string]string{iamv1beta1.UserReferenceLabel: username})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if roleName != "" {
+		err := queryParam.AddLabels(map[string]string{iamv1beta1.RoleReferenceLabel: roleName})
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +261,7 @@ func (am *amOperator) ListWorkspaceRoleBindings(username string, groups []string
 	return result, nil
 }
 
-func (am *amOperator) ListClusterRoleBindings(username string) ([]*iamv1beta1.ClusterRoleBinding, error) {
+func (am *amOperator) ListClusterRoleBindings(username, roleName string) ([]*iamv1beta1.ClusterRoleBinding, error) {
 	roleBindings := &iamv1beta1.ClusterRoleBindingList{}
 	queryParam := query.New()
 	if username != "" {
@@ -264,6 +271,14 @@ func (am *amOperator) ListClusterRoleBindings(username string) ([]*iamv1beta1.Cl
 			return nil, err
 		}
 	}
+
+	if roleName != "" {
+		err := queryParam.AddLabels(map[string]string{iamv1beta1.RoleReferenceLabel: roleName})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	err := am.resourceManager.List(context.Background(), "", queryParam, roleBindings)
 	if err != nil {
 		klog.Error(err)
@@ -278,13 +293,20 @@ func (am *amOperator) ListClusterRoleBindings(username string) ([]*iamv1beta1.Cl
 	return result, nil
 }
 
-func (am *amOperator) ListGlobalRoleBindings(username string) ([]*iamv1beta1.GlobalRoleBinding, error) {
+func (am *amOperator) ListGlobalRoleBindings(username, roleName string) ([]*iamv1beta1.GlobalRoleBinding, error) {
 	roleBindings := &iamv1beta1.GlobalRoleBindingList{}
 	queryParam := query.New()
 	if username != "" {
 		err := queryParam.AddLabels(map[string]string{iamv1beta1.UserReferenceLabel: username})
 		if err != nil {
 			klog.Error(err)
+			return nil, err
+		}
+	}
+
+	if roleName != "" {
+		err := queryParam.AddLabels(map[string]string{iamv1beta1.RoleReferenceLabel: roleName})
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -301,13 +323,20 @@ func (am *amOperator) ListGlobalRoleBindings(username string) ([]*iamv1beta1.Glo
 	return result, nil
 }
 
-func (am *amOperator) ListRoleBindings(username string, groups []string, namespace string) ([]*iamv1beta1.RoleBinding, error) {
+func (am *amOperator) ListRoleBindings(username, roleName string, groups []string, namespace string) ([]*iamv1beta1.RoleBinding, error) {
 	roleBindings := &iamv1beta1.RoleBindingList{}
 	queryParam := query.New()
 	if username != "" {
 		err := queryParam.AddLabels(map[string]string{iamv1beta1.UserReferenceLabel: username})
 		if err != nil {
 			klog.Error(err)
+			return nil, err
+		}
+	}
+
+	if roleName != "" {
+		err := queryParam.AddLabels(map[string]string{iamv1beta1.RoleReferenceLabel: roleName})
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -549,7 +578,7 @@ func (am *amOperator) CreateGlobalRoleBinding(username string, role string) erro
 		return err
 	}
 
-	roleBindings, err := am.ListGlobalRoleBindings(username)
+	roleBindings, err := am.ListGlobalRoleBindings(username, "")
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -571,13 +600,14 @@ func (am *amOperator) CreateGlobalRoleBinding(username string, role string) erro
 
 	globalRoleBinding := iamv1beta1.GlobalRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("%s-%s", username, role),
-			Labels: map[string]string{iamv1beta1.UserReferenceLabel: username},
+			Name: fmt.Sprintf("%s-%s", username, role),
+			Labels: map[string]string{iamv1beta1.UserReferenceLabel: username,
+				iamv1beta1.RoleReferenceLabel: role},
 		},
 		Subjects: []rbacv1.Subject{
 			{
-				Kind:     rbacv1.UserKind,
-				APIGroup: rbacv1.SchemeGroupVersion.Group,
+				Kind:     iamv1beta1.ResourceKindUser,
+				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
 				Name:     username,
 			},
 		},
@@ -602,7 +632,7 @@ func (am *amOperator) CreateUserWorkspaceRoleBinding(username string, workspace 
 		return err
 	}
 
-	roleBindings, err := am.ListWorkspaceRoleBindings(username, nil, workspace)
+	roleBindings, err := am.ListWorkspaceRoleBindings(username, "", nil, workspace)
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -626,12 +656,13 @@ func (am *amOperator) CreateUserWorkspaceRoleBinding(username string, workspace 
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-%s", username, role),
 			Labels: map[string]string{iamv1beta1.UserReferenceLabel: username,
+				iamv1beta1.RoleReferenceLabel: role,
 				tenantv1alpha1.WorkspaceLabel: workspace},
 		},
 		Subjects: []rbacv1.Subject{
 			{
-				Kind:     rbacv1.UserKind,
-				APIGroup: rbacv1.SchemeGroupVersion.Group,
+				Kind:     iamv1beta1.ResourceKindUser,
+				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
 				Name:     username,
 			},
 		},
@@ -657,7 +688,7 @@ func (am *amOperator) CreateNamespaceRoleBinding(username string, namespace stri
 	}
 
 	// Don't pass user's groups.
-	roleBindings, err := am.ListRoleBindings(username, nil, namespace)
+	roleBindings, err := am.ListRoleBindings(username, "", nil, namespace)
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -679,18 +710,20 @@ func (am *amOperator) CreateNamespaceRoleBinding(username string, namespace stri
 
 	roleBinding := iamv1beta1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("%s-%s", username, role),
-			Labels: map[string]string{iamv1beta1.UserReferenceLabel: username},
+			Name:      fmt.Sprintf("%s-%s", username, role),
+			Namespace: namespace,
+			Labels: map[string]string{iamv1beta1.UserReferenceLabel: username,
+				iamv1beta1.RoleReferenceLabel: role},
 		},
 		Subjects: []rbacv1.Subject{
 			{
-				Kind:     rbacv1.UserKind,
-				APIGroup: rbacv1.SchemeGroupVersion.Group,
+				Kind:     iamv1beta1.ResourceKindUser,
+				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
 				Name:     username,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
-			APIGroup: rbacv1.SchemeGroupVersion.Group,
+			APIGroup: iamv1beta1.SchemeGroupVersion.Group,
 			Kind:     iamv1beta1.ResourceKindRole,
 			Name:     role,
 		},
@@ -710,7 +743,7 @@ func (am *amOperator) CreateClusterRoleBinding(username string, role string) err
 		return err
 	}
 
-	roleBindings, err := am.ListClusterRoleBindings(username)
+	roleBindings, err := am.ListClusterRoleBindings(username, "")
 
 	if err != nil {
 		klog.Error(err)
@@ -733,13 +766,14 @@ func (am *amOperator) CreateClusterRoleBinding(username string, role string) err
 
 	roleBinding := iamv1beta1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("%s-%s", username, role),
-			Labels: map[string]string{iamv1beta1.UserReferenceLabel: username},
+			Name: fmt.Sprintf("%s-%s", username, role),
+			Labels: map[string]string{iamv1beta1.UserReferenceLabel: username,
+				iamv1beta1.RoleReferenceLabel: role},
 		},
 		Subjects: []rbacv1.Subject{
 			{
-				Kind:     rbacv1.UserKind,
-				APIGroup: rbacv1.SchemeGroupVersion.Group,
+				Kind:     iamv1beta1.ResourceKindUser,
+				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
 				Name:     username,
 			},
 		},
@@ -759,7 +793,7 @@ func (am *amOperator) CreateClusterRoleBinding(username string, role string) err
 
 func (am *amOperator) RemoveUserFromWorkspace(username string, workspace string) error {
 
-	roleBindings, err := am.ListWorkspaceRoleBindings(username, nil, workspace)
+	roleBindings, err := am.ListWorkspaceRoleBindings(username, "", nil, workspace)
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -781,7 +815,7 @@ func (am *amOperator) RemoveUserFromWorkspace(username string, workspace string)
 
 func (am *amOperator) RemoveUserFromNamespace(username string, namespace string) error {
 
-	roleBindings, err := am.ListRoleBindings(username, nil, namespace)
+	roleBindings, err := am.ListRoleBindings(username, "", nil, namespace)
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -802,7 +836,7 @@ func (am *amOperator) RemoveUserFromNamespace(username string, namespace string)
 }
 
 func (am *amOperator) RemoveUserFromCluster(username string) error {
-	roleBindings, err := am.ListClusterRoleBindings(username)
+	roleBindings, err := am.ListClusterRoleBindings(username, "")
 	if err != nil {
 		klog.Error(err)
 		return err
@@ -823,7 +857,7 @@ func (am *amOperator) RemoveUserFromCluster(username string) error {
 }
 
 func (am *amOperator) RemoveGlobalRoleBinding(username string) error {
-	roleBindings, err := am.ListGlobalRoleBindings(username)
+	roleBindings, err := am.ListGlobalRoleBindings(username, "")
 	if err != nil {
 		klog.Error(err)
 		return err

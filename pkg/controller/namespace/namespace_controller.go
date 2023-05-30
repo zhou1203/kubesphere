@@ -94,7 +94,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	// name of your custom finalizer
 	finalizer := "finalizers.kubesphere.io/namespaces"
-
 	if namespace.ObjectMeta.DeletionTimestamp.IsZero() {
 		// The object is not being deleted, so if it does not have our finalizer,
 		// then lets add the finalizer and update the object.
@@ -103,10 +102,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			if err := r.initCreatorRoleBinding(rootCtx, logger, namespace); err != nil {
 				return ctrl.Result{}, err
 			}
+
+			err := r.initRoles(ctx, logger, namespace)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+
 			namespace.ObjectMeta.Finalizers = append(namespace.ObjectMeta.Finalizers, finalizer)
 			if namespace.Labels == nil {
 				namespace.Labels = make(map[string]string)
 			}
+
 			// used for NetworkPolicyPeer.NamespaceSelector
 			namespace.Labels[constants.NamespaceLabelKey] = namespace.Name
 			if err := r.Update(rootCtx, namespace); err != nil {
@@ -214,9 +220,9 @@ func (r *Reconciler) initRoles(ctx context.Context, logger logr.Logger, namespac
 		return err
 	}
 	for _, template := range templates.Items {
-		var role rbacv1.Role
+		var role iamv1beta1.Role
 		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&role); err == nil && role.Kind == iamv1beta1.ResourceKindRole {
-			var old rbacv1.Role
+			var old iamv1beta1.Role
 			if err := r.Client.Get(ctx, types.NamespacedName{Namespace: namespace.Name, Name: role.Name}, &old); err != nil {
 				if errors.IsNotFound(err) {
 					role.Namespace = namespace.Name
@@ -270,15 +276,16 @@ func (r *Reconciler) initCreatorRoleBinding(ctx context.Context, logger logr.Log
 	return nil
 }
 
-func newCreatorRoleBinding(creator string, namespace string) *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
+func newCreatorRoleBinding(creator string, namespace string) *iamv1beta1.RoleBinding {
+	return &iamv1beta1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", creator, iamv1beta1.NamespaceAdmin),
-			Labels:    map[string]string{iamv1beta1.UserReferenceLabel: creator},
+			Name: fmt.Sprintf("%s-%s", creator, iamv1beta1.NamespaceAdmin),
+			Labels: map[string]string{iamv1beta1.UserReferenceLabel: creator,
+				iamv1beta1.RoleReferenceLabel: iamv1beta1.NamespaceAdmin},
 			Namespace: namespace,
 		},
 		RoleRef: rbacv1.RoleRef{
-			APIGroup: rbacv1.GroupName,
+			APIGroup: iamv1beta1.GroupName,
 			Kind:     iamv1beta1.ResourceKindRole,
 			Name:     iamv1beta1.NamespaceAdmin,
 		},
@@ -286,7 +293,7 @@ func newCreatorRoleBinding(creator string, namespace string) *rbacv1.RoleBinding
 			{
 				Name:     creator,
 				Kind:     iamv1beta1.ResourceKindUser,
-				APIGroup: rbacv1.GroupName,
+				APIGroup: iamv1beta1.GroupName,
 			},
 		},
 	}

@@ -77,10 +77,12 @@ func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBindi
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-%s", username, iamv1beta1.ClusterAdmin),
+			Labels: map[string]string{iamv1beta1.RoleReferenceLabel: iamv1beta1.ClusterAdmin,
+				iamv1beta1.UserReferenceLabel: username},
 		},
 		Subjects: ensureSubjectAPIVersionIsValid(globalRoleBinding.Subjects),
 		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
+			APIGroup: iamv1beta1.GroupName,
 			Kind:     iamv1beta1.ResourceKindClusterRole,
 			Name:     iamv1beta1.ClusterAdmin,
 		},
@@ -108,7 +110,7 @@ func ensureSubjectAPIVersionIsValid(subjects []rbacv1.Subject) []rbacv1.Subject 
 		if subject.Kind == iamv1beta1.ResourceKindUser {
 			validSubject := rbacv1.Subject{
 				Kind:     iamv1beta1.ResourceKindUser,
-				APIGroup: "rbac.authorization.k8s.io",
+				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
 				Name:     subject.Name,
 			}
 			validSubjects = append(validSubjects, validSubject)

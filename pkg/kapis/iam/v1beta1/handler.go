@@ -80,6 +80,15 @@ func (h *iamHandler) DescribeUser(request *restful.Request, response *restful.Re
 
 func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Response) {
 	globalroleSpecific := request.QueryParameter("globalrole")
+	if globalroleSpecific != "" {
+		result, err := h.listUserByGlobalRole(globalroleSpecific)
+		if err != nil {
+			api.HandleInternalError(response, request, err)
+			return
+		}
+		response.WriteEntity(result)
+		return
+	}
 
 	result, err := h.im.ListUsers(query.New())
 	if err != nil {
@@ -90,11 +99,7 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 		user := item.(*iamv1beta1.User)
 		user = user.DeepCopy()
 		globalRole, err := h.am.GetGlobalRoleOfUser(user.Name)
-		if globalroleSpecific != "" {
-			if globalRole.Name != globalroleSpecific {
-				continue
-			}
-		}
+
 		// ignore not found error
 		if err != nil && !errors.IsNotFound(err) {
 			api.HandleInternalError(response, request, err)
@@ -106,6 +111,28 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 		result.Items[i] = user
 	}
 	response.WriteEntity(result)
+}
+
+func (h *iamHandler) listUserByGlobalRole(roleName string) (*api.ListResult, error) {
+	result := &api.ListResult{}
+	bindings, err := h.am.ListGlobalRoleBindings("", roleName)
+	if err != nil {
+		return nil, err
+	}
+	for _, binding := range bindings {
+		for _, subject := range binding.Subjects {
+			if subject.Kind == rbacv1.UserKind {
+				user, err := h.im.DescribeUser(subject.Name)
+				if err != nil {
+					return nil, err
+				}
+				user.Annotations[iamv1beta1.GlobalRoleAnnotation] = binding.RoleRef.Name
+				result.Items = append(result.Items, user)
+				result.TotalItems += 1
+			}
+		}
+	}
+	return result, nil
 }
 
 func (h *iamHandler) CreateUser(req *restful.Request, resp *restful.Response) {
@@ -321,7 +348,8 @@ func (h *iamHandler) ListUserLoginRecords(request *restful.Request, response *re
 }
 
 func (h *iamHandler) ListClusterMembers(request *restful.Request, response *restful.Response) {
-	bindings, err := h.am.ListClusterRoleBindings("")
+	roleName := request.QueryParameter("clusterrole")
+	bindings, err := h.am.ListClusterRoleBindings("", roleName)
 	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	if err != nil {
 		api.HandleError(response, request, err)
@@ -336,6 +364,7 @@ func (h *iamHandler) ListClusterMembers(request *restful.Request, response *rest
 					api.HandleError(response, request, err)
 					return
 				}
+				user.Annotations[iamv1beta1.ClusterRoleAnnotation] = binding.RoleRef.Name
 				result.Items = append(result.Items, user)
 				result.TotalItems += 1
 			}
@@ -347,7 +376,8 @@ func (h *iamHandler) ListClusterMembers(request *restful.Request, response *rest
 
 func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
-	bindings, err := h.am.ListWorkspaceRoleBindings("", nil, workspace)
+	roleName := request.QueryParameter("workspacerole")
+	bindings, err := h.am.ListWorkspaceRoleBindings("", roleName, nil, workspace)
 	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	if err != nil {
 		api.HandleError(response, request, err)
@@ -362,6 +392,7 @@ func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *re
 					api.HandleError(response, request, err)
 					return
 				}
+				user.Annotations[iamv1beta1.WorkspaceRoleAnnotation] = binding.RoleRef.Name
 				result.Items = append(result.Items, user)
 				result.TotalItems += 1
 			}
@@ -373,7 +404,8 @@ func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *re
 
 func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
-	bindings, err := h.am.ListRoleBindings("", nil, namespace)
+	roleName := request.QueryParameter("role")
+	bindings, err := h.am.ListRoleBindings("", roleName, nil, namespace)
 	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	if err != nil {
 		api.HandleError(response, request, err)
@@ -388,6 +420,7 @@ func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *re
 					api.HandleError(response, request, err)
 					return
 				}
+				user.Annotations[iamv1beta1.RoleAnnotation] = binding.RoleRef.Name
 				result.Items = append(result.Items, user)
 				result.TotalItems += 1
 			}
