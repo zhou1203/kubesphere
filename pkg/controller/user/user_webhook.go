@@ -75,3 +75,8 @@ func (a *EmailValidator) InjectDecoder(d *admission.Decoder) error {
 	a.decoder = d
 	return nil
 }
+
+func (a *EmailValidator) InjectClient(c client.Client) error {
+	a.Client = c
+	return nil
+}
