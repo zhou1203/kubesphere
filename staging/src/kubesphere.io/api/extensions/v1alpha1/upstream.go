@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package v1alpha1
 
 import "fmt"
@@ -26,11 +27,11 @@ type ServiceReference struct {
 	// Required
 	Name string `json:"name"`
 
-	// path is an optional URL path at which the webhook will be contacted.
+	// path is an optional URL path at which the upstream will be contacted.
 	// +optional
 	Path *string `json:"path,omitempty"`
 
-	// port is an optional service port at which the webhook will be contacted.
+	// port is an optional service port at which the upstream will be contacted.
 	// `port` should be a valid port number (1-65535, inclusive).
 	// Defaults to 443 for backward compatibility.
 	// +optional
@@ -38,8 +39,14 @@ type ServiceReference struct {
 }
 
 type Endpoint struct {
+	// `url` gives the location of the upstream, in standard URL form
+	// (`scheme://host:port/path`). Exactly one of `url` or `service`
+	// must be specified.
 	// +optional
 	URL *string `json:"url,omitempty"`
+	// service is a reference to the service for this webhook. Either
+	// service or url must be specified.
+	// the scheme is default to HTTPS.
 	// +optional
 	Service *ServiceReference `json:"service,omitempty"`
 	// +optional
@@ -61,12 +68,7 @@ func (in *Endpoint) RawURL() string {
 		if in.Service.Path != nil {
 			path = *in.Service.Path
 		}
-		var scheme = "http"
-		if in.InsecureSkipVerify || len(in.CABundle) > 0 {
-			scheme = "https"
-		}
-		rawURL = fmt.Sprintf("%s://%s.%s.svc:%d%s",
-			scheme,
+		rawURL = fmt.Sprintf("https://%s.%s.svc:%d%s",
 			in.Service.Name,
 			in.Service.Namespace,
 			port, path)

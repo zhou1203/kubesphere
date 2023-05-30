@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/proxy"
@@ -57,9 +58,9 @@ func (s *apiService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	var apiServices extensionsv1alpha1.APIServiceList
 	if err := s.cache.List(req.Context(), &apiServices); err != nil {
-		message := fmt.Errorf("failed to list api services")
-		klog.Errorf("%v: %v", message, err)
-		responsewriters.InternalError(w, req, message)
+		reason := fmt.Errorf("failed to list api services")
+		klog.Errorf("%v: %v", reason, err)
+		responsewriters.InternalError(w, req, errors.NewInternalError(reason))
 		return
 	}
 	for _, apiService := range apiServices.Items {
@@ -67,8 +68,8 @@ func (s *apiService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 		if apiService.Status.State != extensionsv1alpha1.StateAvailable {
-			message := fmt.Sprintf("upstream %s is not available", apiService.Name)
-			responsewriters.WriteRawJSON(http.StatusServiceUnavailable, message, w)
+			reason := fmt.Sprintf("apiService %s is not available", apiService.Name)
+			responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 			return
 		}
 		s.handleProxyRequest(apiService, w, req)
@@ -80,8 +81,9 @@ func (s *apiService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (s *apiService) handleProxyRequest(apiService extensionsv1alpha1.APIService, w http.ResponseWriter, req *http.Request) {
 	endpoint, err := url.Parse(apiService.Spec.RawURL())
 	if err != nil {
-		klog.Warningf(fmt.Sprintf("apiService %s is not available: %v", apiService.Name, err))
-		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, fmt.Sprintf("apiService %s is not available", apiService.Name), w)
+		reason := fmt.Sprintf("apiService %s is not available", apiService.Name)
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 		return
 	}
 	location := &url.URL{}
@@ -95,10 +97,24 @@ func (s *apiService) handleProxyRequest(apiService extensionsv1alpha1.APIService
 	newReq.URL = location
 	newReq.Host = location.Host
 
+	tr, err := transport.New(&transport.Config{
+		TLS: transport.TLSConfig{
+			CAData:   apiService.Spec.CABundle,
+			Insecure: apiService.Spec.InsecureSkipVerify,
+		},
+	})
+
+	if err != nil {
+		reason := "failed to create transport.TLSConfig"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
+		return
+	}
+
 	user, _ := request.UserFrom(req.Context())
-	proxyRoundTripper := transport.NewAuthProxyRoundTripper(user.GetName(), user.GetGroups(), user.GetExtra(), http.DefaultTransport)
+	proxyRoundTripper := transport.NewAuthProxyRoundTripper(user.GetName(), user.GetGroups(), user.GetExtra(), tr)
 
 	upgrade := httpstream.IsUpgradeRequest(req)
-	handler := proxy.NewUpgradeAwareHandler(location, proxyRoundTripper, true, upgrade, &responder{})
+	handler := proxy.NewUpgradeAwareHandler(location, proxyRoundTripper, false, upgrade, &responder{})
 	handler.ServeHTTP(w, newReq)
 }

@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/proxy"
@@ -58,18 +59,16 @@ func (s *reverseProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// TODO check the path prefix
-	if !strings.HasPrefix(requestInfo.Path, extensionsv1alpha1.DistPrefix) &&
-		!strings.HasPrefix(requestInfo.Path, extensionsv1alpha1.ProxyPrefix) {
+	if !strings.HasPrefix(requestInfo.Path, extensionsv1alpha1.ProxyPrefix) {
 		s.next.ServeHTTP(w, req)
 		return
 	}
 
 	var reverseProxies extensionsv1alpha1.ReverseProxyList
 	if err := s.cache.List(req.Context(), &reverseProxies, &client.ListOptions{}); err != nil {
-		message := fmt.Errorf("failed to list reverse proxies")
-		klog.Errorf("%v: %v", message, err)
-		responsewriters.InternalError(w, req, message)
+		reason := "failed to list reverse proxies"
+		klog.Errorf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 		return
 	}
 
@@ -105,7 +104,9 @@ func (s *reverseProxy) match(matcher extensionsv1alpha1.Matcher, req *http.Reque
 func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.ReverseProxy, w http.ResponseWriter, req *http.Request) {
 	endpoint, err := url.Parse(reverseProxy.Spec.Upstream.RawURL())
 	if err != nil {
-		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, fmt.Sprintf("endpoint %s is not available", endpoint), w)
+		reason := fmt.Sprintf("endpoint %s is not available", endpoint)
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
 		return
 	}
 	location := &url.URL{}
@@ -138,7 +139,20 @@ func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.Revers
 		}
 	}
 
-	proxyRoundTripper := http.DefaultTransport
+	proxyRoundTripper, err := transport.New(&transport.Config{
+		TLS: transport.TLSConfig{
+			CAData:   reverseProxy.Spec.Upstream.CABundle,
+			Insecure: reverseProxy.Spec.Upstream.InsecureSkipVerify,
+		},
+	})
+
+	if err != nil {
+		reason := "failed to create transport.TLSConfig"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
+		return
+	}
+
 	if reverseProxy.Spec.Directives.AuthProxy {
 		user, _ := request.UserFrom(req.Context())
 		proxyRoundTripper = transport.NewAuthProxyRoundTripper(user.GetName(), user.GetGroups(), user.GetExtra(), proxyRoundTripper)
