@@ -44,7 +44,7 @@ type Endpoint struct {
 	// must be specified.
 	// +optional
 	URL *string `json:"url,omitempty"`
-	// service is a reference to the service for this webhook. Either
+	// service is a reference to the service for this endpoint. Either
 	// service or url must be specified.
 	// the scheme is default to HTTPS.
 	// +optional

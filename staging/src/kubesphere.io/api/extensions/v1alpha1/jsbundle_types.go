@@ -26,8 +26,6 @@ type JSBundleSpec struct {
 	Raw []byte `json:"raw,omitempty"`
 	// +optional
 	RawFrom RawFrom `json:"rawFrom,omitempty"`
-	// +optional
-	FilenameOverride string `json:"filenameOverride,omitempty"`
 }
 
 type RawFrom struct {
@@ -49,6 +47,8 @@ type SecretKeyRef struct {
 }
 
 type JSBundleStatus struct {
+	// Link is the path for downloading JS file, default to "/dist/{jsBundleName}/index.js".
+	// +optional
 	Link  string `json:"link,omitempty"`
 	State string `json:"state,omitempty"`
 	// +optional

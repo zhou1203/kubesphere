@@ -29,6 +29,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/clusterrole"
 	"kubesphere.io/kubesphere/pkg/controller/core"
+	"kubesphere.io/kubesphere/pkg/controller/extension"
 	"kubesphere.io/kubesphere/pkg/controller/globalrole"
 	"kubesphere.io/kubesphere/pkg/controller/globalrolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/group"
@@ -79,6 +80,7 @@ var allControllers = []string{
 	"repository",
 	"subscription",
 	"extension",
+	"extension-webhook",
 }
 
 // setup all available controllers one by one
@@ -250,6 +252,13 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "cluster", clusterReconciler)
 		// Register timed tasker
 		addController(mgr, "cluster", clusterReconciler)
+	}
+
+	// extension webhook
+	if cmOptions.IsControllerEnabled("extension-webhook") {
+		addControllerWithSetup(mgr, "extension-webhook", &extension.JSBundleWebhook{})
+		addControllerWithSetup(mgr, "extension-webhook", &extension.APIServiceWebhook{})
+		addControllerWithSetup(mgr, "extension-webhook", &extension.ReverseProxyWebhook{})
 	}
 
 	// log all controllers process result

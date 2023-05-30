@@ -196,6 +196,7 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	if err != nil {
 		klog.Fatalf("unable to create resource quota admission: %v", err)
 	}
+
 	hookServer.Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
 	hookServer.Register("/convert", &conversion.Webhook{})
 
