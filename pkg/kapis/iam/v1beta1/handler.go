@@ -604,8 +604,9 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 			api.HandleError(response, request, err)
 			return
 		}
-
-		roleTemplateNames = globalRole.AggregationRoleTemplates.TemplateNames
+		if globalRole.AggregationRoleTemplates != nil {
+			roleTemplateNames = globalRole.AggregationRoleTemplates.TemplateNames
+		}
 	case iamv1beta1.ScopeWorkspace:
 		workspaceRoles, err := h.am.GetWorkspaceRoleOfUser(username, nil, workspace)
 		if err != nil {
@@ -614,7 +615,9 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 		}
 
 		for _, workspaceRole := range workspaceRoles {
-			roleTemplateNames = append(roleTemplateNames, workspaceRole.AggregationRoleTemplates.TemplateNames...)
+			if workspaceRole.AggregationRoleTemplates != nil {
+				roleTemplateNames = append(roleTemplateNames, workspaceRole.AggregationRoleTemplates.TemplateNames...)
+			}
 		}
 
 	case iamv1beta1.ScopeCluster:
@@ -624,7 +627,9 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 			return
 		}
 
-		roleTemplateNames = clusterRole.AggregationRoleTemplates.TemplateNames
+		if clusterRole.AggregationRoleTemplates != nil {
+			roleTemplateNames = clusterRole.AggregationRoleTemplates.TemplateNames
+		}
 
 	case iamv1beta1.ScopeNamespace:
 		roles, err := h.am.GetNamespaceRoleOfUser(username, nil, namespace)
@@ -634,7 +639,9 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 		}
 
 		for _, role := range roles {
-			roleTemplateNames = append(roleTemplateNames, role.AggregationRoleTemplates.TemplateNames...)
+			if role.AggregationRoleTemplates != nil {
+				roleTemplateNames = append(roleTemplateNames, role.AggregationRoleTemplates.TemplateNames...)
+			}
 		}
 	}
 
