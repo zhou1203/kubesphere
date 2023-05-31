@@ -5,6 +5,11 @@ import (
 	"io"
 	"net/http"
 
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -80,7 +85,6 @@ func (d *DynamicResourceHandler) HandleServiceError(serviceError restful.Service
 			api.HandleError(w, req, err)
 			return
 		}
-
 		object, err = d.CreateObjectFromRawData(gvr, rawData)
 		if err != nil {
 			api.HandleError(w, req, err)
@@ -88,14 +92,30 @@ func (d *DynamicResourceHandler) HandleServiceError(serviceError restful.Service
 		}
 	}
 
-	var result interface{}
-
+	var result runtime.Object
 	switch reqInfo.Verb {
 	case request.VerbGet:
 		result, err = d.GetResource(req.Request.Context(), gvr, reqInfo.Namespace, reqInfo.Name)
+		obj, ok := result.(metav1.Object)
+		if reqInfo.Workspace != "" && ok && obj.GetLabels()[tenantv1alpha1.WorkspaceLabel] != reqInfo.Workspace {
+			err = errors.NewNotFound(gvr.GroupResource(), reqInfo.Name)
+		}
 	case request.VerbList:
-		result, err = d.ListResources(req.Request.Context(), gvr, reqInfo.Namespace, query.ParseQueryParameter(req))
+		q := query.ParseQueryParameter(req)
+		if reqInfo.Workspace != "" {
+			q.AppendLabelSelector(map[string]string{tenantv1alpha1.WorkspaceLabel: reqInfo.Workspace})
+		}
+		result, err = d.ListResources(req.Request.Context(), gvr, reqInfo.Namespace, q)
 	case request.VerbCreate:
+		obj, ok := result.(metav1.Object)
+		if reqInfo.Workspace != "" && ok && obj.GetLabels()[tenantv1alpha1.WorkspaceLabel] != reqInfo.Workspace {
+			labels := obj.GetLabels()
+			if labels == nil {
+				labels = make(map[string]string)
+			}
+			labels[tenantv1alpha1.WorkspaceLabel] = reqInfo.Workspace
+			obj.SetLabels(labels)
+		}
 		err = d.CreateResource(req.Request.Context(), object)
 	case request.VerbUpdate:
 		err = d.UpdateResource(req.Request.Context(), object)
@@ -104,7 +124,7 @@ func (d *DynamicResourceHandler) HandleServiceError(serviceError restful.Service
 	case request.VerbPatch:
 		err = d.PatchResource(req.Request.Context(), object)
 	default:
-		err = NotSupportedVerbError
+		err = errors.NewBadRequest(NotSupportedVerbError.Error())
 	}
 
 	if err != nil {
