@@ -55,7 +55,6 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Param(ws.QueryParameter("globalrole", "specific golalrole name")).
 		Doc("List all users.").
 		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.User{}}}))
-
 	ws.Route(ws.GET("/users/{user}/loginrecords").
 		To(handler.ListUserLoginRecords).
 		Param(ws.PathParameter("user", "username of the user")).
@@ -94,20 +93,6 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Param(ws.PathParameter("clustermember", "cluster member's username")).
 		Returns(http.StatusOK, api.StatusOK, errors.None))
 
-	ws.Route(ws.POST("/workspaces/{workspace}/workspacemembers").
-		To(handler.CreateWorkspaceMembers).
-		Doc("Add members to current cluster in bulk.").
-		Reads([]Member{}).
-		Returns(http.StatusOK, api.StatusOK, []Member{}).
-		Param(ws.PathParameter("workspace", "workspace name")))
-
-	ws.Route(ws.DELETE("/workspaces/{workspace}/workspacemembers/{workspacemember}").
-		To(handler.RemoveWorkspaceMember).
-		Doc("Delete a member from the workspace.").
-		Param(ws.PathParameter("workspace", "workspace name")).
-		Param(ws.PathParameter("workspacemember", "workspace member's username")).
-		Returns(http.StatusOK, api.StatusOK, errors.None))
-
 	ws.Route(ws.POST("/namespaces/{namespace}/namespacemembers").
 		To(handler.CreateNamespaceMembers).
 		Doc("Add members to the namespace in bulk.").
@@ -130,45 +115,6 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Param(ws.QueryParameter("workspace", "specific the workspace of the user at, only used when the scope is workspace")).
 		Param(ws.QueryParameter("namespace", "specific the namespace of the user at, only used when the scope is namespace")).
 		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.RoleTemplate{}}}))
-
-	ws.Route(ws.GET("/clustermembers").
-		To(handler.ListClusterMembers).
-		Doc("List all members in cluster").
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.User{}}}))
-
-	ws.Route(ws.GET("/workspaces/{workspace}/workspacemembers").
-		To(handler.ListWorkspaceMembers).
-		Doc("List all members in the specified workspace.").
-		Param(ws.PathParameter("workspace", "workspace name")).
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.User{}}}))
-
-	ws.Route(ws.GET("/namespace/{namespace}/namespacemembers").
-		To(handler.ListWorkspaceMembers).
-		Doc("List all members in the specified namespace.").
-		Param(ws.PathParameter("namespace", "namespace name")).
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.User{}}}))
-
-	ws.Route(ws.GET("/users/{username}/roles").
-		To(handler.GetRoleOfUser).
-		Doc("Get the user`s role").
-		Param(ws.QueryParameter("namespace", "Specific the namespace of the user at")).
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.Role{}}}))
-
-	ws.Route(ws.GET("/users/{username}/workspaceroles").
-		To(handler.GetWorkspaceRoleOfUser).
-		Doc("Get the user`s workspace role").
-		Param(ws.QueryParameter("workspace", "Specific the workspace of the user at")).
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.WorkspaceRole{}}}))
-
-	ws.Route(ws.GET("/users/{username}/clusterroles").
-		To(handler.GetClusterRoleOfUser).
-		Doc("Get the user`s workspace role").
-		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.ClusterRole{}}}))
-
-	ws.Route(ws.GET("/users/{username}/globalroles").
-		To(handler.GetGlobalRoleOfUser).
-		Doc("Get the user`s global role").
-		Returns(http.StatusOK, api.StatusOK, iamv1beta1.GlobalRole{}))
 
 	ws.Route(ws.POST("/subjectaccessreviews").
 		To(handler.CreateSubjectAccessReview).

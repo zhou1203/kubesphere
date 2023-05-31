@@ -67,9 +67,12 @@ func newIAMHandler(im im.LegacyIdentityManagementInterface, am am.LegacyAccessMa
 
 func (h *iamHandler) DescribeUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("user")
-
 	user, err := h.im.DescribeUser(username)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			api.HandleNotFound(response, request, err)
+			return
+		}
 		api.HandleInternalError(response, request, err)
 		return
 	}

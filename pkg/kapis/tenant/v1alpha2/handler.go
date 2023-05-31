@@ -246,11 +246,8 @@ func (h *tenantHandler) UpdateWorkspaceTemplate(req *restful.Request, resp *rest
 
 func (h *tenantHandler) DescribeWorkspaceTemplate(request *restful.Request, response *restful.Response) {
 	workspaceName := request.PathParameter("workspace")
-
 	workspace, err := h.tenant.DescribeWorkspaceTemplate(workspaceName)
-
 	if err != nil {
-		klog.Error(err)
 		if errors.IsNotFound(err) {
 			api.HandleNotFound(response, request, err)
 			return
@@ -258,7 +255,6 @@ func (h *tenantHandler) DescribeWorkspaceTemplate(request *restful.Request, resp
 		api.HandleInternalError(response, request, err)
 		return
 	}
-
 	response.WriteEntity(workspace)
 }
 
