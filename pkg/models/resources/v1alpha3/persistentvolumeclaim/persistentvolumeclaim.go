@@ -82,10 +82,15 @@ func (p *persistentVolumeClaimGetter) filter(object runtime.Object, filter query
 	if !ok {
 		return false
 	}
-
 	switch filter.Field {
 	case query.FieldStatus:
-		return strings.EqualFold(string(pvc.Status.Phase), string(filter.Value))
+		statuses := strings.Split(string(filter.Value), "|")
+		for _, status := range statuses {
+			if !strings.EqualFold(string(pvc.Status.Phase), status) {
+				return false
+			}
+		}
+		return true
 	case storageClassName:
 		return pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName == string(filter.Value)
 	default:

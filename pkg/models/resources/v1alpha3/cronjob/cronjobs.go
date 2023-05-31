@@ -69,7 +69,6 @@ func (d *cronJobsGetter) filter(object runtime.Object, filter query.Filter) bool
 	if !ok {
 		return false
 	}
-
 	switch filter.Field {
 	case query.FieldStatus:
 		return strings.Compare(cronJobStatus(job), string(filter.Value)) == 0
@@ -79,7 +78,6 @@ func (d *cronJobsGetter) filter(object runtime.Object, filter query.Filter) bool
 }
 
 func (d *cronJobsGetter) compare(left runtime.Object, right runtime.Object, field query.Field) bool {
-
 	leftJob, ok := left.(*batchv1.CronJob)
 	if !ok {
 		return false
