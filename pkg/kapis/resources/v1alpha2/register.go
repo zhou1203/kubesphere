@@ -152,6 +152,18 @@ func AddToContainer(c *restful.Container, cacheClient runtimeclient.Client, mast
 		Param(webservice.PathParameter("revision", "the revision of the statefulset")).
 		Returns(http.StatusOK, api.StatusOK, appsv1.StatefulSet{}))
 
+	webservice.Route(webservice.GET("/abnormalworkloads").
+		Doc("get abnormal workloads' count of whole cluster").
+		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ClusterResourcesTag}).
+		Returns(http.StatusOK, api.StatusOK, api.Workloads{}).
+		To(handler.handleGetNamespacedAbnormalWorkloads))
+	webservice.Route(webservice.GET("/namespaces/{namespace}/abnormalworkloads").
+		Doc("get abnormal workloads' count of specified namespace").
+		Param(webservice.PathParameter("namespace", "the name of the project")).
+		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
+		Returns(http.StatusOK, api.StatusOK, api.Workloads{}).
+		To(handler.handleGetNamespacedAbnormalWorkloads))
+
 	c.Add(webservice)
 
 	return nil

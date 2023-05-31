@@ -111,7 +111,6 @@ func jobStatus(status batchv1.JobStatus) string {
 			return jobFailed
 		}
 	}
-
 	return jobRunning
 }
 

@@ -19,6 +19,10 @@ package v1alpha2
 import (
 	"net/http"
 	"strconv"
+	"strings"
+
+	"kubesphere.io/kubesphere/pkg/apiserver/query"
+	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 
 	"github.com/emicklei/go-restful/v3"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
@@ -44,10 +48,12 @@ type resourceHandler struct {
 	registryGetter      registries.RegistryGetter
 	kubeconfigOperator  kubeconfig.Interface
 	kubectlOperator     kubectl.Interface
+	resourceGetter      *resourcev1alpha3.ResourceGetter
 }
 
 func newResourceHandler(cacheClient runtimeclient.Client, masterURL, kubectlImage string) *resourceHandler {
 	return &resourceHandler{
+		resourceGetter:      resourcev1alpha3.NewResourceGetter(cacheClient),
 		componentsGetter:    components.NewComponentsGetter(cacheClient),
 		resourceQuotaGetter: quotas.NewResourceQuotaGetter(cacheClient),
 		revisionGetter:      revisions.NewRevisionGetter(cacheClient),
@@ -215,6 +221,40 @@ func (r *resourceHandler) handleGetRegistryEntry(request *restful.Request, respo
 	}
 
 	response.WriteAsJson(detail)
+}
+
+func (r *resourceHandler) handleGetNamespacedAbnormalWorkloads(request *restful.Request, response *restful.Response) {
+	namespace := request.PathParameter("namespace")
+
+	result := api.Workloads{
+		Namespace: namespace,
+		Count:     make(map[string]int),
+	}
+
+	for _, workloadType := range []string{api.ResourceKindDeployment, api.ResourceKindStatefulSet, api.ResourceKindDaemonSet, api.ResourceKindJob, api.ResourceKindPersistentVolumeClaim} {
+		var notReadyStatus string
+
+		switch workloadType {
+		case api.ResourceKindPersistentVolumeClaim:
+			notReadyStatus = strings.Join([]string{"pending", "lost"}, "|")
+		case api.ResourceKindJob:
+			notReadyStatus = "failed"
+		default:
+			notReadyStatus = "updating"
+		}
+
+		q := query.New()
+		q.Filters[query.FieldStatus] = query.Value(notReadyStatus)
+
+		res, err := r.resourceGetter.List(workloadType, namespace, q)
+		if err != nil {
+			api.HandleInternalError(response, nil, err)
+		}
+
+		result.Count[workloadType] = len(res.Items)
+	}
+
+	response.WriteAsJson(result)
 }
 
 func (r *resourceHandler) GetKubectlPod(request *restful.Request, response *restful.Response) {
