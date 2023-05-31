@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	authuser "k8s.io/apiserver/pkg/authentication/user"
-	"k8s.io/klog/v2"
-
 	"k8s.io/apiserver/pkg/endpoints/request"
 
 	"github.com/emicklei/go-restful/v3"
@@ -58,9 +56,12 @@ func newIAMHandler(im im.IdentityManagementInterface, am am.AccessManagementInte
 
 func (h *iamHandler) DescribeUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("user")
-
 	user, err := h.im.DescribeUser(username)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			api.HandleNotFound(response, request, err)
+			return
+		}
 		api.HandleInternalError(response, request, err)
 		return
 	}
@@ -79,9 +80,9 @@ func (h *iamHandler) DescribeUser(request *restful.Request, response *restful.Re
 }
 
 func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Response) {
-	globalroleSpecific := request.QueryParameter("globalrole")
-	if globalroleSpecific != "" {
-		result, err := h.listUserByGlobalRole(globalroleSpecific)
+	globalRole := request.QueryParameter("globalrole")
+	if globalRole != "" {
+		result, err := h.listUserByGlobalRole(globalRole)
 		if err != nil {
 			api.HandleInternalError(response, request, err)
 			return
@@ -89,8 +90,8 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 		response.WriteEntity(result)
 		return
 	}
-
-	result, err := h.im.ListUsers(query.New())
+	queryParam := query.ParseQueryParameter(request)
+	result, err := h.im.ListUsers(queryParam)
 	if err != nil {
 		api.HandleInternalError(response, request, err)
 		return
@@ -99,7 +100,6 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 		user := item.(*iamv1beta1.User)
 		user = user.DeepCopy()
 		globalRole, err := h.am.GetGlobalRoleOfUser(user.Name)
-
 		// ignore not found error
 		if err != nil && !errors.IsNotFound(err) {
 			api.HandleInternalError(response, request, err)
@@ -114,7 +114,7 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 }
 
 func (h *iamHandler) listUserByGlobalRole(roleName string) (*api.ListResult, error) {
-	result := &api.ListResult{}
+	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	bindings, err := h.am.ListGlobalRoleBindings("", roleName)
 	if err != nil {
 		return nil, err
@@ -216,8 +216,7 @@ func (h *iamHandler) UpdateUser(request *restful.Request, response *restful.Resp
 
 	operator, ok := apirequest.UserFrom(request.Request.Context())
 	if globalRole != "" && ok {
-		err = h.updateGlobalRoleBinding(operator, updated, globalRole)
-		if err != nil {
+		if err = h.updateGlobalRoleBinding(operator, updated, globalRole); err != nil {
 			api.HandleError(response, request, err)
 			return
 		}
@@ -236,17 +235,13 @@ func appendGlobalRoleAnnotation(user *iamv1beta1.User, globalRole string) *iamv1
 }
 
 func (h *iamHandler) updateGlobalRoleBinding(operator authuser.Info, user *iamv1beta1.User, globalRole string) error {
-
 	oldGlobalRole, err := h.am.GetGlobalRoleOfUser(user.Name)
 	if err != nil && !errors.IsNotFound(err) {
-		klog.Error(err)
 		return err
 	}
-
 	if oldGlobalRole != nil && oldGlobalRole.Name == globalRole {
 		return nil
 	}
-
 	userManagement := authorizer.AttributesRecord{
 		Resource:        iamv1beta1.ResourcesPluralUser,
 		Verb:            "update",
@@ -256,17 +251,13 @@ func (h *iamHandler) updateGlobalRoleBinding(operator authuser.Info, user *iamv1
 	}
 	decision, _, err := h.authorizer.Authorize(userManagement)
 	if err != nil {
-		klog.Error(err)
 		return err
 	}
 	if decision != authorizer.DecisionAllow {
-		err = errors.NewForbidden(iamv1beta1.Resource(iamv1beta1.ResourcesSingularUser),
+		return errors.NewForbidden(iamv1beta1.Resource(iamv1beta1.ResourcesSingularUser),
 			user.Name, fmt.Errorf("update global role binding is not allowed"))
-		klog.Warning(err)
-		return err
 	}
 	if err := h.am.CreateGlobalRoleBinding(user.Name, globalRole); err != nil {
-		klog.Error(err)
 		return err
 	}
 	return nil
@@ -406,12 +397,12 @@ func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *re
 	namespace := request.PathParameter("namespace")
 	roleName := request.QueryParameter("role")
 	bindings, err := h.am.ListRoleBindings("", roleName, nil, namespace)
-	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
 	}
 
+	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	for _, binding := range bindings {
 		for _, subject := range binding.Subjects {
 			if subject.Kind == rbacv1.UserKind {
@@ -496,68 +487,6 @@ func (h *iamHandler) RemoveNamespaceMember(request *restful.Request, response *r
 	response.WriteEntity(servererr.None)
 }
 
-func (h *iamHandler) GetGlobalRoleOfUser(request *restful.Request, response *restful.Response) {
-	username := request.PathParameter("username")
-	globalRole, err := h.am.GetGlobalRoleOfUser(username)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	_ = response.WriteEntity(globalRole)
-}
-
-func (h *iamHandler) GetWorkspaceRoleOfUser(request *restful.Request, response *restful.Response) {
-	username := request.PathParameter("username")
-	workspace := request.PathParameter("workspace")
-	result := &api.ListResult{Items: make([]runtime.Object, 0)}
-
-	workspaceRoles, err := h.am.GetWorkspaceRoleOfUser(username, nil, workspace)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	for _, role := range workspaceRoles {
-		result.Items = append(result.Items, role)
-		result.TotalItems += 1
-	}
-
-	_ = response.WriteEntity(result)
-}
-
-func (h *iamHandler) GetClusterRoleOfUser(request *restful.Request, response *restful.Response) {
-	username := request.PathParameter("username")
-
-	clusterRole, err := h.am.GetClusterRoleOfUser(username)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	_ = response.WriteEntity(clusterRole)
-}
-
-func (h *iamHandler) GetRoleOfUser(request *restful.Request, response *restful.Response) {
-	username := request.PathParameter("username")
-	namespace := request.PathParameter("namespace")
-	result := &api.ListResult{Items: make([]runtime.Object, 0)}
-
-	roles, err := h.am.GetNamespaceRoleOfUser(username, nil, namespace)
-	if err != nil {
-		api.HandleError(response, request, err)
-		return
-	}
-
-	for _, role := range roles {
-		result.Items = append(result.Items, role)
-		result.TotalItems += 1
-	}
-
-	_ = response.WriteEntity(result)
-
-}
-
 func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("username")
 	scope := request.QueryParameter("scope")
@@ -600,11 +529,11 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 	switch scope {
 	case iamv1beta1.ScopeGlobal:
 		globalRole, err := h.am.GetGlobalRoleOfUser(username)
-		if err != nil {
+		if err != nil && !errors.IsNotFound(err) {
 			api.HandleError(response, request, err)
 			return
 		}
-		if globalRole.AggregationRoleTemplates != nil {
+		if globalRole != nil && globalRole.AggregationRoleTemplates != nil {
 			roleTemplateNames = globalRole.AggregationRoleTemplates.TemplateNames
 		}
 	case iamv1beta1.ScopeWorkspace:
@@ -613,31 +542,26 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 			api.HandleError(response, request, err)
 			return
 		}
-
 		for _, workspaceRole := range workspaceRoles {
 			if workspaceRole.AggregationRoleTemplates != nil {
 				roleTemplateNames = append(roleTemplateNames, workspaceRole.AggregationRoleTemplates.TemplateNames...)
 			}
 		}
-
 	case iamv1beta1.ScopeCluster:
 		clusterRole, err := h.am.GetClusterRoleOfUser(username)
-		if err != nil {
+		if err != nil && !errors.IsNotFound(err) {
 			api.HandleError(response, request, err)
 			return
 		}
-
-		if clusterRole.AggregationRoleTemplates != nil {
+		if clusterRole != nil && clusterRole.AggregationRoleTemplates != nil {
 			roleTemplateNames = clusterRole.AggregationRoleTemplates.TemplateNames
 		}
-
 	case iamv1beta1.ScopeNamespace:
 		roles, err := h.am.GetNamespaceRoleOfUser(username, nil, namespace)
 		if err != nil {
 			api.HandleError(response, request, err)
 			return
 		}
-
 		for _, role := range roles {
 			if role.AggregationRoleTemplates != nil {
 				roleTemplateNames = append(roleTemplateNames, role.AggregationRoleTemplates.TemplateNames...)
@@ -651,7 +575,6 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 			api.HandleError(response, request, err)
 			return
 		}
-
 		result.Items = append(result.Items, template)
 		result.TotalItems += 1
 	}

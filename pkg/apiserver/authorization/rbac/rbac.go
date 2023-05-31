@@ -217,7 +217,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 				visitor(nil, "", nil, err)
 				continue
 			}
-			sourceDescriber.binding = globalRoleBinding
+			sourceDescriber.binding = &globalRoleBinding
 			sourceDescriber.subject = &globalRoleBinding.Subjects[subjectIndex]
 			if !visitor(sourceDescriber, regoPolicy, nil, nil) {
 				return
@@ -267,7 +267,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 					visitor(nil, "", nil, err)
 					continue
 				}
-				sourceDescriber.binding = workspaceRoleBinding
+				sourceDescriber.binding = &workspaceRoleBinding
 				sourceDescriber.subject = &workspaceRoleBinding.Subjects[subjectIndex]
 				if !visitor(sourceDescriber, regoPolicy, nil, nil) {
 					return
@@ -299,7 +299,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 					visitor(nil, "", nil, err)
 					continue
 				}
-				sourceDescriber.binding = roleBinding
+				sourceDescriber.binding = &roleBinding
 				sourceDescriber.subject = &roleBinding.Subjects[subjectIndex]
 				if !visitor(sourceDescriber, regoPolicy, nil, nil) {
 					return
@@ -329,7 +329,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 				visitor(nil, "", nil, err)
 				continue
 			}
-			sourceDescriber.binding = clusterRoleBinding
+			sourceDescriber.binding = &clusterRoleBinding
 			sourceDescriber.subject = &clusterRoleBinding.Subjects[subjectIndex]
 			if !visitor(sourceDescriber, regoPolicy, nil, nil) {
 				return

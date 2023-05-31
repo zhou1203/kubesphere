@@ -200,8 +200,7 @@ func (h *resourceManager) List(ctx context.Context, namespace string, query *que
 		Namespace:     namespace,
 	}
 
-	err := h.client.List(ctx, list, listOpt)
-	if err != nil {
+	if err := h.client.List(ctx, list, listOpt); err != nil {
 		return err
 	}
 

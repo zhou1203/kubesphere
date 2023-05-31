@@ -174,7 +174,6 @@ func (t *tenantOperator) ListWorkspaces(user user.Info, queryParam *query.Query)
 func (t *tenantOperator) GetWorkspace(workspace string) (*tenantv1alpha1.Workspace, error) {
 	obj, err := t.resourceGetter.Get(tenantv1alpha1.ResourcePluralWorkspace, "", workspace)
 	if err != nil {
-		klog.Error(err)
 		return nil, err
 	}
 	return obj.(*tenantv1alpha1.Workspace), nil
@@ -336,9 +335,7 @@ func (t *tenantOperator) DescribeNamespace(workspace, namespace string) (*corev1
 	}
 	ns := obj.(*corev1.Namespace)
 	if ns.Labels[tenantv1alpha1.WorkspaceLabel] != workspace {
-		err := errors.NewNotFound(corev1.Resource("namespace"), namespace)
-		klog.Error(err)
-		return nil, err
+		return nil, errors.NewNotFound(corev1.Resource("namespace"), namespace)
 	}
 	return ns, nil
 }
@@ -376,17 +373,15 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 	var manageWorkspaceTemplateRequest bool
 	clusterNames := sets.New[string]()
 
-	patchs, err := jsonpatchutil.Parse(data)
+	patchData, err := jsonpatchutil.Parse(data)
 	if err != nil {
-		klog.Error(err)
 		return nil, err
 	}
 
-	if len(patchs) > 0 {
-		for _, patch := range patchs {
+	if len(patchData) > 0 {
+		for _, patch := range patchData {
 			path, err := patch.Path()
 			if err != nil {
-				klog.Error(err)
 				return nil, err
 			}
 
@@ -394,14 +389,10 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 			// Or indicate that want to manage the workspace templates, so check if user has the permission to manage workspace templates.
 			if strings.HasPrefix(path, "/spec/placement") {
 				if patch.Kind() != "add" && patch.Kind() != "remove" {
-					err := errors.NewBadRequest("not support operation type")
-					klog.Error(err)
-					return nil, err
+					return nil, errors.NewBadRequest("not support operation type")
 				}
 				clusterValue := make(map[string]interface{})
-				err := jsonpatchutil.GetValue(patch, &clusterValue)
-				if err != nil {
-					klog.Error(err)
+				if err := jsonpatchutil.GetValue(patch, &clusterValue); err != nil {
 					return nil, err
 				}
 
@@ -413,9 +404,7 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 					}
 				} else if cluster := clusterValue["clusters"]; cluster != nil {
 					var clusterReferences []tenantv1alpha2.GenericClusterReference
-					err := mapstructure.Decode(cluster, &clusterReferences)
-					if err != nil {
-						klog.Error(err)
+					if err := mapstructure.Decode(cluster, &clusterReferences); err != nil {
 						return nil, err
 					}
 					for _, v := range clusterReferences {
@@ -430,17 +419,13 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 	}
 
 	if manageWorkspaceTemplateRequest {
-		err := t.checkWorkspaceTemplatePermission(user, workspace)
-		if err != nil {
-			klog.Error(err)
+		if err := t.checkWorkspaceTemplatePermission(user, workspace); err != nil {
 			return nil, err
 		}
 	}
 
 	if clusterNames.Len() > 0 {
-		err := t.checkClusterPermission(user, clusterNames.UnsortedList())
-		if err != nil {
-			klog.Error(err)
+		if err := t.checkClusterPermission(user, clusterNames.UnsortedList()); err != nil {
 			return nil, err
 		}
 	}
@@ -460,9 +445,7 @@ func (t *tenantOperator) CreateWorkspaceTemplate(user user.Info, workspace *tena
 		for _, v := range workspace.Spec.Placement.Clusters {
 			clusters = append(clusters, v.Name)
 		}
-		err := t.checkClusterPermission(user, clusters)
-		if err != nil {
-			klog.Error(err)
+		if err := t.checkClusterPermission(user, clusters); err != nil {
 			return nil, err
 		}
 
@@ -477,12 +460,9 @@ func (t *tenantOperator) UpdateWorkspaceTemplate(user user.Info, workspace *tena
 		for _, v := range workspace.Spec.Placement.Clusters {
 			clusters = append(clusters, v.Name)
 		}
-		err := t.checkClusterPermission(user, clusters)
-		if err != nil {
-			klog.Error(err)
+		if err := t.checkClusterPermission(user, clusters); err != nil {
 			return nil, err
 		}
-
 	}
 	return workspace, t.client.Update(context.Background(), workspace)
 }
@@ -495,7 +475,6 @@ func (t *tenantOperator) DescribeWorkspaceTemplate(workspaceName string) (*tenan
 func (t *tenantOperator) ListWorkspaceClusters(workspaceName string) (*api.ListResult, error) {
 	workspace, err := t.DescribeWorkspaceTemplate(workspaceName)
 	if err != nil {
-		klog.Error(err)
 		return nil, err
 	}
 
@@ -505,7 +484,6 @@ func (t *tenantOperator) ListWorkspaceClusters(workspaceName string) (*api.ListR
 		for _, cluster := range workspace.Spec.Placement.Clusters {
 			obj, err := t.resourceGetter.Get(clusterv1alpha1.ResourcesPluralCluster, "", cluster.Name)
 			if err != nil {
-				klog.Warning(err)
 				if errors.IsNotFound(err) {
 					continue
 				}
@@ -608,7 +586,6 @@ func (t *tenantOperator) DeleteWorkspaceTemplate(workspaceName string, opts meta
 
 		workspace.Finalizers = append(workspace.Finalizers, orphanFinalizer)
 		if err := t.client.Update(context.Background(), workspace); err != nil {
-			klog.Error(err)
 			return err
 		}
 	}
@@ -626,8 +603,7 @@ func (t *tenantOperator) listIntersectedNamespaces(workspaces, workspaceSubstrs,
 	var (
 		namespaceSet = stringSet(namespaces)
 		workspaceSet = stringSet(workspaces)
-
-		iNamespaces []*corev1.Namespace
+		iNamespaces  []*corev1.Namespace
 	)
 	includeNsWithoutWs := len(workspaceSet) == 0 && len(workspaceSubstrs) == 0
 
@@ -707,7 +683,6 @@ func (t *tenantOperator) Auditing(user user.Info, queryParam *auditingv1alpha1.Q
 		stringutils.Split(queryParam.ObjectRefNamespaceFilter, ","),
 		stringutils.Split(queryParam.ObjectRefNamespaceSearch, ","))
 	if err != nil {
-		klog.Error(err)
 		return nil, err
 	}
 
@@ -715,7 +690,6 @@ func (t *tenantOperator) Auditing(user user.Info, queryParam *auditingv1alpha1.Q
 		stringutils.Split(queryParam.WorkspaceFilter, ","),
 		stringutils.Split(queryParam.WorkspaceSearch, ","))
 	if err != nil {
-		klog.Error(err)
 		return nil, err
 	}
 
@@ -737,7 +711,6 @@ func (t *tenantOperator) Auditing(user user.Info, queryParam *auditingv1alpha1.Q
 		}
 		decision, _, err := t.authorizer.Authorize(listEvts)
 		if err != nil {
-			klog.Error(err)
 			return nil, err
 		}
 		if decision == authorizer.DecisionAllow {
@@ -760,7 +733,6 @@ func (t *tenantOperator) Auditing(user user.Info, queryParam *auditingv1alpha1.Q
 		}
 		decision, _, err := t.authorizer.Authorize(listEvts)
 		if err != nil {
-			klog.Error(err)
 			return nil, err
 		}
 		if decision == authorizer.DecisionAllow {
@@ -783,7 +755,6 @@ func (t *tenantOperator) Auditing(user user.Info, queryParam *auditingv1alpha1.Q
 		}
 		decision, _, err := t.authorizer.Authorize(listEvts)
 		if err != nil {
-			klog.Error(err)
 			return nil, err
 		}
 		if decision == authorizer.DecisionAllow {

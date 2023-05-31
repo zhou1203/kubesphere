@@ -155,7 +155,7 @@ func DefaultObjectMetaFilter(item metav1.Object, filter query.Filter) bool {
 	case query.ParameterFieldSelector:
 		return contains(item.(runtime.Object), filter.Value)
 	default:
-		return false
+		return true
 	}
 }
 
