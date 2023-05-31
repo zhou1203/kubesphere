@@ -74,17 +74,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := r.Get(ctx, req.NamespacedName, workspaceRole); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-
 	if err := r.bindWorkspace(ctx, logger, workspaceRole); err != nil {
 		return ctrl.Result{}, err
 	}
-
 	if workspaceRole.AggregationRoleTemplates != nil {
 		if err := r.helper.AggregationRole(ctx, rbachelper.WorkspaceRoleRuleOwner{WorkspaceRole: workspaceRole}, r.recorder); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-
 	return ctrl.Result{}, nil
 }
 

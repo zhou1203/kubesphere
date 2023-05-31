@@ -25,17 +25,29 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/cache"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
+
+type Interface interface {
+	IsHostCluster(cluster *clusterv1alpha1.Cluster) bool
+	IsClusterReady(cluster *clusterv1alpha1.Cluster) bool
+	GetClusterKubeconfig(string) (string, error)
+	Get(string) (*clusterv1alpha1.Cluster, error)
+	GetInnerCluster(string) *innerCluster
+	GetKubernetesClientSet(string) (*kubernetes.Clientset, error)
+	GetClusterClient(string) (runtimeclient.Client, error)
+	ListCluster(ctx context.Context) ([]clusterv1alpha1.Cluster, error)
+}
 
 type innerCluster struct {
 	KubernetesURL *url.URL
@@ -46,23 +58,16 @@ type innerCluster struct {
 type clusterClients struct {
 	sync.RWMutex
 	// build an in memory cluster cache to speed things up
-	innerClusters map[string]*innerCluster
-	cache         runtimecache.Cache
+	innerClusters             map[string]*innerCluster
+	clusterClientWithoutCache map[string]runtimeclient.Client
+	cache                     runtimecache.Cache
 }
 
-type Interface interface {
-	IsHostCluster(cluster *clusterv1alpha1.Cluster) bool
-	IsClusterReady(cluster *clusterv1alpha1.Cluster) bool
-	GetClusterKubeconfig(string) (string, error)
-	Get(string) (*clusterv1alpha1.Cluster, error)
-	GetInnerCluster(string) *innerCluster
-	GetKubernetesClientSet(string) (*kubernetes.Clientset, error)
-}
-
-func NewClusterClient(runtimeCache runtimecache.Cache) (Interface, error) {
+func NewClusterClientSet(runtimeCache runtimecache.Cache) (Interface, error) {
 	c := &clusterClients{
-		innerClusters: make(map[string]*innerCluster),
-		cache:         runtimeCache,
+		innerClusters:             make(map[string]*innerCluster),
+		clusterClientWithoutCache: make(map[string]runtimeclient.Client, 0),
+		cache:                     runtimeCache,
 	}
 
 	clusterInformer, err := runtimeCache.GetInformerForKind(context.Background(), schema.GroupVersionKind{
@@ -82,6 +87,7 @@ func NewClusterClient(runtimeCache runtimecache.Cache) (Interface, error) {
 			oldCluster := oldObj.(*clusterv1alpha1.Cluster)
 			newCluster := newObj.(*clusterv1alpha1.Cluster)
 			if !reflect.DeepEqual(oldCluster.Spec, newCluster.Spec) {
+				c.removeCluster(oldCluster)
 				c.addCluster(newObj)
 			}
 		},
@@ -95,10 +101,19 @@ func NewClusterClient(runtimeCache runtimecache.Cache) (Interface, error) {
 	return c, nil
 }
 
+func (c *clusterClients) ListCluster(ctx context.Context) ([]clusterv1alpha1.Cluster, error) {
+	clusterList := &clusterv1alpha1.ClusterList{}
+	if err := c.cache.List(ctx, clusterList); err != nil {
+		return nil, err
+	}
+	return clusterList.Items, nil
+}
+
 func (c *clusterClients) removeCluster(obj interface{}) {
 	cluster := obj.(*clusterv1alpha1.Cluster)
 	klog.V(4).Infof("remove cluster %s", cluster.Name)
 	c.Lock()
+	delete(c.clusterClientWithoutCache, cluster.Name)
 	delete(c.innerClusters, cluster.Name)
 	c.Unlock()
 }
@@ -142,6 +157,42 @@ func newInnerCluster(cluster *clusterv1alpha1.Cluster) *innerCluster {
 	}
 }
 
+func (c *clusterClients) GetClusterClient(clusterName string) (runtimeclient.Client, error) {
+	c.RLock()
+	client, ok := c.clusterClientWithoutCache[clusterName]
+	c.RUnlock()
+	if ok {
+		return client, nil
+	}
+
+	cluster, err := c.Get(clusterName)
+	if err != nil {
+		return nil, err
+	}
+
+	clientConfig, err := clientcmd.NewClientConfigFromBytes(cluster.Spec.Connection.KubeConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	clusterConfig, err := clientConfig.ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	client, err = runtimeclient.New(clusterConfig, runtimeclient.Options{
+		Scheme: scheme.Scheme,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	c.Lock()
+	c.clusterClientWithoutCache[clusterName] = client
+	c.Unlock()
+	return client, nil
+}
+
 func (c *clusterClients) addCluster(obj interface{}) *innerCluster {
 	cluster := obj.(*clusterv1alpha1.Cluster)
 	klog.V(4).Infof("add new cluster %s", cluster.Name)
@@ -150,7 +201,6 @@ func (c *clusterClients) addCluster(obj interface{}) *innerCluster {
 		klog.Errorf("Parse kubernetes apiserver endpoint %s failed, %v", cluster.Spec.Connection.KubernetesAPIEndpoint, err)
 		return nil
 	}
-
 	inner := newInnerCluster(cluster)
 	c.Lock()
 	c.innerClusters[cluster.Name] = inner
@@ -208,7 +258,6 @@ func (c *clusterClients) GetKubernetesClientSet(name string) (*kubernetes.Client
 	if err != nil {
 		return nil, err
 	}
-
 	return clientSet, nil
 }
 

@@ -55,7 +55,7 @@ func WithMulticluster(next http.Handler, clusterClient clusterclient.Interface) 
 func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	info, ok := request.RequestInfoFrom(req.Context())
 	if !ok {
-		responsewriters.InternalError(w, req, fmt.Errorf("no RequestInfo found in the context"))
+		responsewriters.InternalError(w, req, errors.NewInternalError(fmt.Errorf("no RequestInfo found in the context")))
 		return
 	}
 	if info.Cluster == "" {
@@ -81,13 +81,13 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 	}
 
 	if !m.IsClusterReady(cluster) {
-		responsewriters.InternalError(w, req, fmt.Errorf("cluster %s is not ready", cluster.Name))
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(fmt.Sprintf("cluster %s is not ready", cluster.Name)), w)
 		return
 	}
 
 	innCluster := m.GetInnerCluster(cluster.Name)
 	if innCluster == nil {
-		responsewriters.InternalError(w, req, fmt.Errorf("cluster %s is not ready", cluster.Name))
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(fmt.Sprintf("cluster %s is not ready", cluster.Name)), w)
 		return
 	}
 

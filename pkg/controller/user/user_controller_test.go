@@ -30,9 +30,12 @@ import (
 	"k8s.io/client-go/tools/record"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/scheme"
@@ -76,11 +79,16 @@ func TestDoNothing(t *testing.T) {
 	}
 
 	client := runtimefakeclient.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(user).WithRuntimeObjects(loginRecords...).Build()
+	clusterClientSet, err := clusterclient.NewClusterClientSet(&informertest.FakeInformers{Scheme: scheme.Scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
 	c := &Reconciler{
 		Recorder:              &record.FakeRecorder{},
 		Logger:                ctrl.Log.WithName("controllers").WithName(controllerName),
 		Client:                client,
 		AuthenticationOptions: authenticateOptions,
+		ClusterClientSet:      clusterClientSet,
 	}
 
 	users := &iamv1beta1.UserList{}

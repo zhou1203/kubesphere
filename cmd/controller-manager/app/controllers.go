@@ -48,6 +48,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 var allControllers = []string{
@@ -86,11 +87,14 @@ var allControllers = []string{
 // setup all available controllers one by one
 func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *options.KubeSphereControllerManagerOptions) error {
 	// begin init necessary clients
-
-	// TODO refactor
-	//kubeconfigClient := kubeconfig.NewOperator(client.Kubernetes(),
-	//	informerFactory.KubernetesSharedInformerFactory().Core().V1().ConfigMaps().Lister(),
-	//	client.Config())
+	var clusterClientSet clusterclient.Interface
+	var err error
+	if cmOptions.MultiClusterOptions.ClusterRole == "host" {
+		clusterClientSet, err = clusterclient.NewClusterClientSet(mgr.GetCache())
+		if err != nil {
+			return err
+		}
+	}
 
 	// end init clients
 
@@ -99,8 +103,8 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	// "user" controller
 	if cmOptions.IsControllerEnabled("user") {
 		userController := &user.Reconciler{
-			MaxConcurrentReconciles: 4,
-			AuthenticationOptions:   cmOptions.AuthenticationOptions,
+			AuthenticationOptions: cmOptions.AuthenticationOptions,
+			ClusterClientSet:      clusterClientSet,
 		}
 		addControllerWithSetup(mgr, "user", userController)
 	}
@@ -135,7 +139,9 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 
 	// "workspacetemplate" controller
 	if cmOptions.IsControllerEnabled("workspacetemplate") {
-		workspaceTemplateReconciler := &workspacetemplate.Reconciler{}
+		workspaceTemplateReconciler := &workspacetemplate.Reconciler{
+			ClusterClientSet: clusterClientSet,
+		}
 		addControllerWithSetup(mgr, "workspacetemplate", workspaceTemplateReconciler)
 	}
 
@@ -153,7 +159,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 
 	// "workspacerolebinding" controller
 	if cmOptions.IsControllerEnabled("workspacerolebinding") {
-		workspaceRoleBindingReconciler := &workspacerolebinding.Reconciler{}
+		workspaceRoleBindingReconciler := &workspacerolebinding.Reconciler{ClusterClientSet: clusterClientSet}
 		addControllerWithSetup(mgr, "workspacerolebinding", workspaceRoleBindingReconciler)
 	}
 
@@ -229,7 +235,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 
 	// "globalrolebinding" controller
 	if cmOptions.IsControllerEnabled("globalrolebinding") {
-		addControllerWithSetup(mgr, "globalrolebinding", &globalrolebinding.Reconciler{})
+		addControllerWithSetup(mgr, "globalrolebinding", &globalrolebinding.Reconciler{ClusterClientSet: clusterClientSet})
 	}
 
 	// "groupbinding" controller

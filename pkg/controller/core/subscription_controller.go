@@ -145,11 +145,14 @@ func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	labelSelector, _ := predicate.LabelSelectorPredicate(metav1.LabelSelector{
+	labelSelector, err := predicate.LabelSelectorPredicate(metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{{
 			Key:      corev1alpha1.SubscriptionReferenceLabel,
 			Operator: metav1.LabelSelectorOpExists,
 		}}})
+	if err != nil {
+		return err
+	}
 
 	err = controller.Watch(
 		&source.Kind{Type: &batchv1.Job{}},
@@ -799,7 +802,10 @@ func (r *SubscriptionReconciler) syncClusterSchedulingStatus(ctx context.Context
 		}
 	} else if sub.Spec.ClusterScheduling.Placement.ClusterSelector != nil {
 		clusterList := &clusterv1alpha1.ClusterList{}
-		selector, _ := metav1.LabelSelectorAsSelector(sub.Spec.ClusterScheduling.Placement.ClusterSelector)
+		selector, err := metav1.LabelSelectorAsSelector(sub.Spec.ClusterScheduling.Placement.ClusterSelector)
+		if err != nil {
+			return err
+		}
 		if err := r.List(ctx, clusterList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 			return err
 		}

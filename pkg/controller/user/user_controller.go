@@ -19,27 +19,31 @@ package user
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
@@ -55,12 +59,12 @@ const (
 // Reconciler reconciles a User object
 type Reconciler struct {
 	client.Client
-	KubeconfigClient        kubeconfig.Interface
-	AuthenticationOptions   *authentication.Options
-	Logger                  logr.Logger
-	Scheme                  *runtime.Scheme
-	Recorder                record.EventRecorder
-	MaxConcurrentReconciles int
+	KubeconfigClient      kubeconfig.Interface
+	AuthenticationOptions *authentication.Options
+	Logger                logr.Logger
+	Scheme                *runtime.Scheme
+	Recorder              record.EventRecorder
+	ClusterClientSet      clusterclient.Interface
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -76,13 +80,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Recorder == nil {
 		r.Recorder = mgr.GetEventRecorderFor(controllerName)
 	}
-	if r.MaxConcurrentReconciles <= 0 {
-		r.MaxConcurrentReconciles = 1
-	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
+			MaxConcurrentReconciles: 2,
 		}).
 		For(&iamv1beta1.User{}).
 		Complete(r)
@@ -140,16 +141,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{}, err
 	}
 
-	// synchronization through kubefed-controller when multi cluster is enabled
-	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
-	// if err = r.multiClusterSync(ctx, user); err != nil {
-	// 	r.recorder.Event(user, corev1.EventTypeWarning, failedSynced, fmt.Sprintf(syncFailMessage, err))
-	// 	return ctrl.Result{}, err
-	// }
-
-	// update user status if not managed by kubefed
-	managedByKubefed := user.Labels[constants.KubefedManagedLabel] == "true"
-	if !managedByKubefed {
+	if r.ClusterClientSet != nil {
+		if err := r.sync(ctx, user); err != nil {
+			return ctrl.Result{}, err
+		}
 		if err = r.encryptPassword(ctx, user); err != nil {
 			klog.Error(err)
 			r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
@@ -179,6 +174,56 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *Reconciler) sync(ctx context.Context, user *iamv1beta1.User) error {
+	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+	if err != nil {
+		return err
+	}
+	for _, cluster := range clusters {
+		if err := r.syncUser(ctx, cluster, user); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Reconciler) syncUser(ctx context.Context, cluster clusterv1alpha1.Cluster, template *iamv1beta1.User) error {
+	if r.ClusterClientSet.IsHostCluster(&cluster) {
+		return nil
+	}
+	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+	if err != nil {
+		return err
+	}
+	user := &iamv1beta1.User{}
+	if err := clusterClient.Get(ctx, types.NamespacedName{Name: template.Name}, user); err != nil {
+		if errors.IsNotFound(err) {
+			user = &iamv1beta1.User{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        template.Name,
+					Labels:      template.Labels,
+					Annotations: template.Annotations,
+				},
+				Spec:   template.Spec,
+				Status: template.Status,
+			}
+			return clusterClient.Create(ctx, user)
+		}
+		return err
+	}
+	if !reflect.DeepEqual(user.Spec, template.Spec) ||
+		!reflect.DeepEqual(user.Status, template.Status) ||
+		!reflect.DeepEqual(user.Labels, template.Labels) ||
+		!reflect.DeepEqual(user.Annotations, template.Annotations) {
+		user.Labels = template.Labels
+		user.Annotations = template.Annotations
+		user.Spec = template.Spec
+		user.Status = template.Status
+		return clusterClient.Update(ctx, user)
+	}
+	return err
 }
 
 // encryptPassword Encrypt and update the user password
@@ -277,7 +322,6 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) 
 	if user.Status.State == iamv1beta1.UserDisabled {
 		return nil
 	}
-
 	if user.Spec.EncryptedPassword == "" {
 		if user.Labels[iamv1beta1.IdentifyProviderLabel] != "" {
 			// mapped user from other identity provider always active until disabled

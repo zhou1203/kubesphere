@@ -40,9 +40,6 @@ config:
             - '*'
   # Jwt Secret is required by ks-apiserver, a random string would be generated if it's empty
   jwtSecret: ""
-  multicluster: {}
-  monitoring: {}
-  notification: {}
 
 serviceAccount:
   # Specifies whether a service account should be created
