@@ -107,7 +107,7 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		apiServer.RuntimeClient = c.GetClient()
 	}
 
-	if apiServer.ClusterClient, err = clusterclient.NewClusterClient(apiServer.RuntimeCache); err != nil {
+	if apiServer.ClusterClient, err = clusterclient.NewClusterClientSet(apiServer.RuntimeCache); err != nil {
 		klog.Fatalf("unable to create cluster client: %v", err)
 	}
 

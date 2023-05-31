@@ -19,11 +19,16 @@ package globalrolebinding
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,18 +36,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/scheme"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 const controllerName = "globalrolebinding-controller"
 
 type Reconciler struct {
 	client.Client
-
-	recorder record.EventRecorder
+	ClusterClientSet clusterclient.Interface
+	recorder         record.EventRecorder
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -57,11 +61,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	// TODO: sync logic needs to be updated and no longer relies on KubeFed, it needs to be synchronized manually.
-	// if err = c.multiClusterSync(globalRoleBinding); err != nil {
-	// 	klog.Error(err)
-	// 	return err
-	// }
+	if r.ClusterClientSet != nil {
+		if err := r.sync(ctx, globalRoleBinding); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	r.recorder.Event(globalRoleBinding, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return ctrl.Result{}, nil
@@ -82,7 +86,7 @@ func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBindi
 		},
 		Subjects: ensureSubjectAPIVersionIsValid(globalRoleBinding.Subjects),
 		RoleRef: rbacv1.RoleRef{
-			APIGroup: iamv1beta1.GroupName,
+			APIGroup: rbacv1.GroupName,
 			Kind:     iamv1beta1.ResourceKindClusterRole,
 			Name:     iamv1beta1.ClusterAdmin,
 		},
@@ -93,6 +97,56 @@ func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBindi
 		return err
 	}
 	return client.IgnoreAlreadyExists(r.Create(ctx, clusterRoleBinding))
+}
+
+func (r *Reconciler) sync(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
+	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+	if err != nil {
+		return err
+	}
+	for _, cluster := range clusters {
+		if err := r.syncGlobalRoleBinding(ctx, cluster, globalRoleBinding); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster clusterv1alpha1.Cluster, template *iamv1beta1.GlobalRoleBinding) error {
+	if r.ClusterClientSet.IsHostCluster(&cluster) {
+		return nil
+	}
+	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+	if err != nil {
+		return err
+	}
+	globalRoleBinding := &iamv1beta1.GlobalRoleBinding{}
+	if err := clusterClient.Get(ctx, types.NamespacedName{Name: template.Name}, globalRoleBinding); err != nil {
+		if errors.IsNotFound(err) {
+			globalRoleBinding = &iamv1beta1.GlobalRoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        template.Name,
+					Labels:      template.Labels,
+					Annotations: template.Annotations,
+				},
+				Subjects: template.Subjects,
+				RoleRef:  template.RoleRef,
+			}
+			return clusterClient.Create(ctx, globalRoleBinding)
+		}
+		return err
+	}
+	if !reflect.DeepEqual(globalRoleBinding.RoleRef, template.RoleRef) ||
+		!reflect.DeepEqual(globalRoleBinding.Subjects, template.Subjects) ||
+		!reflect.DeepEqual(globalRoleBinding.Labels, template.Labels) ||
+		!reflect.DeepEqual(globalRoleBinding.Annotations, template.Annotations) {
+		globalRoleBinding.Labels = template.Labels
+		globalRoleBinding.Annotations = template.Annotations
+		globalRoleBinding.RoleRef = template.RoleRef
+		globalRoleBinding.Subjects = template.Subjects
+		return clusterClient.Update(ctx, globalRoleBinding)
+	}
+	return err
 }
 
 func findExpectUsername(globalRoleBinding *iamv1beta1.GlobalRoleBinding) string {
@@ -110,7 +164,7 @@ func ensureSubjectAPIVersionIsValid(subjects []rbacv1.Subject) []rbacv1.Subject 
 		if subject.Kind == iamv1beta1.ResourceKindUser {
 			validSubject := rbacv1.Subject{
 				Kind:     iamv1beta1.ResourceKindUser,
-				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
+				APIGroup: rbacv1.GroupName,
 				Name:     subject.Name,
 			}
 			validSubjects = append(validSubjects, validSubject)

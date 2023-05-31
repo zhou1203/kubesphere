@@ -28,7 +28,7 @@ const (
 	ResourcePluralWorkspaceTemplate   = "workspacetemplates"
 )
 
-type FederatedWorkspaceSpec struct {
+type WorkspaceTemplateSpec struct {
 	Template  Template          `json:"template"`
 	Placement GenericPlacement  `json:"placement"`
 	Overrides []GenericOverride `json:"overrides,omitempty"`
@@ -69,7 +69,7 @@ type GenericOverride struct {
 type WorkspaceTemplate struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              FederatedWorkspaceSpec `json:"spec,omitempty"`
+	Spec              WorkspaceTemplateSpec `json:"spec,omitempty"`
 }
 
 // +genclient:nonNamespaced
