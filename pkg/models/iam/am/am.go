@@ -173,19 +173,19 @@ func (am *amOperator) ListWorkspaceRoleBindings(username, roleName string, group
 	roleBindings := &iamv1beta1.WorkspaceRoleBindingList{}
 	queryParam := query.New()
 	if workspace != "" {
-		if err := queryParam.AddLabels(map[string]string{tenantv1alpha1.WorkspaceLabel: workspace}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{tenantv1alpha1.WorkspaceLabel: workspace}); err != nil {
 			return nil, err
 		}
 	}
 
 	if username != "" {
-		if err := queryParam.AddLabels(map[string]string{iamv1beta1.UserReferenceLabel: username}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{iamv1beta1.UserReferenceLabel: username}); err != nil {
 			return nil, err
 		}
 	}
 
 	if roleName != "" {
-		if err := queryParam.AddLabels(map[string]string{iamv1beta1.RoleReferenceLabel: roleName}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{iamv1beta1.RoleReferenceLabel: roleName}); err != nil {
 			return nil, err
 		}
 	}
@@ -209,13 +209,13 @@ func (am *amOperator) ListClusterRoleBindings(username, roleName string) ([]iamv
 	roleBindings := &iamv1beta1.ClusterRoleBindingList{}
 	queryParam := query.New()
 	if username != "" {
-		if err := queryParam.AddLabels(map[string]string{iamv1beta1.UserReferenceLabel: username}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{iamv1beta1.UserReferenceLabel: username}); err != nil {
 			return nil, err
 		}
 	}
 
 	if roleName != "" {
-		if err := queryParam.AddLabels(map[string]string{iamv1beta1.RoleReferenceLabel: roleName}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{iamv1beta1.RoleReferenceLabel: roleName}); err != nil {
 			return nil, err
 		}
 	}
@@ -236,13 +236,13 @@ func (am *amOperator) ListGlobalRoleBindings(username, roleName string) ([]iamv1
 	roleBindings := &iamv1beta1.GlobalRoleBindingList{}
 	queryParam := query.New()
 	if username != "" {
-		if err := queryParam.AddLabels(map[string]string{iamv1beta1.UserReferenceLabel: username}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{iamv1beta1.UserReferenceLabel: username}); err != nil {
 			return nil, err
 		}
 	}
 
 	if roleName != "" {
-		if err := queryParam.AddLabels(map[string]string{iamv1beta1.RoleReferenceLabel: roleName}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{iamv1beta1.RoleReferenceLabel: roleName}); err != nil {
 			return nil, err
 		}
 	}
@@ -263,13 +263,13 @@ func (am *amOperator) ListRoleBindings(username, roleName string, groups []strin
 	roleBindings := &iamv1beta1.RoleBindingList{}
 	queryParam := query.New()
 	if username != "" {
-		if err := queryParam.AddLabels(map[string]string{iamv1beta1.UserReferenceLabel: username}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{iamv1beta1.UserReferenceLabel: username}); err != nil {
 			return nil, err
 		}
 	}
 
 	if roleName != "" {
-		if err := queryParam.AddLabels(map[string]string{iamv1beta1.RoleReferenceLabel: roleName}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{iamv1beta1.RoleReferenceLabel: roleName}); err != nil {
 			return nil, err
 		}
 	}
@@ -454,7 +454,7 @@ func (am *amOperator) ListGroupWorkspaceRoleBindings(workspace string, query *qu
 
 func (am *amOperator) ListGroupRoleBindings(workspace string, query *query.Query) ([]iamv1beta1.RoleBinding, error) {
 	if workspace != "" {
-		if err := query.AddLabels(map[string]string{tenantv1alpha1.WorkspaceLabel: workspace}); err != nil {
+		if err := query.AppendLabelSelector(map[string]string{tenantv1alpha1.WorkspaceLabel: workspace}); err != nil {
 			return nil, err
 		}
 	}

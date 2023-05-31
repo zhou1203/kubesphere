@@ -77,7 +77,7 @@ func (q *Query) Selector() labels.Selector {
 	}
 }
 
-func (q *Query) AddLabels(ls map[string]string) error {
+func (q *Query) AppendLabelSelector(ls map[string]string) error {
 	labelsMap, err := labels.ConvertSelectorToLabelsMap(q.LabelSelector)
 	if err != nil {
 		return err
