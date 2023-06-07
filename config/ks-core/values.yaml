@@ -32,6 +32,11 @@ config:
   # Specifies whether the kubesphere-config configmap should be created
   create: true
   authentication:
+    authenticateRateLimiterMaxTries: 10
+    authenticationRateLimiterDuration: 10m0s
+    loginHistoryRetentionPeriod: 168h
+    maximumClockSkew: 10s
+    enableMultiLogin: true
     oauthOptions:
       clients:
         - name: kubesphere
