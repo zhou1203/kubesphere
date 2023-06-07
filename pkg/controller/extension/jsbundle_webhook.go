@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -21,8 +22,9 @@ var _ admission.CustomDefaulter = &JSBundleWebhook{}
 
 func (r *JSBundleWebhook) Default(ctx context.Context, obj runtime.Object) error {
 	jsBundle := obj.(*extensionsv1alpha1.JSBundle)
-	if jsBundle.Status.Link == "" {
-		jsBundle.Status.Link = fmt.Sprintf("/dist/%s/index.js", jsBundle.Name)
+	extensionName := jsBundle.Labels[v1alpha1.ExtensionReferenceLabel]
+	if jsBundle.Status.Link == "" && extensionName != "" {
+		jsBundle.Status.Link = fmt.Sprintf("/dist/%s/index.js", extensionName)
 	}
 	return nil
 }
@@ -31,29 +33,30 @@ func (r *JSBundleWebhook) ValidateCreate(ctx context.Context, obj runtime.Object
 	return r.validateJSBundle(ctx, obj.(*extensionsv1alpha1.JSBundle))
 }
 
-func (r *JSBundleWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) error {
+func (r *JSBundleWebhook) ValidateUpdate(ctx context.Context, _, newObj runtime.Object) error {
 	return r.validateJSBundle(ctx, newObj.(*extensionsv1alpha1.JSBundle))
 }
 
-func (r *JSBundleWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) error {
+func (r *JSBundleWebhook) ValidateDelete(_ context.Context, _ runtime.Object) error {
 	return nil
 }
 
-func (r *JSBundleWebhook) validateJSBundle(ctx context.Context, bundle *extensionsv1alpha1.JSBundle) error {
-	if bundle.Status.Link == "" {
+func (r *JSBundleWebhook) validateJSBundle(ctx context.Context, jsBundle *extensionsv1alpha1.JSBundle) error {
+	if jsBundle.Status.Link == "" {
 		return nil
 	}
-	if !strings.HasPrefix(bundle.Status.Link, fmt.Sprintf("/dist/%s", bundle.Name)) {
-		return fmt.Errorf("the prefix of status.link must be in the format /dist/%s/", bundle.Name)
+	extensionName := jsBundle.Labels[v1alpha1.ExtensionReferenceLabel]
+	if extensionName != "" && !strings.HasPrefix(jsBundle.Status.Link, fmt.Sprintf("/dist/%s", extensionName)) {
+		return fmt.Errorf("the prefix of status.link must be in the format /dist/%s/", extensionName)
 	}
 	jsBundles := &extensionsv1alpha1.JSBundleList{}
 	if err := r.Client.List(ctx, jsBundles, &client.ListOptions{}); err != nil {
 		return err
 	}
-	for _, jsBundle := range jsBundles.Items {
-		if jsBundle.Name != bundle.Name &&
-			jsBundle.Status.Link == bundle.Status.Link {
-			return fmt.Errorf("JSBundle %s is already exists", bundle.Status.Link)
+	for _, item := range jsBundles.Items {
+		if item.Name != jsBundle.Name &&
+			item.Status.Link == jsBundle.Status.Link {
+			return fmt.Errorf("JSBundle %s is already exists", jsBundle.Status.Link)
 		}
 	}
 	return nil
