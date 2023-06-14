@@ -1047,7 +1047,7 @@ func (r *SubscriptionReconciler) installOrUpgradeExtension(ctx context.Context, 
 		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}),
 	}
 	if extensionVersion.Spec.InstallationMode == corev1alpha1.InstallationMulticluster {
-		options = append(options, helm.SetOverrides([]string{"tags.extension=true", "extension.enabled=true"}))
+		options = append(options, helm.SetOverrides([]string{"tags.extension=true", "extension.enabled=true", "tags.agent=false", "agent.enabled=false"}))
 	}
 
 	jobName, err := executor.Upgrade(ctx, releaseName, charData, []byte(sub.Spec.Config), options...)
@@ -1107,10 +1107,13 @@ func (r *SubscriptionReconciler) installOrUpgradeClusterAgent(ctx context.Contex
 		}
 	}
 
-	helmOptions := []helm.HelmOption{helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)),
+	helmOptions := []helm.HelmOption{
+		helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)),
 		helm.SetInstall(true),
 		helm.SetKubeAsUser(fmt.Sprintf("system:serviceaccount:%s:default", targetNamespace)),
-		helm.SetOverrides([]string{"tags.agent=true", "agent.enabled=true"})}
+		helm.SetOverrides([]string{"tags.agent=true", "agent.enabled=true", "tags.extension=false", "extension.enabled=false"}),
+		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: sub.Spec.Extension.Name}),
+	}
 
 	jobName, err := executor.Upgrade(ctx, releaseName, charData, []byte(clusterConfig(sub, cluster.Name)), helmOptions...)
 	if err != nil {
