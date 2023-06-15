@@ -28,22 +28,22 @@ const (
 	InstallationMulticluster = "Multicluster"
 )
 
-// Vendor describes an extension vendor.
-type Vendor struct {
+// Provider describes an extension provider.
+type Provider struct {
 	// Name is a username or organization name
 	Name string `json:"name,omitempty"`
-	// URL is an optional URL to an address for the named vendor
+	// URL is an optional URL to an address for the named provider
 	URL string `json:"url,omitempty"`
-	// Email is an optional email address to contact the named vendor
+	// Email is an optional email address to contact the named provider
 	Email string `json:"email,omitempty"`
 }
 
 // ExtensionInfo describes an extension's basic information.
 type ExtensionInfo struct {
-	DisplayName Locales `json:"displayName,omitempty"`
-	Description Locales `json:"description,omitempty"`
-	Icon        string  `json:"icon,omitempty"`
-	Vendor      Vendor  `json:"vendor,omitempty"`
+	DisplayName Locales                    `json:"displayName,omitempty"`
+	Description Locales                    `json:"description,omitempty"`
+	Icon        string                     `json:"icon,omitempty"`
+	Provider    map[LanguageCode]*Provider `json:"provider,omitempty"`
 }
 
 // ExtensionSpec only contains basic extension information copied from the latest ExtensionVersion.

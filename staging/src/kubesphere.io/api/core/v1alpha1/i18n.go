@@ -4,4 +4,8 @@ type LanguageCode string
 type LocaleString string
 type Locales map[LanguageCode]LocaleString
 
-const DefaultLanguageCode = "default"
+const (
+	LanguageCodeEn      = "en"
+	LanguageCodeZh      = "zh"
+	DefaultLanguageCode = LanguageCodeEn
+)

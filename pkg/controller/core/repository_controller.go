@@ -91,7 +91,7 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 					DisplayName: latestExtensionVersion.Spec.DisplayName,
 					Description: latestExtensionVersion.Spec.Description,
 					Icon:        latestExtensionVersion.Spec.Icon,
-					Vendor:      latestExtensionVersion.Spec.Vendor,
+					Provider:    latestExtensionVersion.Spec.Provider,
 				},
 			}
 			if err := controllerutil.SetOwnerReference(repo, extension, r.Scheme()); err != nil {
@@ -123,7 +123,7 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 				DisplayName: latestExtensionVersion.Spec.DisplayName,
 				Description: latestExtensionVersion.Spec.Description,
 				Icon:        latestExtensionVersion.Spec.Icon,
-				Vendor:      latestExtensionVersion.Spec.Vendor,
+				Provider:    latestExtensionVersion.Spec.Provider,
 			},
 		}
 		return r.Update(ctx, extension)
@@ -176,13 +176,16 @@ func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.I
 				logger.Info("version metadata is empty", "repo", repo.Name)
 				continue
 			}
-			var vendor corev1alpha1.Vendor
+
+			var provider map[corev1alpha1.LanguageCode]*corev1alpha1.Provider
 			if len(version.Maintainers) > 0 {
 				maintainer := version.Maintainers[0]
-				vendor = corev1alpha1.Vendor{
-					Name:  maintainer.Name,
-					URL:   maintainer.URL,
-					Email: maintainer.Email,
+				provider = map[corev1alpha1.LanguageCode]*corev1alpha1.Provider{
+					corev1alpha1.DefaultLanguageCode: {
+						Name:  maintainer.Name,
+						URL:   maintainer.URL,
+						Email: maintainer.Email,
+					},
 				}
 			}
 			var chartURL string
@@ -244,7 +247,7 @@ func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.I
 						DisplayName: displayName,
 						Description: description,
 						Icon:        version.Icon,
-						Vendor:      vendor,
+						Provider:    provider,
 					},
 					ChartURL:             chartURL,
 					ExternalDependencies: externalDependencies,
