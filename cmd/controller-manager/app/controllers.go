@@ -139,28 +139,22 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 
 	// "workspacetemplate" controller
 	if cmOptions.IsControllerEnabled("workspacetemplate") {
-		workspaceTemplateReconciler := &workspacetemplate.Reconciler{
-			ClusterClientSet: clusterClientSet,
-		}
-		addControllerWithSetup(mgr, "workspacetemplate", workspaceTemplateReconciler)
+		addControllerWithSetup(mgr, "workspacetemplate", &workspacetemplate.Reconciler{ClusterClientSet: clusterClientSet})
 	}
 
 	// "workspace" controller
 	if cmOptions.IsControllerEnabled("workspace") {
-		workspaceReconciler := &workspace.Reconciler{}
-		addControllerWithSetup(mgr, "workspace", workspaceReconciler)
+		addControllerWithSetup(mgr, "workspace", &workspace.Reconciler{})
 	}
 
 	// "workspacerole" controller
 	if cmOptions.IsControllerEnabled("workspacerole") {
-		workspaceRoleReconciler := &workspacerole.Reconciler{}
-		addControllerWithSetup(mgr, "workspacerole", workspaceRoleReconciler)
+		addControllerWithSetup(mgr, "workspacerole", &workspacerole.Reconciler{ClusterClientSet: clusterClientSet})
 	}
 
 	// "workspacerolebinding" controller
 	if cmOptions.IsControllerEnabled("workspacerolebinding") {
-		workspaceRoleBindingReconciler := &workspacerolebinding.Reconciler{ClusterClientSet: clusterClientSet}
-		addControllerWithSetup(mgr, "workspacerolebinding", workspaceRoleBindingReconciler)
+		addControllerWithSetup(mgr, "workspacerolebinding", &workspacerolebinding.Reconciler{ClusterClientSet: clusterClientSet})
 	}
 
 	// "namespace" controller
@@ -208,11 +202,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "csr", csrController)
 	}
 
-	if cmOptions.IsControllerEnabled("globalrole") {
-		globalRoleController := &globalrole.Reconciler{}
-		addControllerWithSetup(mgr, "globalrole", globalRoleController)
-	}
-
 	if cmOptions.IsControllerEnabled("clusterrole") {
 		clusterRoleController := &clusterrole.Reconciler{}
 		addControllerWithSetup(mgr, "clusterrole", clusterRoleController)
@@ -230,7 +219,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 
 	// "globalrole" controller
 	if cmOptions.IsControllerEnabled("globalrole") {
-		addControllerWithSetup(mgr, "globalrole", &globalrole.Reconciler{})
+		addControllerWithSetup(mgr, "globalrole", &globalrole.Reconciler{ClusterClientSet: clusterClientSet})
 	}
 
 	// "globalrolebinding" controller

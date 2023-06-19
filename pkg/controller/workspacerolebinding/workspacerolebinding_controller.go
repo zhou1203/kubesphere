@@ -24,17 +24,23 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 )
@@ -52,24 +58,46 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Client == nil {
-		r.Client = mgr.GetClient()
-	}
-	if r.logger.GetSink() == nil {
-		r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	}
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
 
-	if r.recorder == nil {
-		r.recorder = mgr.GetEventRecorderFor(controllerName)
-	}
-
-	return ctrl.NewControllerManagedBy(mgr).
+	ctr, err := ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		For(&iamv1beta1.WorkspaceRoleBinding{}).
-		Complete(r)
+		Build(r)
+
+	if err != nil {
+		return err
+	}
+
+	// host cluster
+	if r.ClusterClientSet != nil {
+		return ctr.Watch(
+			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+			handler.EnqueueRequestsFromMapFunc(r.mapper),
+			clusterutils.ClusterStatusChangedPredicate{})
+	}
+
+	return nil
+}
+
+func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
+	cluster := o.(*clusterv1alpha1.Cluster)
+	if !clusterutils.IsClusterReady(cluster) {
+		return []reconcile.Request{}
+	}
+	workspaceRoleBindings := &iamv1beta1.WorkspaceRoleBindingList{}
+	if err := r.List(context.Background(), workspaceRoleBindings); err != nil {
+		r.logger.Error(err, "failed to list workspace role bindings")
+		return []reconcile.Request{}
+	}
+	var result []reconcile.Request
+	for _, workspaceRoleBinding := range workspaceRoleBindings.Items {
+		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: workspaceRoleBinding.Name}})
+	}
+	return result
 }
 
 // +kubebuilder:rbac:groups=iam.kubesphere.io,resources=workspacerolebindings,verbs=get;list;watch;create;update;patch;delete
@@ -104,6 +132,10 @@ func (r *Reconciler) sync(ctx context.Context, workspaceRoleBinding *iamv1beta1.
 		return err
 	}
 	for _, cluster := range clusters {
+		// skip if cluster is not ready
+		if !clusterutils.IsClusterReady(&cluster) {
+			continue
+		}
 		if err := r.syncWorkspaceRoleBinding(ctx, cluster, workspaceRoleBinding); err != nil {
 			return err
 		}
@@ -111,7 +143,7 @@ func (r *Reconciler) sync(ctx context.Context, workspaceRoleBinding *iamv1beta1.
 	return nil
 }
 
-func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clusterv1alpha1.Cluster, template *iamv1beta1.WorkspaceRoleBinding) error {
+func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding) error {
 	if r.ClusterClientSet.IsHostCluster(&cluster) {
 		return nil
 	}
@@ -119,32 +151,52 @@ func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clust
 	if err != nil {
 		return err
 	}
-	workspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{}
-	if err := clusterClient.Get(ctx, types.NamespacedName{Name: template.Name}, workspaceRoleBinding); err != nil {
-		if errors.IsNotFound(err) {
-			workspaceRoleBinding = &iamv1beta1.WorkspaceRoleBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        template.Name,
-					Labels:      template.Labels,
-					Annotations: template.Annotations,
-				},
-				Subjects: template.Subjects,
-				RoleRef:  template.RoleRef,
+
+	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
+	if err := r.Get(ctx, types.NamespacedName{Name: workspaceRoleBinding.Labels[tenantv1alpha1.WorkspaceLabel]}, workspaceTemplate); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+
+	expected := false
+	if len(workspaceTemplate.Spec.Placement.Clusters) > 0 {
+		for _, clusterRef := range workspaceTemplate.Spec.Placement.Clusters {
+			if clusterRef.Name == cluster.Name {
+				expected = true
+				break
 			}
-			return clusterClient.Create(ctx, workspaceRoleBinding)
 		}
-		return err
+	} else if workspaceTemplate.Spec.Placement.ClusterSelector != nil {
+		selector, err := metav1.LabelSelectorAsSelector(workspaceTemplate.Spec.Placement.ClusterSelector)
+		if err != nil {
+			return err
+		}
+		expected = selector.Matches(labels.Set(cluster.Labels))
 	}
-	if !reflect.DeepEqual(workspaceRoleBinding.RoleRef, template.RoleRef) ||
-		!reflect.DeepEqual(workspaceRoleBinding.Subjects, template.Subjects) ||
-		!reflect.DeepEqual(workspaceRoleBinding.Labels, template.Labels) ||
-		!reflect.DeepEqual(workspaceRoleBinding.Annotations, template.Annotations) {
-		workspaceRoleBinding.Labels = template.Labels
-		workspaceRoleBinding.Annotations = template.Annotations
-		workspaceRoleBinding.RoleRef = template.RoleRef
-		workspaceRoleBinding.Subjects = template.Subjects
-		return clusterClient.Update(ctx, workspaceRoleBinding)
+
+	if !expected {
+		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
+		return client.IgnoreNotFound(err)
+	} else {
+		target := &iamv1beta1.WorkspaceRoleBinding{}
+		if err := clusterClient.Get(ctx, types.NamespacedName{Name: workspaceRoleBinding.Name}, target); err != nil {
+			if errors.IsNotFound(err) {
+				target = workspaceRoleBinding.DeepCopy()
+				return clusterClient.Create(ctx, target)
+			}
+			return err
+		}
+		if !reflect.DeepEqual(target.RoleRef, workspaceRoleBinding.RoleRef) ||
+			!reflect.DeepEqual(target.Subjects, workspaceRoleBinding.Subjects) ||
+			!reflect.DeepEqual(target.Labels, workspaceRoleBinding.Labels) ||
+			!reflect.DeepEqual(target.Annotations, workspaceRoleBinding.Annotations) {
+			target.Labels = workspaceRoleBinding.Labels
+			target.Annotations = workspaceRoleBinding.Annotations
+			target.RoleRef = workspaceRoleBinding.RoleRef
+			target.Subjects = workspaceRoleBinding.Subjects
+			return clusterClient.Update(ctx, target)
+		}
 	}
+
 	return err
 }
 

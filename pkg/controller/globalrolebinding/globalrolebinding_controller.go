@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -34,9 +35,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
@@ -45,8 +49,52 @@ const controllerName = "globalrolebinding-controller"
 
 type Reconciler struct {
 	client.Client
-	ClusterClientSet clusterclient.Interface
+	logger           logr.Logger
 	recorder         record.EventRecorder
+	ClusterClientSet clusterclient.Interface
+}
+
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+
+	ctr, err := builder.
+		ControllerManagedBy(mgr).
+		For(&iamv1beta1.GlobalRoleBinding{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
+		Named(controllerName).
+		Build(r)
+	if err != nil {
+		return err
+	}
+
+	// host cluster
+	if r.ClusterClientSet != nil {
+		return ctr.Watch(
+			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+			handler.EnqueueRequestsFromMapFunc(r.mapper),
+			clusterutils.ClusterStatusChangedPredicate{})
+	}
+
+	return nil
+}
+
+func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
+	cluster := o.(*clusterv1alpha1.Cluster)
+	if !clusterutils.IsClusterReady(cluster) {
+		return []reconcile.Request{}
+	}
+	globalRoleBindings := &iamv1beta1.GlobalRoleBindingList{}
+	if err := r.List(context.Background(), globalRoleBindings); err != nil {
+		r.logger.Error(err, "failed to list global role bindings")
+		return []reconcile.Request{}
+	}
+	var result []reconcile.Request
+	for _, globalRoleBinding := range globalRoleBindings.Items {
+		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: globalRoleBinding.Name}})
+	}
+	return result
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -72,11 +120,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	username := findExpectUsername(globalRoleBinding)
+	username := findExpectedUsername(globalRoleBinding)
 	if username == "" {
 		return nil
 	}
-
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -105,6 +152,10 @@ func (r *Reconciler) sync(ctx context.Context, globalRoleBinding *iamv1beta1.Glo
 		return err
 	}
 	for _, cluster := range clusters {
+		// skip if cluster is not ready
+		if !clusterutils.IsClusterReady(&cluster) {
+			continue
+		}
 		if err := r.syncGlobalRoleBinding(ctx, cluster, globalRoleBinding); err != nil {
 			return err
 		}
@@ -112,7 +163,7 @@ func (r *Reconciler) sync(ctx context.Context, globalRoleBinding *iamv1beta1.Glo
 	return nil
 }
 
-func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster clusterv1alpha1.Cluster, template *iamv1beta1.GlobalRoleBinding) error {
+func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster clusterv1alpha1.Cluster, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
 	if r.ClusterClientSet.IsHostCluster(&cluster) {
 		return nil
 	}
@@ -120,36 +171,28 @@ func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster clusterv
 	if err != nil {
 		return err
 	}
-	globalRoleBinding := &iamv1beta1.GlobalRoleBinding{}
-	if err := clusterClient.Get(ctx, types.NamespacedName{Name: template.Name}, globalRoleBinding); err != nil {
+	target := &iamv1beta1.GlobalRoleBinding{}
+	if err := clusterClient.Get(ctx, types.NamespacedName{Name: globalRoleBinding.Name}, target); err != nil {
 		if errors.IsNotFound(err) {
-			globalRoleBinding = &iamv1beta1.GlobalRoleBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        template.Name,
-					Labels:      template.Labels,
-					Annotations: template.Annotations,
-				},
-				Subjects: template.Subjects,
-				RoleRef:  template.RoleRef,
-			}
-			return clusterClient.Create(ctx, globalRoleBinding)
+			target = globalRoleBinding.DeepCopy()
+			return clusterClient.Create(ctx, target)
 		}
 		return err
 	}
-	if !reflect.DeepEqual(globalRoleBinding.RoleRef, template.RoleRef) ||
-		!reflect.DeepEqual(globalRoleBinding.Subjects, template.Subjects) ||
-		!reflect.DeepEqual(globalRoleBinding.Labels, template.Labels) ||
-		!reflect.DeepEqual(globalRoleBinding.Annotations, template.Annotations) {
-		globalRoleBinding.Labels = template.Labels
-		globalRoleBinding.Annotations = template.Annotations
-		globalRoleBinding.RoleRef = template.RoleRef
-		globalRoleBinding.Subjects = template.Subjects
-		return clusterClient.Update(ctx, globalRoleBinding)
+	if !reflect.DeepEqual(target.RoleRef, globalRoleBinding.RoleRef) ||
+		!reflect.DeepEqual(target.Subjects, globalRoleBinding.Subjects) ||
+		!reflect.DeepEqual(target.Labels, globalRoleBinding.Labels) ||
+		!reflect.DeepEqual(target.Annotations, globalRoleBinding.Annotations) {
+		target.Labels = globalRoleBinding.Labels
+		target.Annotations = globalRoleBinding.Annotations
+		target.RoleRef = globalRoleBinding.RoleRef
+		target.Subjects = globalRoleBinding.Subjects
+		return clusterClient.Update(ctx, target)
 	}
-	return err
+	return nil
 }
 
-func findExpectUsername(globalRoleBinding *iamv1beta1.GlobalRoleBinding) string {
+func findExpectedUsername(globalRoleBinding *iamv1beta1.GlobalRoleBinding) string {
 	for _, subject := range globalRoleBinding.Subjects {
 		if subject.Kind == iamv1beta1.ResourceKindUser {
 			return subject.Name
@@ -171,27 +214,4 @@ func ensureSubjectAPIVersionIsValid(subjects []rbacv1.Subject) []rbacv1.Subject 
 		}
 	}
 	return validSubjects
-}
-
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor(controllerName)
-
-	return builder.
-		ControllerManagedBy(mgr).
-		For(
-			&iamv1beta1.GlobalRoleBinding{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
-		Named(controllerName).
-		Complete(r)
 }

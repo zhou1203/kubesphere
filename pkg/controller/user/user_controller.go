@@ -28,7 +28,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
@@ -38,21 +37,21 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/constants"
+	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
-	controllerName = "user-controller"
-	// user finalizer
+	controllerName  = "user-controller"
 	finalizer       = "finalizers.kubesphere.io/users"
-	interval        = time.Second
-	timeout         = 15 * time.Second
 	syncFailMessage = "Failed to sync: %s"
 )
 
@@ -61,112 +60,124 @@ type Reconciler struct {
 	client.Client
 	KubeconfigClient      kubeconfig.Interface
 	AuthenticationOptions *authentication.Options
-	Logger                logr.Logger
-	Scheme                *runtime.Scheme
-	Recorder              record.EventRecorder
+	logger                logr.Logger
+	recorder              record.EventRecorder
 	ClusterClientSet      clusterclient.Interface
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Client == nil {
-		r.Client = mgr.GetClient()
-	}
-	if r.Logger.GetSink() == nil {
-		r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	}
-	if r.Scheme == nil {
-		r.Scheme = mgr.GetScheme()
-	}
-	if r.Recorder == nil {
-		r.Recorder = mgr.GetEventRecorderFor(controllerName)
-	}
-	return ctrl.NewControllerManagedBy(mgr).
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+
+	ctr, err := ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		For(&iamv1beta1.User{}).
-		Complete(r)
+		Build(r)
+
+	if err != nil {
+		return err
+	}
+
+	// host cluster
+	if r.ClusterClientSet != nil {
+		return ctr.Watch(
+			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+			handler.EnqueueRequestsFromMapFunc(r.mapper),
+			clusterutils.ClusterStatusChangedPredicate{})
+	}
+
+	return nil
+}
+
+func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
+	cluster := o.(*clusterv1alpha1.Cluster)
+	if !clusterutils.IsClusterReady(cluster) {
+		return []reconcile.Request{}
+	}
+	users := &iamv1beta1.UserList{}
+	if err := r.List(context.Background(), users); err != nil {
+		r.logger.Error(err, "failed to list users")
+		return []reconcile.Request{}
+	}
+	var result []reconcile.Request
+	for _, user := range users.Items {
+		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: user.Name}})
+	}
+	return result
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	logger := r.Logger.WithValues("user", req.NamespacedName)
+	logger := r.logger.WithValues("user", req.NamespacedName)
+	ctx = klog.NewContext(ctx, logger)
+
 	user := &iamv1beta1.User{}
-	err := r.Get(ctx, req.NamespacedName, user)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, user); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if user.ObjectMeta.DeletionTimestamp.IsZero() {
 		// The object is not being deleted, so if it does not have our finalizer,
 		// then lets add the finalizer and update the object.
-		if !sliceutil.HasString(user.Finalizers, finalizer) {
-			user.ObjectMeta.Finalizers = append(user.ObjectMeta.Finalizers, finalizer)
-			if err = r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
-				logger.Error(err, "failed to update user")
-				return ctrl.Result{}, err
-			}
+		if !controllerutil.ContainsFinalizer(user, finalizer) {
+			expected := user.DeepCopy()
+			controllerutil.AddFinalizer(expected, finalizer)
+			return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(user))
 		}
 	} else {
 		// The object is being deleted
-		if sliceutil.HasString(user.ObjectMeta.Finalizers, finalizer) {
-			if err = r.deleteRoleBindings(ctx, user); err != nil {
-				r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+		if controllerutil.ContainsFinalizer(user, finalizer) {
+			if err := r.deleteRoleBindings(ctx, user); err != nil {
+				r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
-			if err = r.deleteGroupBindings(ctx, user); err != nil {
-				r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+			if err := r.deleteGroupBindings(ctx, user); err != nil {
+				r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
-			if err = r.deleteLoginRecords(ctx, user); err != nil {
-				r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+			if err := r.deleteLoginRecords(ctx, user); err != nil {
+				r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
 			// remove our finalizer from the list and update it.
-			user.Finalizers = sliceutil.RemoveString(user.ObjectMeta.Finalizers, func(item string) bool {
-				return item == finalizer
-			})
-
-			if err = r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
-				klog.Error(err)
-				r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+			controllerutil.RemoveFinalizer(user, finalizer)
+			if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
+				r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 		}
 
-		// Our finalizer has finished, so the reconciler can do nothing.
-		return ctrl.Result{}, err
+		return ctrl.Result{}, nil
 	}
 
+	// host cluster
 	if r.ClusterClientSet != nil {
+		if err := r.encryptPassword(ctx, user); err != nil {
+			r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileUserStatus(ctx, user); err != nil {
+			r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+			return ctrl.Result{}, err
+		}
 		if err := r.sync(ctx, user); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err = r.encryptPassword(ctx, user); err != nil {
-			klog.Error(err)
-			r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
-			return ctrl.Result{}, err
-		}
-		if err = r.syncUserStatus(ctx, user); err != nil {
-			klog.Error(err)
-			r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 			return ctrl.Result{}, err
 		}
 	}
 
 	if r.KubeconfigClient != nil {
 		// ensure user KubeconfigClient configmap is created
-		if err = r.KubeconfigClient.CreateKubeConfig(user); err != nil {
-			klog.Error(err)
-			r.Recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+		if err := r.KubeconfigClient.CreateKubeConfig(user); err != nil {
+			r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 			return ctrl.Result{}, err
 		}
 	}
 
-	r.Recorder.Event(user, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
+	r.recorder.Event(user, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 
 	// block user for AuthenticateRateLimiterDuration duration, after that put it back to the queue to unblock
 	if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
@@ -182,6 +193,10 @@ func (r *Reconciler) sync(ctx context.Context, user *iamv1beta1.User) error {
 		return err
 	}
 	for _, cluster := range clusters {
+		// skip if cluster is not ready
+		if !clusterutils.IsClusterReady(&cluster) {
+			continue
+		}
 		if err := r.syncUser(ctx, cluster, user); err != nil {
 			return err
 		}
@@ -228,38 +243,20 @@ func (r *Reconciler) syncUser(ctx context.Context, cluster clusterv1alpha1.Clust
 
 // encryptPassword Encrypt and update the user password
 func (r *Reconciler) encryptPassword(ctx context.Context, user *iamv1beta1.User) error {
-	// password is not empty and not encrypted
+	// password must be encrypted if not empty
 	if user.Spec.EncryptedPassword != "" && !isEncrypted(user.Spec.EncryptedPassword) {
-		password, err := encrypt(user.Spec.EncryptedPassword)
+		encryptedPassword, err := encrypt(user.Spec.EncryptedPassword)
 		if err != nil {
-			klog.Error(err)
 			return err
 		}
-		user.Spec.EncryptedPassword = password
+		user.Spec.EncryptedPassword = encryptedPassword
 		if user.Annotations == nil {
 			user.Annotations = make(map[string]string)
 		}
 		user.Annotations[iamv1beta1.LastPasswordChangeTimeAnnotation] = time.Now().UTC().Format(time.RFC3339)
 		// ensure plain text password won't be kept anywhere
 		delete(user.Annotations, corev1.LastAppliedConfigAnnotation)
-		err = r.Update(ctx, user, &client.UpdateOptions{})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// nolint
-func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, user *iamv1beta1.User) error {
-	if user.Labels[constants.KubefedManagedLabel] != "false" {
-		if user.Labels == nil {
-			user.Labels = make(map[string]string, 0)
-		}
-		user.Labels[constants.KubefedManagedLabel] = "false"
-		err := r.Update(ctx, user, &client.UpdateOptions{})
-		if err != nil {
-			klog.Error(err)
+		if err = r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
 			return err
 		}
 	}
@@ -267,7 +264,6 @@ func (r *Reconciler) ensureNotControlledByKubefed(ctx context.Context, user *iam
 }
 
 func (r *Reconciler) deleteGroupBindings(ctx context.Context, user *iamv1beta1.User) error {
-	// groupBindings that created by kubeshpere will be deleted directly.
 	groupBindings := &iamv1beta1.GroupBinding{}
 	return r.Client.DeleteAllOf(ctx, groupBindings, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 }
@@ -316,12 +312,13 @@ func (r *Reconciler) deleteLoginRecords(ctx context.Context, user *iamv1beta1.Us
 	return r.Client.DeleteAllOf(ctx, loginRecord, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 }
 
-// syncUserStatus Update the user status
-func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) error {
+// reconcileUserStatus updates the user status based on various conditions.
+func (r *Reconciler) reconcileUserStatus(ctx context.Context, user *iamv1beta1.User) error {
 	// skip status sync if the user is disabled
 	if user.Status.State == iamv1beta1.UserDisabled {
 		return nil
 	}
+
 	if user.Spec.EncryptedPassword == "" {
 		if user.Labels[iamv1beta1.IdentifyProviderLabel] != "" {
 			// mapped user from other identity provider always active until disabled
@@ -330,8 +327,7 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) 
 					State:              iamv1beta1.UserActive,
 					LastTransitionTime: &metav1.Time{Time: time.Now()},
 				}
-				err := r.Update(ctx, user, &client.UpdateOptions{})
-				if err != nil {
+				if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
 					return err
 				}
 			}
@@ -342,8 +338,7 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) 
 					State:              iamv1beta1.UserDisabled,
 					LastTransitionTime: &metav1.Time{Time: time.Now()},
 				}
-				err := r.Update(ctx, user, &client.UpdateOptions{})
-				if err != nil {
+				if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
 					return err
 				}
 			}
@@ -358,13 +353,12 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) 
 			State:              iamv1beta1.UserActive,
 			LastTransitionTime: &metav1.Time{Time: time.Now()},
 		}
-		err := r.Update(ctx, user, &client.UpdateOptions{})
-		if err != nil {
+		if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
 			return err
 		}
 	}
 
-	// blocked user, check if need to unblock user
+	// determine whether there is a requirement to unblock the user who has been blocked.
 	if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
 		if user.Status.LastTransitionTime != nil &&
 			user.Status.LastTransitionTime.Add(r.AuthenticationOptions.AuthenticateRateLimiterDuration).Before(time.Now()) {
@@ -373,8 +367,7 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) 
 				State:              iamv1beta1.UserActive,
 				LastTransitionTime: &metav1.Time{Time: time.Now()},
 			}
-			err := r.Update(ctx, user, &client.UpdateOptions{})
-			if err != nil {
+			if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
 				return err
 			}
 			return nil
@@ -382,10 +375,7 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) 
 	}
 
 	records := &iamv1beta1.LoginRecordList{}
-	// normal user, check user's login records see if we need to block
-	err := r.List(ctx, records, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
-	if err != nil {
-		klog.Error(err)
+	if err := r.List(ctx, records, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
 		return err
 	}
 
@@ -408,9 +398,7 @@ func (r *Reconciler) syncUserStatus(ctx context.Context, user *iamv1beta1.User) 
 			Reason:             fmt.Sprintf("Failed login attempts exceed %d in last %s", failedLoginAttempts, r.AuthenticationOptions.AuthenticateRateLimiterDuration),
 			LastTransitionTime: &metav1.Time{Time: time.Now()},
 		}
-
-		err = r.Update(ctx, user, &client.UpdateOptions{})
-		if err != nil {
+		if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
 			return err
 		}
 	}
