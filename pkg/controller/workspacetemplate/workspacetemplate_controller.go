@@ -35,8 +35,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
@@ -56,25 +60,49 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Client == nil {
-		r.Client = mgr.GetClient()
-	}
-	if r.logger.GetSink() == nil {
-		r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	}
-	if r.recorder == nil {
-		r.recorder = mgr.GetEventRecorderFor(controllerName)
-	}
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	ctr, err := ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		For(&tenantv1alpha2.WorkspaceTemplate{}).
-		Complete(r)
+		Build(r)
+
+	if err != nil {
+		return err
+	}
+
+	// host cluster
+	if r.ClusterClientSet != nil {
+		return ctr.Watch(
+			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+			handler.EnqueueRequestsFromMapFunc(r.mapper),
+			clusterutils.ClusterStatusChangedPredicate{})
+	}
+
+	return nil
+}
+
+func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
+	cluster := o.(*clusterv1alpha1.Cluster)
+	if !clusterutils.IsClusterReady(cluster) {
+		return []reconcile.Request{}
+	}
+	workspaceTemplates := &tenantv1alpha2.WorkspaceTemplateList{}
+	if err := r.List(context.Background(), workspaceTemplates); err != nil {
+		r.logger.Error(err, "failed to list workspace templates")
+		return []reconcile.Request{}
+	}
+	var result []reconcile.Request
+	for _, workspaceTemplate := range workspaceTemplates.Items {
+		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: workspaceTemplate.Name}})
+	}
+	return result
 }
 
 // +kubebuilder:rbac:groups=iam.kubesphere.io,resources=workspacerolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=types.kubefed.io,resources=federatedworkspacerolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=tenant.kubesphere.io,resources=workspaces,verbs=get;list;watch;
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -119,30 +147,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-// deleteNamespacesInWorkspace Deletes the namespace associated with the workspace, which match the workspace label selector
-func (r *Reconciler) deleteNamespacesInWorkspace(ctx context.Context, template *tenantv1alpha2.WorkspaceTemplate) error {
-	namespaceList := &corev1.NamespaceList{}
-	err := r.Client.List(ctx, namespaceList, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: template.Name})
-	if err != nil {
-		return err
-	}
-
-	for _, namespace := range namespaceList.Items {
-		err = r.Client.Delete(ctx, &namespace)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *Reconciler) sync(ctx context.Context, template *tenantv1alpha2.WorkspaceTemplate) error {
+func (r *Reconciler) sync(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
 	clusters, err := r.ClusterClientSet.ListCluster(ctx)
 	if err != nil {
 		return err
 	}
 	for _, cluster := range clusters {
-		if err := r.syncWorkspaceTemplate(ctx, cluster, template); err != nil {
+		// skip if cluster is not ready
+		if !clusterutils.IsClusterReady(&cluster) {
+			continue
+		}
+		if err := r.syncWorkspaceTemplate(ctx, cluster, workspaceTemplate); err != nil {
 			return err
 		}
 	}
@@ -198,5 +213,5 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 		}
 	}
 
-	return err
+	return nil
 }

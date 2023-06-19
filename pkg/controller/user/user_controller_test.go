@@ -35,10 +35,9 @@ import (
 	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/scheme"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 func newUser(name string) *iamv1beta1.User {
@@ -84,8 +83,8 @@ func TestDoNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := &Reconciler{
-		Recorder:              &record.FakeRecorder{},
-		Logger:                ctrl.Log.WithName("controllers").WithName(controllerName),
+		recorder:              &record.FakeRecorder{},
+		logger:                ctrl.Log.WithName("controllers").WithName(controllerName),
 		Client:                client,
 		AuthenticationOptions: authenticateOptions,
 		ClusterClientSet:      clusterClientSet,
@@ -112,6 +111,12 @@ func TestDoNothing(t *testing.T) {
 	assert.NotNil(t, user)
 	assert.NotEmpty(t, user.Finalizers)
 
+	result, err = c.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: user.Name},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	updateEvent = <-w.ResultChan()
 	// encrypt password
 	assert.Equal(t, watch.Modified, updateEvent.Type)
