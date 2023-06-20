@@ -180,6 +180,8 @@ func (c *clusterClients) GetClusterClient(clusterName string) (runtimeclient.Cli
 		return nil, err
 	}
 
+	clusterConfig.Host = cluster.Spec.Connection.KubernetesAPIEndpoint
+
 	client, err = runtimeclient.New(clusterConfig, runtimeclient.Options{
 		Scheme: scheme.Scheme,
 	})

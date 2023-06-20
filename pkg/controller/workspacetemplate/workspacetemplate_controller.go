@@ -24,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
@@ -38,6 +37,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
@@ -97,7 +98,9 @@ func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
 	}
 	var result []reconcile.Request
 	for _, workspaceTemplate := range workspaceTemplates.Items {
-		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: workspaceTemplate.Name}})
+		if utils.WorkspaceTemplateMatchTargetCluster(&workspaceTemplate, cluster) {
+			result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: workspaceTemplate.Name}})
+		}
 	}
 	return result
 }
@@ -129,9 +132,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(workspaceTemplate, workspaceTemplateFinalizer)
 			controllerutil.RemoveFinalizer(workspaceTemplate, orphanFinalizer)
-			logger.V(4).Info("update workspace template")
 			if err := r.Update(ctx, workspaceTemplate); err != nil {
-				logger.Error(err, "update workspace template failed")
 				return ctrl.Result{}, err
 			}
 		}
@@ -164,53 +165,38 @@ func (r *Reconciler) sync(ctx context.Context, workspaceTemplate *tenantv1alpha2
 	return nil
 }
 
-func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv1alpha1.Cluster, template *tenantv1alpha2.WorkspaceTemplate) error {
+func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
 	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
 		return err
 	}
-	expected := false
-	if len(template.Spec.Placement.Clusters) > 0 {
-		for _, clusterRef := range template.Spec.Placement.Clusters {
-			if clusterRef.Name == cluster.Name {
-				expected = true
-				break
-			}
-		}
-	} else if template.Spec.Placement.ClusterSelector != nil {
-		selector, err := metav1.LabelSelectorAsSelector(template.Spec.Placement.ClusterSelector)
-		if err != nil {
-			return err
-		}
-		expected = selector.Matches(labels.Set(cluster.Labels))
-	}
 
-	if !expected {
-		orphan := metav1.DeletePropagationOrphan
-		err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: template.Name}},
-			&client.DeleteOptions{PropagationPolicy: &orphan})
-		return client.IgnoreNotFound(err)
-	} else {
+	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
 		workspace := &tenantv1alpha1.Workspace{}
-		if err := clusterClient.Get(ctx, types.NamespacedName{Name: template.Name}, workspace); err != nil {
+		if err := clusterClient.Get(ctx, types.NamespacedName{Name: workspaceTemplate.Name}, workspace); err != nil {
 			if errors.IsNotFound(err) {
 				workspace = &tenantv1alpha1.Workspace{
-					ObjectMeta: template.Spec.Template.ObjectMeta,
-					Spec:       template.Spec.Template.Spec,
+					ObjectMeta: workspaceTemplate.Spec.Template.ObjectMeta,
+					Spec:       workspaceTemplate.Spec.Template.Spec,
 				}
-				workspace.Name = template.Name
+				workspace.Name = workspaceTemplate.Name
 				return clusterClient.Create(ctx, workspace)
 			}
 			return err
 		}
-		if !reflect.DeepEqual(workspace.Spec, template.Spec.Template.Spec) ||
-			!reflect.DeepEqual(workspace.ObjectMeta.Labels, template.Spec.Template.ObjectMeta.Labels) ||
-			!reflect.DeepEqual(workspace.ObjectMeta.Annotations, template.Spec.Template.ObjectMeta.Annotations) {
-			workspace.Labels = template.Spec.Template.Labels
-			workspace.Annotations = template.Spec.Template.Annotations
-			workspace.Spec = template.Spec.Template.Spec
+		if !reflect.DeepEqual(workspace.Spec, workspaceTemplate.Spec.Template.Spec) ||
+			!reflect.DeepEqual(workspace.ObjectMeta.Labels, workspaceTemplate.Spec.Template.ObjectMeta.Labels) ||
+			!reflect.DeepEqual(workspace.ObjectMeta.Annotations, workspaceTemplate.Spec.Template.ObjectMeta.Annotations) {
+			workspace.Labels = workspaceTemplate.Spec.Template.Labels
+			workspace.Annotations = workspaceTemplate.Spec.Template.Annotations
+			workspace.Spec = workspaceTemplate.Spec.Template.Spec
 			return clusterClient.Update(ctx, workspace)
 		}
+	} else {
+		orphan := metav1.DeletePropagationOrphan
+		err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}},
+			&client.DeleteOptions{PropagationPolicy: &orphan})
+		return client.IgnoreNotFound(err)
 	}
 
 	return nil
