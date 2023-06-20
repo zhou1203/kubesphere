@@ -17,17 +17,20 @@ limitations under the License.
 package workspacetemplate
 
 import (
+	"bytes"
 	"context"
-	"reflect"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,12 +41,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
-
 	"kubesphere.io/kubesphere/pkg/constants"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
+	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
@@ -119,11 +120,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if workspaceTemplate.ObjectMeta.DeletionTimestamp.IsZero() {
 		// The object is not being deleted, so if it does not have our finalizer,
 		// then lets add the finalizer and update the object.
-		if !sliceutil.HasString(workspaceTemplate.ObjectMeta.Finalizers, workspaceTemplateFinalizer) {
-			workspaceTemplate.ObjectMeta.Finalizers = append(workspaceTemplate.ObjectMeta.Finalizers, workspaceTemplateFinalizer)
-			if err := r.Update(ctx, workspaceTemplate); err != nil {
-				return ctrl.Result{}, err
-			}
+		if !controllerutil.ContainsFinalizer(workspaceTemplate, workspaceTemplateFinalizer) {
+			updated := workspaceTemplate.DeepCopy()
+			controllerutil.AddFinalizer(updated, workspaceTemplateFinalizer)
+			return ctrl.Result{}, r.Patch(ctx, updated, client.MergeFrom(workspaceTemplate))
 		}
 	} else {
 		// The object is being deleted
@@ -139,11 +139,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Our finalizer has finished, so the reconciler can do nothing.
 		return ctrl.Result{}, nil
 	}
+
+	if err := r.initWorkspaceRoles(ctx, workspaceTemplate); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.initManagerRoleBinding(ctx, workspaceTemplate); err != nil {
+		return ctrl.Result{}, err
+	}
 	if r.ClusterClientSet != nil {
 		if err := r.sync(ctx, workspaceTemplate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
+
 	r.recorder.Event(workspaceTemplate, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
@@ -156,6 +164,7 @@ func (r *Reconciler) sync(ctx context.Context, workspaceTemplate *tenantv1alpha2
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
 		if !clusterutils.IsClusterReady(&cluster) {
+			klog.FromContext(ctx).V(4).Info("skip multi-cluster sync, cluster is not ready", "cluster", cluster.Name)
 			continue
 		}
 		if err := r.syncWorkspaceTemplate(ctx, cluster, workspaceTemplate); err != nil {
@@ -170,33 +179,103 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 	if err != nil {
 		return err
 	}
-
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
-		workspace := &tenantv1alpha1.Workspace{}
-		if err := clusterClient.Get(ctx, types.NamespacedName{Name: workspaceTemplate.Name}, workspace); err != nil {
-			if errors.IsNotFound(err) {
-				workspace = &tenantv1alpha1.Workspace{
-					ObjectMeta: workspaceTemplate.Spec.Template.ObjectMeta,
-					Spec:       workspaceTemplate.Spec.Template.Spec,
-				}
-				workspace.Name = workspaceTemplate.Name
-				return clusterClient.Create(ctx, workspace)
-			}
-			return err
-		}
-		if !reflect.DeepEqual(workspace.Spec, workspaceTemplate.Spec.Template.Spec) ||
-			!reflect.DeepEqual(workspace.ObjectMeta.Labels, workspaceTemplate.Spec.Template.ObjectMeta.Labels) ||
-			!reflect.DeepEqual(workspace.ObjectMeta.Annotations, workspaceTemplate.Spec.Template.ObjectMeta.Annotations) {
+		workspace := &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}
+
+		op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, workspace, func() error {
 			workspace.Labels = workspaceTemplate.Spec.Template.Labels
 			workspace.Annotations = workspaceTemplate.Spec.Template.Annotations
 			workspace.Spec = workspaceTemplate.Spec.Template.Spec
-			return clusterClient.Update(ctx, workspace)
+			return nil
+		})
+
+		if err != nil {
+			return err
 		}
+
+		klog.FromContext(ctx).V(4).Info("workspace successfully synced", "operation", op)
 	} else {
 		orphan := metav1.DeletePropagationOrphan
 		err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}},
 			&client.DeleteOptions{PropagationPolicy: &orphan})
 		return client.IgnoreNotFound(err)
+	}
+
+	return nil
+}
+
+func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+	logger := klog.FromContext(ctx)
+	var templates iamv1beta1.RoleBaseList
+	if err := r.List(ctx, &templates); err != nil {
+		return err
+	}
+	for _, template := range templates.Items {
+		var builtinWorkspaceRole iamv1beta1.WorkspaceRole
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&builtinWorkspaceRole); err == nil &&
+			builtinWorkspaceRole.Kind == iamv1beta1.ResourceKindWorkspaceRole {
+			builtinWorkspaceRole.Name = fmt.Sprintf("%s-%s", workspaceTemplate.Name, builtinWorkspaceRole.Name)
+			builtinWorkspaceRole.Labels = map[string]string{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name}
+			existWorkspaceRole := &iamv1beta1.WorkspaceRole{ObjectMeta: metav1.ObjectMeta{Name: builtinWorkspaceRole.Name}}
+			op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existWorkspaceRole, func() error {
+				existWorkspaceRole.Labels = builtinWorkspaceRole.Labels
+				existWorkspaceRole.Annotations = builtinWorkspaceRole.Annotations
+				existWorkspaceRole.AggregationRoleTemplates = builtinWorkspaceRole.AggregationRoleTemplates
+				existWorkspaceRole.Rules = builtinWorkspaceRole.Rules
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			klog.FromContext(ctx).V(4).Info("builtin workspace role successfully initialized", "operation", op)
+		} else if err != nil {
+			logger.Error(err, "invalid builtin workspace role found", "name", template.Name)
+		}
+	}
+	return nil
+}
+
+func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+	manager := workspaceTemplate.Spec.Template.Spec.Manager
+	if manager == "" {
+		return nil
+	}
+
+	var user iamv1beta1.User
+	if err := r.Get(ctx, types.NamespacedName{Name: manager}, &user); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+
+	// skip if user has been deleted
+	if !user.DeletionTimestamp.IsZero() {
+		return nil
+	}
+
+	workspaceAdminRoleName := fmt.Sprintf("%s-admin", workspaceTemplate.Name)
+	existWorkspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: workspaceAdminRoleName}}
+
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, existWorkspaceRoleBinding, func() error {
+		existWorkspaceRoleBinding.Labels = map[string]string{
+			tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name,
+			iamv1beta1.UserReferenceLabel: manager,
+			iamv1beta1.RoleReferenceLabel: workspaceAdminRoleName,
+		}
+
+		existWorkspaceRoleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: iamv1beta1.SchemeGroupVersion.Group,
+			Kind:     iamv1beta1.ResourceKindWorkspaceRole,
+			Name:     workspaceAdminRoleName,
+		}
+		existWorkspaceRoleBinding.Subjects = []rbacv1.Subject{
+			{
+				Name:     manager,
+				Kind:     iamv1beta1.ResourceKindUser,
+				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
+			},
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	return nil

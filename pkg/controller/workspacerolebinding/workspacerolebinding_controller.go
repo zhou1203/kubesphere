@@ -18,11 +18,9 @@ package workspacerolebinding
 
 import (
 	"context"
-	"reflect"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -142,7 +140,7 @@ func (r *Reconciler) sync(ctx context.Context, workspaceRoleBinding *iamv1beta1.
 	}
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
-		if !clusterutils.IsClusterReady(&cluster) {
+		if !clusterutils.IsClusterReady(&cluster) || clusterutils.IsHostCluster(&cluster) {
 			continue
 		}
 		if err := r.syncWorkspaceRoleBinding(ctx, cluster, workspaceRoleBinding); err != nil {
@@ -153,9 +151,6 @@ func (r *Reconciler) sync(ctx context.Context, workspaceRoleBinding *iamv1beta1.
 }
 
 func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding) error {
-	if r.ClusterClientSet.IsHostCluster(&cluster) {
-		return nil
-	}
 	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
 		return err
@@ -167,24 +162,18 @@ func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clust
 	}
 
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
-		target := &iamv1beta1.WorkspaceRoleBinding{}
-		if err := clusterClient.Get(ctx, types.NamespacedName{Name: workspaceRoleBinding.Name}, target); err != nil {
-			if errors.IsNotFound(err) {
-				target = workspaceRoleBinding.DeepCopy()
-				return clusterClient.Create(ctx, target)
-			}
+		existWorkspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: workspaceRoleBinding.Name}}
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existWorkspaceRoleBinding, func() error {
+			existWorkspaceRoleBinding.Labels = workspaceRoleBinding.Labels
+			existWorkspaceRoleBinding.Annotations = workspaceRoleBinding.Annotations
+			existWorkspaceRoleBinding.RoleRef = workspaceRoleBinding.RoleRef
+			existWorkspaceRoleBinding.Subjects = workspaceRoleBinding.Subjects
+			return nil
+		})
+		if err != nil {
 			return err
 		}
-		if !reflect.DeepEqual(target.RoleRef, workspaceRoleBinding.RoleRef) ||
-			!reflect.DeepEqual(target.Subjects, workspaceRoleBinding.Subjects) ||
-			!reflect.DeepEqual(target.Labels, workspaceRoleBinding.Labels) ||
-			!reflect.DeepEqual(target.Annotations, workspaceRoleBinding.Annotations) {
-			target.Labels = workspaceRoleBinding.Labels
-			target.Annotations = workspaceRoleBinding.Annotations
-			target.RoleRef = workspaceRoleBinding.RoleRef
-			target.Subjects = workspaceRoleBinding.Subjects
-			return clusterClient.Update(ctx, target)
-		}
+		klog.FromContext(ctx).V(4).Info("workspace role binding successfully synced", "operation", op)
 	} else {
 		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
 		return client.IgnoreNotFound(err)

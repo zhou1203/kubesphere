@@ -18,17 +18,12 @@ package workspacerole
 
 import (
 	"context"
-	"reflect"
-
-	"k8s.io/klog/v2"
-
-	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
 
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
@@ -44,6 +39,7 @@ import (
 	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
 	"kubesphere.io/kubesphere/pkg/constants"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
+	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 )
@@ -169,7 +165,7 @@ func (r *Reconciler) sync(ctx context.Context, workspaceRole *iamv1beta1.Workspa
 	}
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
-		if !clusterutils.IsClusterReady(&cluster) {
+		if !clusterutils.IsClusterReady(&cluster) || clusterutils.IsHostCluster(&cluster) {
 			continue
 		}
 		if err := r.syncWorkspaceRole(ctx, cluster, workspaceRole); err != nil {
@@ -180,35 +176,28 @@ func (r *Reconciler) sync(ctx context.Context, workspaceRole *iamv1beta1.Workspa
 }
 
 func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceRole *iamv1beta1.WorkspaceRole) error {
+
 	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
 		return err
 	}
-
 	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
 	if err := r.Get(ctx, types.NamespacedName{Name: workspaceRole.Labels[tenantv1alpha1.WorkspaceLabel]}, workspaceTemplate); err != nil {
 		return client.IgnoreNotFound(err)
 	}
-
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
-		target := &iamv1beta1.WorkspaceRole{}
-		if err := clusterClient.Get(ctx, types.NamespacedName{Name: workspaceRole.Name}, target); err != nil {
-			if errors.IsNotFound(err) {
-				target = workspaceRole.DeepCopy()
-				return clusterClient.Create(ctx, target)
-			}
+		existWorkspaceRole := &iamv1beta1.WorkspaceRole{ObjectMeta: metav1.ObjectMeta{Name: workspaceRole.Name}}
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existWorkspaceRole, func() error {
+			existWorkspaceRole.Labels = workspaceRole.Labels
+			existWorkspaceRole.Annotations = workspaceRole.Annotations
+			existWorkspaceRole.Rules = workspaceRole.Rules
+			existWorkspaceRole.AggregationRoleTemplates = workspaceRole.AggregationRoleTemplates
+			return nil
+		})
+		if err != nil {
 			return err
 		}
-		if !reflect.DeepEqual(target.Rules, workspaceRole.Rules) ||
-			!reflect.DeepEqual(target.AggregationRoleTemplates, workspaceRole.AggregationRoleTemplates) ||
-			!reflect.DeepEqual(target.ObjectMeta.Labels, workspaceRole.ObjectMeta.Labels) ||
-			!reflect.DeepEqual(target.ObjectMeta.Annotations, workspaceRole.ObjectMeta.Annotations) {
-			target.Labels = workspaceTemplate.Spec.Template.Labels
-			target.Annotations = workspaceTemplate.Spec.Template.Annotations
-			target.Rules = workspaceRole.Rules
-			target.AggregationRoleTemplates = workspaceRole.AggregationRoleTemplates
-			return clusterClient.Update(ctx, target)
-		}
+		klog.FromContext(ctx).V(4).Info("workspace role successfully synced", "operation", op)
 	} else {
 		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
 		return client.IgnoreNotFound(err)

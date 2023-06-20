@@ -17,21 +17,12 @@ limitations under the License.
 package workspace
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"reflect"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/klog/v2"
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -118,13 +109,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.initWorkspaceRoles(ctx, workspace); err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := r.initManagerRoleBinding(ctx, workspace); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	var namespaces corev1.NamespaceList
 	if err := r.List(rootCtx, &namespaces, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: req.Name}); err != nil {
 		return ctrl.Result{}, err
@@ -156,104 +140,4 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, name
 		}
 	}
 	return nil
-}
-
-func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspace *tenantv1alpha1.Workspace) error {
-	logger := klog.FromContext(ctx)
-	var templates iamv1beta1.RoleBaseList
-	if err := r.List(ctx, &templates); err != nil {
-		return err
-	}
-	for _, template := range templates.Items {
-		var expected iamv1beta1.WorkspaceRole
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&expected); err == nil && expected.Kind == iamv1beta1.ResourceKindWorkspaceRole {
-			expected.Name = fmt.Sprintf("%s-%s", workspace.Name, expected.Name)
-			expected.Labels = map[string]string{tenantv1alpha1.WorkspaceLabel: workspace.Name}
-			workspaceRole := &iamv1beta1.WorkspaceRole{}
-			if err := r.Get(ctx, types.NamespacedName{Name: expected.Name}, workspaceRole); err != nil {
-				if errors.IsNotFound(err) {
-					logger.V(4).Info("create workspace role", "workspacerole", expected.Name)
-					if err := r.Create(ctx, &expected); err != nil {
-						logger.Error(err, "create workspace role failed")
-						return err
-					}
-					continue
-				} else {
-					logger.Error(err, "get workspace role failed")
-					return err
-				}
-			}
-			if !reflect.DeepEqual(expected.Labels, workspaceRole.Labels) ||
-				!reflect.DeepEqual(expected.Annotations, workspaceRole.Annotations) ||
-				!reflect.DeepEqual(expected.AggregationRoleTemplates, workspaceRole.AggregationRoleTemplates) ||
-				!reflect.DeepEqual(expected.Rules, workspaceRole.Rules) {
-				workspaceRole.Labels = expected.Labels
-				workspaceRole.Annotations = expected.Annotations
-				workspaceRole.AggregationRoleTemplates = expected.AggregationRoleTemplates
-				workspaceRole.Rules = expected.Rules
-				logger.V(4).Info("update workspace role", "workspacerole", workspaceRole.Name)
-				if err := r.Update(ctx, workspaceRole); err != nil {
-					return err
-				}
-			}
-		} else if err != nil {
-			logger.Error(err, "invalid builtin workspace role found", "name", template.Name)
-		}
-	}
-	return nil
-}
-
-func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspace *tenantv1alpha1.Workspace) error {
-	manager := workspace.Spec.Manager
-	if manager == "" {
-		return nil
-	}
-
-	var user iamv1beta1.User
-	if err := r.Get(ctx, types.NamespacedName{Name: manager}, &user); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-
-	// skip if user has been deleted
-	if !user.DeletionTimestamp.IsZero() {
-		return nil
-	}
-
-	workspaceAdminRoleName := fmt.Sprintf("%s-admin", workspace.Name)
-	managerRoleBinding := &iamv1beta1.WorkspaceRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: workspaceAdminRoleName,
-		},
-	}
-
-	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, managerRoleBinding, workspaceRoleBindingChanger(managerRoleBinding, workspace.Name, manager, workspaceAdminRoleName)); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func workspaceRoleBindingChanger(workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding, workspace, username, workspaceRoleName string) controllerutil.MutateFn {
-	return func() error {
-		workspaceRoleBinding.Labels = map[string]string{
-			tenantv1alpha1.WorkspaceLabel: workspace,
-			iamv1beta1.UserReferenceLabel: username,
-			iamv1beta1.RoleReferenceLabel: workspaceRoleName,
-		}
-
-		workspaceRoleBinding.RoleRef = rbacv1.RoleRef{
-			APIGroup: iamv1beta1.SchemeGroupVersion.Group,
-			Kind:     iamv1beta1.ResourceKindWorkspaceRole,
-			Name:     workspaceRoleName,
-		}
-
-		workspaceRoleBinding.Subjects = []rbacv1.Subject{
-			{
-				Name:     username,
-				Kind:     iamv1beta1.ResourceKindUser,
-				APIGroup: iamv1beta1.SchemeGroupVersion.Group,
-			},
-		}
-		return nil
-	}
 }
