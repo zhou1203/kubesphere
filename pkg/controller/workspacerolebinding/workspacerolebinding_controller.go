@@ -24,9 +24,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
@@ -41,6 +41,7 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
+	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 )
@@ -95,7 +96,15 @@ func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
 	}
 	var result []reconcile.Request
 	for _, workspaceRoleBinding := range workspaceRoleBindings.Items {
-		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: workspaceRoleBinding.Name}})
+		workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
+		workspaceName := workspaceRoleBinding.Labels[tenantv1alpha1.WorkspaceLabel]
+		if err := r.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspaceTemplate); err != nil {
+			klog.Errorf("failed to get workspace template %s: %s", workspaceName, err)
+			continue
+		}
+		if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, cluster) {
+			result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: workspaceRoleBinding.Name}})
+		}
 	}
 	return result
 }
@@ -157,26 +166,7 @@ func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clust
 		return client.IgnoreNotFound(err)
 	}
 
-	expected := false
-	if len(workspaceTemplate.Spec.Placement.Clusters) > 0 {
-		for _, clusterRef := range workspaceTemplate.Spec.Placement.Clusters {
-			if clusterRef.Name == cluster.Name {
-				expected = true
-				break
-			}
-		}
-	} else if workspaceTemplate.Spec.Placement.ClusterSelector != nil {
-		selector, err := metav1.LabelSelectorAsSelector(workspaceTemplate.Spec.Placement.ClusterSelector)
-		if err != nil {
-			return err
-		}
-		expected = selector.Matches(labels.Set(cluster.Labels))
-	}
-
-	if !expected {
-		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
-		return client.IgnoreNotFound(err)
-	} else {
+	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
 		target := &iamv1beta1.WorkspaceRoleBinding{}
 		if err := clusterClient.Get(ctx, types.NamespacedName{Name: workspaceRoleBinding.Name}, target); err != nil {
 			if errors.IsNotFound(err) {
@@ -195,9 +185,12 @@ func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clust
 			target.Subjects = workspaceRoleBinding.Subjects
 			return clusterClient.Update(ctx, target)
 		}
+	} else {
+		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
+		return client.IgnoreNotFound(err)
 	}
 
-	return err
+	return nil
 }
 
 func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding) error {
@@ -214,12 +207,9 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 	if !metav1.IsControlledBy(workspaceRoleBinding, workspace) {
 		workspaceRoleBinding.OwnerReferences = k8sutil.RemoveWorkspaceOwnerReference(workspaceRoleBinding.OwnerReferences)
 		if err := controllerutil.SetControllerReference(workspace, workspaceRoleBinding, r.Scheme()); err != nil {
-			logger.Error(err, "set controller reference failed")
 			return err
 		}
-		logger.V(4).Info("update owner reference")
 		if err := r.Update(ctx, workspaceRoleBinding); err != nil {
-			logger.Error(err, "update owner reference failed")
 			return err
 		}
 	}

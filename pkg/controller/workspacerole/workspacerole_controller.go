@@ -20,10 +20,13 @@ import (
 	"context"
 	"reflect"
 
+	"k8s.io/klog/v2"
+
+	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
+
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
@@ -65,9 +68,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.helper = rbachelper.NewHelper(r.Client)
 	ctr, err := ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		For(&iamv1beta1.WorkspaceRole{}).
 		Build(r)
 
@@ -98,7 +99,15 @@ func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
 	}
 	var result []reconcile.Request
 	for _, workspaceRole := range workspaceRoles.Items {
-		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: workspaceRole.Name}})
+		workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
+		workspaceName := workspaceRole.Labels[tenantv1alpha1.WorkspaceLabel]
+		if err := r.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspaceTemplate); err != nil {
+			klog.Errorf("failed to get workspace template %s: %s", workspaceName, err)
+			continue
+		}
+		if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, cluster) {
+			result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: workspaceRole.Name}})
+		}
 	}
 	return result
 }
@@ -181,26 +190,7 @@ func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alp
 		return client.IgnoreNotFound(err)
 	}
 
-	expected := false
-	if len(workspaceTemplate.Spec.Placement.Clusters) > 0 {
-		for _, clusterRef := range workspaceTemplate.Spec.Placement.Clusters {
-			if clusterRef.Name == cluster.Name {
-				expected = true
-				break
-			}
-		}
-	} else if workspaceTemplate.Spec.Placement.ClusterSelector != nil {
-		selector, err := metav1.LabelSelectorAsSelector(workspaceTemplate.Spec.Placement.ClusterSelector)
-		if err != nil {
-			return err
-		}
-		expected = selector.Matches(labels.Set(cluster.Labels))
-	}
-
-	if !expected {
-		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
-		return client.IgnoreNotFound(err)
-	} else {
+	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
 		target := &iamv1beta1.WorkspaceRole{}
 		if err := clusterClient.Get(ctx, types.NamespacedName{Name: workspaceRole.Name}, target); err != nil {
 			if errors.IsNotFound(err) {
@@ -219,6 +209,9 @@ func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alp
 			target.AggregationRoleTemplates = workspaceRole.AggregationRoleTemplates
 			return clusterClient.Update(ctx, target)
 		}
+	} else {
+		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
+		return client.IgnoreNotFound(err)
 	}
 	return nil
 }

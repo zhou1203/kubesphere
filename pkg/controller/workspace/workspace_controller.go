@@ -41,11 +41,11 @@ import (
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
-	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
 	controllerName = "workspace-controller"
+	finalizer      = "finalizers.tenant.kubesphere.io"
 )
 
 // Reconciler reconciles a Workspace object
@@ -93,29 +93,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// name of your custom finalizer
-	finalizer := "finalizers.tenant.kubesphere.io"
-
 	if workspace.ObjectMeta.DeletionTimestamp.IsZero() {
 		// The object is not being deleted, so if it does not have our finalizer,
 		// then lets add the finalizer and update the object.
-		if !sliceutil.HasString(workspace.ObjectMeta.Finalizers, finalizer) {
-			workspace.ObjectMeta.Finalizers = append(workspace.ObjectMeta.Finalizers, finalizer)
-			if err := r.Update(rootCtx, workspace); err != nil {
+		if !controllerutil.ContainsFinalizer(workspace, finalizer) {
+			expected := workspace.DeepCopy()
+			controllerutil.AddFinalizer(expected, finalizer)
+			if err := r.Patch(ctx, expected, client.MergeFrom(workspace)); err != nil {
 				return ctrl.Result{}, err
 			}
 			workspaceOperation.WithLabelValues("create", workspace.Name).Inc()
 		}
 	} else {
 		// The object is being deleted
-		if sliceutil.HasString(workspace.ObjectMeta.Finalizers, finalizer) {
+		if controllerutil.ContainsFinalizer(workspace, finalizer) {
 			// remove our finalizer from the list and update it.
-			workspace.ObjectMeta.Finalizers = sliceutil.RemoveString(workspace.ObjectMeta.Finalizers, func(item string) bool {
-				return item == finalizer
-			})
-			logger.V(4).Info("update workspace")
+			controllerutil.RemoveFinalizer(workspace, finalizer)
 			if err := r.Update(rootCtx, workspace); err != nil {
-				logger.Error(err, "update workspace failed")
 				return ctrl.Result{}, err
 			}
 			workspaceOperation.WithLabelValues("delete", workspace.Name).Inc()
@@ -133,7 +127,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	var namespaces corev1.NamespaceList
 	if err := r.List(rootCtx, &namespaces, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: req.Name}); err != nil {
-		logger.Error(err, "list namespaces failed")
 		return ctrl.Result{}, err
 	} else {
 		for _, namespace := range namespaces.Items {
@@ -169,17 +162,13 @@ func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspace *tenantv1
 	logger := klog.FromContext(ctx)
 	var templates iamv1beta1.RoleBaseList
 	if err := r.List(ctx, &templates); err != nil {
-		logger.Error(err, "list role base failed")
 		return err
 	}
 	for _, template := range templates.Items {
 		var expected iamv1beta1.WorkspaceRole
 		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&expected); err == nil && expected.Kind == iamv1beta1.ResourceKindWorkspaceRole {
 			expected.Name = fmt.Sprintf("%s-%s", workspace.Name, expected.Name)
-			if expected.Labels == nil {
-				expected.Labels = make(map[string]string)
-			}
-			expected.Labels[tenantv1alpha1.WorkspaceLabel] = workspace.Name
+			expected.Labels = map[string]string{tenantv1alpha1.WorkspaceLabel: workspace.Name}
 			workspaceRole := &iamv1beta1.WorkspaceRole{}
 			if err := r.Get(ctx, types.NamespacedName{Name: expected.Name}, workspaceRole); err != nil {
 				if errors.IsNotFound(err) {
@@ -196,25 +185,25 @@ func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspace *tenantv1
 			}
 			if !reflect.DeepEqual(expected.Labels, workspaceRole.Labels) ||
 				!reflect.DeepEqual(expected.Annotations, workspaceRole.Annotations) ||
+				!reflect.DeepEqual(expected.AggregationRoleTemplates, workspaceRole.AggregationRoleTemplates) ||
 				!reflect.DeepEqual(expected.Rules, workspaceRole.Rules) {
 				workspaceRole.Labels = expected.Labels
 				workspaceRole.Annotations = expected.Annotations
+				workspaceRole.AggregationRoleTemplates = expected.AggregationRoleTemplates
 				workspaceRole.Rules = expected.Rules
 				logger.V(4).Info("update workspace role", "workspacerole", workspaceRole.Name)
 				if err := r.Update(ctx, workspaceRole); err != nil {
-					logger.Error(err, "update workspace role failed")
 					return err
 				}
 			}
 		} else if err != nil {
-			logger.Error(fmt.Errorf("invalid role base found"), "init workspace roles failed", "name", template.Name)
+			logger.Error(err, "invalid builtin workspace role found", "name", template.Name)
 		}
 	}
 	return nil
 }
 
 func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspace *tenantv1alpha1.Workspace) error {
-	logger := klog.FromContext(ctx)
 	manager := workspace.Spec.Manager
 	if manager == "" {
 		return nil
@@ -238,7 +227,6 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspace *tena
 	}
 
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, managerRoleBinding, workspaceRoleBindingChanger(managerRoleBinding, workspace.Name, manager, workspaceAdminRoleName)); err != nil {
-		logger.Error(err, "create workspace manager role binding failed")
 		return err
 	}
 
