@@ -241,10 +241,7 @@ func (c *clusterClients) IsClusterReady(cluster *clusterv1alpha1.Cluster) bool {
 }
 
 func (c *clusterClients) IsHostCluster(cluster *clusterv1alpha1.Cluster) bool {
-	if _, ok := cluster.Labels[clusterv1alpha1.HostCluster]; ok {
-		return true
-	}
-	return false
+	return clusterutils.IsHostCluster(cluster)
 }
 
 func (c *clusterClients) GetKubernetesClientSet(name string) (*kubernetes.Clientset, error) {

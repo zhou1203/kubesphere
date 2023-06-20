@@ -30,3 +30,10 @@ func IsClusterReady(cluster *clusterv1alpha1.Cluster) bool {
 	}
 	return false
 }
+
+func IsHostCluster(cluster *clusterv1alpha1.Cluster) bool {
+	if _, ok := cluster.Labels[clusterv1alpha1.HostCluster]; ok {
+		return true
+	}
+	return false
+}

@@ -34,9 +34,16 @@ type WorkspaceTemplateSpec struct {
 	Overrides []GenericOverride `json:"overrides,omitempty"`
 }
 
+type ObjectMeta struct {
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
 type Template struct {
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              tenantv1alpha1.WorkspaceSpec `json:"spec,omitempty"`
+	ObjectMeta `json:"metadata,omitempty"`
+	Spec       tenantv1alpha1.WorkspaceSpec `json:"spec,omitempty"`
 }
 
 type GenericClusterReference struct {
