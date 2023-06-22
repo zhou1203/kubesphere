@@ -21,8 +21,8 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,8 +30,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"kubesphere.io/kubesphere/pkg/constants"
-	"kubesphere.io/kubesphere/pkg/scheme"
-	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 )
 
 const (
@@ -78,9 +76,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Logger.WithValues("workspace", req.NamespacedName)
-	rootCtx := context.Background()
+	ctx = klog.NewContext(ctx, logger)
 	workspace := &tenantv1alpha1.Workspace{}
-	if err := r.Get(rootCtx, req.NamespacedName, workspace); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, workspace); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -100,7 +98,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if controllerutil.ContainsFinalizer(workspace, finalizer) {
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(workspace, finalizer)
-			if err := r.Update(rootCtx, workspace); err != nil {
+			if err := r.Update(ctx, workspace); err != nil {
 				return ctrl.Result{}, err
 			}
 			workspaceOperation.WithLabelValues("delete", workspace.Name).Inc()
@@ -109,35 +107,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	var namespaces corev1.NamespaceList
-	if err := r.List(rootCtx, &namespaces, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: req.Name}); err != nil {
-		return ctrl.Result{}, err
-	} else {
-		for _, namespace := range namespaces.Items {
-			if err := r.bindWorkspace(rootCtx, logger, &namespace, workspace); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-	}
-
 	r.Recorder.Event(workspace, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
 	return ctrl.Result{}, nil
-}
-
-func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, namespace *corev1.Namespace, workspace *tenantv1alpha1.Workspace) error {
-	// owner reference not match workspace label
-	if !metav1.IsControlledBy(namespace, workspace) {
-		namespace := namespace.DeepCopy()
-		namespace.OwnerReferences = k8sutil.RemoveWorkspaceOwnerReference(namespace.OwnerReferences)
-		if err := controllerutil.SetControllerReference(workspace, namespace, scheme.Scheme); err != nil {
-			logger.Error(err, "set controller reference failed")
-			return err
-		}
-		logger.V(4).Info("update namespace owner reference", "workspace", workspace.Name)
-		if err := r.Update(ctx, namespace); err != nil {
-			logger.Error(err, "update namespace failed")
-			return err
-		}
-	}
-	return nil
 }

@@ -146,6 +146,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := r.initManagerRoleBinding(ctx, workspaceTemplate); err != nil {
 		return ctrl.Result{}, err
 	}
+
 	if r.ClusterClientSet != nil {
 		if err := r.sync(ctx, workspaceTemplate); err != nil {
 			return ctrl.Result{}, err
@@ -207,27 +208,34 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
 	logger := klog.FromContext(ctx)
 	var templates iamv1beta1.RoleBaseList
-	if err := r.List(ctx, &templates); err != nil {
+	// scope.iam.kubesphere.io/workspace: ""
+	if err := r.List(ctx, &templates, client.MatchingLabels{fmt.Sprintf(iamv1beta1.ScopeLabelFormat, iamv1beta1.ScopeWorkspace): ""}); err != nil {
 		return err
 	}
 	for _, template := range templates.Items {
-		var builtinWorkspaceRole iamv1beta1.WorkspaceRole
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&builtinWorkspaceRole); err == nil &&
-			builtinWorkspaceRole.Kind == iamv1beta1.ResourceKindWorkspaceRole {
-			builtinWorkspaceRole.Name = fmt.Sprintf("%s-%s", workspaceTemplate.Name, builtinWorkspaceRole.Name)
-			builtinWorkspaceRole.Labels = map[string]string{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name}
-			existWorkspaceRole := &iamv1beta1.WorkspaceRole{ObjectMeta: metav1.ObjectMeta{Name: builtinWorkspaceRole.Name}}
-			op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existWorkspaceRole, func() error {
-				existWorkspaceRole.Labels = builtinWorkspaceRole.Labels
-				existWorkspaceRole.Annotations = builtinWorkspaceRole.Annotations
-				existWorkspaceRole.AggregationRoleTemplates = builtinWorkspaceRole.AggregationRoleTemplates
-				existWorkspaceRole.Rules = builtinWorkspaceRole.Rules
+		var builtinWorkspaceRoleTemplate iamv1beta1.WorkspaceRole
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&builtinWorkspaceRoleTemplate); err == nil &&
+			builtinWorkspaceRoleTemplate.Kind == iamv1beta1.ResourceKindWorkspaceRole {
+			existingWorkspaceRole := &iamv1beta1.WorkspaceRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: fmt.Sprintf("%s-%s", workspaceTemplate.Name, builtinWorkspaceRoleTemplate.Name),
+				},
+			}
+			op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingWorkspaceRole, func() error {
+				existingWorkspaceRole.Labels = builtinWorkspaceRoleTemplate.Labels
+				if existingWorkspaceRole.Labels == nil {
+					existingWorkspaceRole.Labels = make(map[string]string)
+				}
+				existingWorkspaceRole.Labels[tenantv1alpha1.WorkspaceLabel] = workspaceTemplate.Name
+				existingWorkspaceRole.Annotations = builtinWorkspaceRoleTemplate.Annotations
+				existingWorkspaceRole.AggregationRoleTemplates = builtinWorkspaceRoleTemplate.AggregationRoleTemplates
+				existingWorkspaceRole.Rules = builtinWorkspaceRoleTemplate.Rules
 				return nil
 			})
 			if err != nil {
 				return err
 			}
-			klog.FromContext(ctx).V(4).Info("builtin workspace role successfully initialized", "operation", op)
+			logger.V(4).Info("builtin workspace role successfully initialized", "operation", op)
 		} else if err != nil {
 			logger.Error(err, "invalid builtin workspace role found", "name", template.Name)
 		}
@@ -253,7 +261,6 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTempla
 
 	workspaceAdminRoleName := fmt.Sprintf("%s-admin", workspaceTemplate.Name)
 	existWorkspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: workspaceAdminRoleName}}
-
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, existWorkspaceRoleBinding, func() error {
 		existWorkspaceRoleBinding.Labels = map[string]string{
 			tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name,
