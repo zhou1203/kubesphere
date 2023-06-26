@@ -48,6 +48,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"kubesphere.io/kubesphere/pkg/simple/client/multicluster"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
@@ -89,7 +90,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	// begin init necessary clients
 	var clusterClientSet clusterclient.Interface
 	var err error
-	if cmOptions.MultiClusterOptions.ClusterRole == "host" {
+	if cmOptions.MultiClusterOptions.ClusterRole == multicluster.ClusterRoleHost {
 		clusterClientSet, err = clusterclient.NewClusterClientSet(mgr.GetCache())
 		if err != nil {
 			return err
@@ -138,7 +139,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	}
 
 	// "workspacetemplate" controller
-	if cmOptions.IsControllerEnabled("workspacetemplate") {
+	if cmOptions.IsControllerEnabled("workspacetemplate") && cmOptions.MultiClusterOptions.ClusterRole == multicluster.ClusterRoleHost {
 		addControllerWithSetup(mgr, "workspacetemplate", &workspacetemplate.Reconciler{ClusterClientSet: clusterClientSet})
 	}
 

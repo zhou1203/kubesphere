@@ -20,10 +20,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -51,6 +53,7 @@ const (
 	controllerName             = "workspacetemplate-controller"
 	workspaceTemplateFinalizer = "finalizers.workspacetemplate.kubesphere.io"
 	orphanFinalizer            = "orphan.finalizers.kubesphere.io"
+	syncFailed                 = "SyncFailed"
 )
 
 // Reconciler reconciles a WorkspaceRoleBinding object
@@ -62,6 +65,10 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClusterClientSet == nil {
+		return fmt.Errorf("workspace template controller is limited to running in the host cluster")
+	}
+
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
@@ -76,7 +83,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	// host cluster
 	if r.ClusterClientSet != nil {
 		return ctr.Watch(
 			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
@@ -129,6 +135,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// The object is being deleted
 		if controllerutil.ContainsFinalizer(workspaceTemplate, workspaceTemplateFinalizer) ||
 			controllerutil.ContainsFinalizer(workspaceTemplate, orphanFinalizer) {
+			if err := r.reconcileDelete(ctx, workspaceTemplate); err != nil {
+				return ctrl.Result{}, err
+			}
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(workspaceTemplate, workspaceTemplateFinalizer)
 			controllerutil.RemoveFinalizer(workspaceTemplate, orphanFinalizer)
@@ -162,15 +171,20 @@ func (r *Reconciler) sync(ctx context.Context, workspaceTemplate *tenantv1alpha2
 	if err != nil {
 		return err
 	}
+	var notReadyClusters []string
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
 		if !clusterutils.IsClusterReady(&cluster) {
-			klog.FromContext(ctx).V(4).Info("skip multi-cluster sync, cluster is not ready", "cluster", cluster.Name)
+			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue
 		}
 		if err := r.syncWorkspaceTemplate(ctx, cluster, workspaceTemplate); err != nil {
 			return err
 		}
+	}
+	if len(notReadyClusters) > 0 {
+		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
+		r.recorder.Event(workspaceTemplate, corev1.EventTypeWarning, syncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
 	}
 	return nil
 }
@@ -182,18 +196,15 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 	}
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
 		workspace := &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}
-
 		op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, workspace, func() error {
 			workspace.Labels = workspaceTemplate.Spec.Template.Labels
 			workspace.Annotations = workspaceTemplate.Spec.Template.Annotations
 			workspace.Spec = workspaceTemplate.Spec.Template.Spec
 			return nil
 		})
-
 		if err != nil {
 			return err
 		}
-
 		klog.FromContext(ctx).V(4).Info("workspace successfully synced", "operation", op)
 	} else {
 		orphan := metav1.DeletePropagationOrphan
@@ -201,7 +212,6 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 			&client.DeleteOptions{PropagationPolicy: &orphan})
 		return client.IgnoreNotFound(err)
 	}
-
 	return nil
 }
 
@@ -248,17 +258,6 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTempla
 	if manager == "" {
 		return nil
 	}
-
-	var user iamv1beta1.User
-	if err := r.Get(ctx, types.NamespacedName{Name: manager}, &user); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-
-	// skip if user has been deleted
-	if !user.DeletionTimestamp.IsZero() {
-		return nil
-	}
-
 	workspaceAdminRoleName := fmt.Sprintf("%s-admin", workspaceTemplate.Name)
 	existWorkspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: workspaceAdminRoleName}}
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, existWorkspaceRoleBinding, func() error {
@@ -284,6 +283,44 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTempla
 	}); err != nil {
 		return err
 	}
-
 	return nil
+}
+
+func (r *Reconciler) reconcileDelete(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+	if err != nil {
+		return err
+	}
+	var notReadyClusters []string
+	for _, cluster := range clusters {
+		// skip if cluster is not ready
+		if !clusterutils.IsClusterReady(&cluster) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+		clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+		if err != nil {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+
+		if controllerutil.ContainsFinalizer(workspaceTemplate, orphanFinalizer) {
+			orphan := metav1.DeletePropagationOrphan
+			err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}, &client.DeleteOptions{PropagationPolicy: &orphan})
+		} else {
+			err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}, &client.DeleteOptions{})
+		}
+
+		if !errors.IsNotFound(err) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+	}
+	if len(notReadyClusters) > 0 {
+		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
+		r.recorder.Event(workspaceTemplate, corev1.EventTypeWarning, syncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
+		return err
+	}
+	return nil
+
 }

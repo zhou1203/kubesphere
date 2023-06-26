@@ -27,6 +27,8 @@ import (
 const (
 	DefaultResyncPeriod    = 120 * time.Second
 	DefaultHostClusterName = "host"
+	ClusterRoleHost
+	ClusterRoleMember = "member"
 )
 
 type Options struct {
