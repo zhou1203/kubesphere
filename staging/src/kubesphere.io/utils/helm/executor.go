@@ -115,7 +115,7 @@ func NewExecutor(kubeConfig, namespace, releaseName string, options ...ExecutorO
 	e := &executor{
 		namespace:   namespace,
 		releaseName: releaseName,
-		helmImage:   "kubesphere/helm:latest",
+		helmImage:   "kubesphere/helm:v3.12.1",
 	}
 	for _, option := range options {
 		option(e)
