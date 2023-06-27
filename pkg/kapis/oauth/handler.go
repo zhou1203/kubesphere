@@ -46,10 +46,11 @@ import (
 )
 
 const (
-	KindTokenReview       = "TokenReview"
-	grantTypePassword     = "password"
-	grantTypeRefreshToken = "refresh_token"
-	grantTypeCode         = "code"
+	KindTokenReview            = "TokenReview"
+	grantTypePassword          = "password"
+	grantTypeRefreshToken      = "refresh_token"
+	grantTypeCode              = "code"
+	grantTypeAuthorizationCode = "authorization_code"
 )
 
 type Spec struct {
@@ -308,6 +309,9 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 		}
 		values := redirectURL.Query()
 		values.Add("code", code)
+		if state != "" {
+			values.Add("state", state)
+		}
 		redirectURL.RawQuery = values.Encode()
 		http.Redirect(response, req.Request, redirectURL.String(), http.StatusFound)
 	}
@@ -329,6 +333,9 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 	values.Add("refresh_token", result.RefreshToken)
 	values.Add("token_type", result.TokenType)
 	values.Add("expires_in", fmt.Sprint(result.ExpiresIn))
+	if state != "" {
+		values.Add("state", state)
+	}
 	redirectURL.Fragment = values.Encode()
 	http.Redirect(response, req.Request, redirectURL.String(), http.StatusFound)
 }
@@ -401,7 +408,7 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 	case grantTypeRefreshToken:
 		h.refreshTokenGrant(req, response)
 		return
-	case grantTypeCode:
+	case grantTypeCode, grantTypeAuthorizationCode:
 		h.codeGrant(req, response)
 		return
 	default:
