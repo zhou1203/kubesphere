@@ -35,6 +35,13 @@ const (
 	UsernameLabelKey         = "kubesphere.io/username"
 	KubefedManagedLabel      = "kubefed.io/managed"
 
+	ServiceAccountName                 = "kubesphere.io/service-account.name"
+	ServiceAccountUid                  = "kubesphere.io/service-account.uid"
+	SecretTypeKubesphereServiceAccount = "kubesphere.io/service-account-token"
+	SecretTokenKey                     = "token"
+
+	ServiceAccountTokenSubFormat = "kubesphere:serviceaccount:%s:%s"
+
 	AuthenticationTag = "Authentication"
 
 	ToolboxTag      = "Toolbox"

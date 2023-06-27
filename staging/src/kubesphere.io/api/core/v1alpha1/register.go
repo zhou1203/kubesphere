@@ -52,6 +52,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&SubscriptionList{},
 		&Category{},
 		&CategoryList{},
+		&ServiceAccount{},
+		&ServiceAccountList{},
 	)
 	// Add the watch version that applies
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)

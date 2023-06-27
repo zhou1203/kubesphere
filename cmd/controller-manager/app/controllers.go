@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/clusterrole"
@@ -35,11 +36,13 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/group"
 	"kubesphere.io/kubesphere/pkg/controller/groupbinding"
 	"kubesphere.io/kubesphere/pkg/controller/job"
+	"kubesphere.io/kubesphere/pkg/controller/ksserviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/loginrecord"
 	"kubesphere.io/kubesphere/pkg/controller/namespace"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/role"
 	"kubesphere.io/kubesphere/pkg/controller/roletemplate"
+	"kubesphere.io/kubesphere/pkg/controller/secret"
 	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/storage/capability"
 	"kubesphere.io/kubesphere/pkg/controller/user"
@@ -83,6 +86,8 @@ var allControllers = []string{
 	"subscription",
 	"extension",
 	"extension-webhook",
+	"ks-serviceaccount",
+	"secret",
 }
 
 // setup all available controllers one by one
@@ -255,6 +260,21 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "extension-webhook", &extension.JSBundleWebhook{})
 		addControllerWithSetup(mgr, "extension-webhook", &extension.APIServiceWebhook{})
 		addControllerWithSetup(mgr, "extension-webhook", &extension.ReverseProxyWebhook{})
+	}
+
+	issuer, err := token.NewIssuer(cmOptions.AuthenticationOptions)
+	if err != nil {
+		return err
+	}
+
+	// "serviceaccount" controller
+	if cmOptions.IsControllerEnabled("ks-serviceaccount") {
+		addControllerWithSetup(mgr, "ks-serviceaccount", &ksserviceaccount.Reconciler{})
+	}
+
+	// "secret" controller
+	if cmOptions.IsControllerEnabled("secret") {
+		addControllerWithSetup(mgr, "secret", &secret.Reconciler{TokenIssuer: issuer})
 	}
 
 	// log all controllers process result
