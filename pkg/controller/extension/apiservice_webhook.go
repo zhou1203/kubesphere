@@ -35,7 +35,7 @@ func (r *APIServiceWebhook) validateAPIService(ctx context.Context, service *ext
 	for _, apiService := range apiServices.Items {
 		if apiService.Name != service.Name &&
 			apiService.Spec.Group == service.Spec.Group &&
-			apiService.Spec.Version != service.Name {
+			apiService.Spec.Version == service.Spec.Version {
 			return fmt.Errorf("APIService %s/%s is already exists", service.Spec.Group, service.Spec.Version)
 		}
 	}
