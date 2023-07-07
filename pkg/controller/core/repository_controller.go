@@ -34,22 +34,21 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	"kubesphere.io/utils/helm"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
-	"kubesphere.io/utils/helm"
-
 	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 const (
-	RepositoryFinalizer         = "repositories.kubesphere.io"
+	repositoryProtection        = "kubesphere.io/repository-protection"
+	repositoryController        = "repository-controller"
 	minimumRegistryPollInterval = 15 * time.Minute
 	defaultRequeueInterval      = 15 * time.Second
-	repositoryController        = "repository-controller"
 	generateNameFormat          = "repository-%s"
 )
 
@@ -64,7 +63,7 @@ type RepositoryReconciler struct {
 // reconcileDelete delete the repository and pod.
 func (r *RepositoryReconciler) reconcileDelete(ctx context.Context, repo *corev1alpha1.Repository) (ctrl.Result, error) {
 	// Remove the finalizer from the subscription and update it.
-	controllerutil.RemoveFinalizer(repo, RepositoryFinalizer)
+	controllerutil.RemoveFinalizer(repo, repositoryProtection)
 	if err := r.Update(ctx, repo); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -360,9 +359,9 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !controllerutil.ContainsFinalizer(repo, RepositoryFinalizer) {
+	if !controllerutil.ContainsFinalizer(repo, repositoryProtection) {
 		expected := repo.DeepCopy()
-		controllerutil.AddFinalizer(expected, RepositoryFinalizer)
+		controllerutil.AddFinalizer(expected, repositoryProtection)
 		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(repo))
 	}
 
@@ -375,11 +374,12 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 func (r *RepositoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
-	r.logger = ctrl.Log.WithName("controllers").WithName(subscriptionController)
+	r.logger = ctrl.Log.WithName("controllers").WithName(repositoryController)
 	r.recorder = mgr.GetEventRecorderFor(repositoryController)
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(repositoryController).
-		For(&corev1alpha1.Repository{}).Complete(r)
+		For(&corev1alpha1.Repository{}).
+		Complete(r)
 }
 
 func (r *RepositoryReconciler) deployRepository(ctx context.Context, repo *corev1alpha1.Repository) error {

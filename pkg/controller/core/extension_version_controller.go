@@ -20,17 +20,16 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog/v2"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
 const (
-	ExtensionVersionFinalizer = "extensionversions.kubesphere.io"
+	extensionVersionProtection = "kubesphere.io/extension-version-protection"
+	extensionVersionController = "extension-version-controller"
 )
 
 var _ reconcile.Reconciler = &ExtensionVersionReconciler{}
@@ -42,14 +41,11 @@ type ExtensionVersionReconciler struct {
 
 // reconcileDelete delete the extension.
 func (r *ExtensionVersionReconciler) reconcileDelete(ctx context.Context, extensionVersion *corev1alpha1.ExtensionVersion) (ctrl.Result, error) {
-	klog.V(4).Infof("remove the finalizer from extension version %s", extensionVersion.Name)
-
 	// Remove the finalizer from the extension
-	controllerutil.RemoveFinalizer(extensionVersion, ExtensionVersionFinalizer)
+	controllerutil.RemoveFinalizer(extensionVersion, extensionVersionProtection)
 	if err := r.Update(ctx, extensionVersion); err != nil {
 		return ctrl.Result{}, err
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -65,16 +61,14 @@ func (r *ExtensionVersionReconciler) reconcile(ctx context.Context, extensionVer
 }
 
 func (r *ExtensionVersionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	klog.V(4).Infof("sync extension version: %s ", req.String())
-
 	extensionVersion := &corev1alpha1.ExtensionVersion{}
 	if err := r.Client.Get(ctx, req.NamespacedName, extensionVersion); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !controllerutil.ContainsFinalizer(extensionVersion, ExtensionVersionFinalizer) {
+	if !controllerutil.ContainsFinalizer(extensionVersion, extensionVersionProtection) {
 		expected := extensionVersion.DeepCopy()
-		controllerutil.AddFinalizer(expected, ExtensionVersionFinalizer)
+		controllerutil.AddFinalizer(expected, extensionVersionProtection)
 		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(extensionVersion))
 	}
 
@@ -93,6 +87,6 @@ func (r *ExtensionVersionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 func (r *ExtensionVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	return ctrl.NewControllerManagedBy(mgr).
-		Named("extension-version-controller").
+		Named(extensionVersionController).
 		For(&corev1alpha1.ExtensionVersion{}).Complete(r)
 }
