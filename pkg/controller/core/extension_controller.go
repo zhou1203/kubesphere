@@ -22,16 +22,16 @@ import (
 	"sort"
 
 	"k8s.io/klog/v2"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
 const (
-	ExtensionFinalizer = "extensions.kubesphere.io"
+	extensionProtection = "kubesphere.io/extension-protection"
+	extensionController = "extension-controller"
 )
 
 var _ reconcile.Reconciler = &ExtensionReconciler{}
@@ -43,13 +43,11 @@ type ExtensionReconciler struct {
 
 // reconcileDelete delete the extension.
 func (r *ExtensionReconciler) reconcileDelete(ctx context.Context, extension *corev1alpha1.Extension) (ctrl.Result, error) {
-	klog.V(4).Infof("remove the finalizer from extension %s", extension.Name)
 	// Remove the finalizer from the extension
-	controllerutil.RemoveFinalizer(extension, ExtensionFinalizer)
+	controllerutil.RemoveFinalizer(extension, extensionProtection)
 	if err := r.Update(ctx, extension); err != nil {
 		return ctrl.Result{}, err
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -75,7 +73,6 @@ func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *c
 	})
 
 	extensionCopy := extension.DeepCopy()
-
 	if recommended, err := getRecommendedExtensionVersion(versionList.Items, k8sVersion); err == nil {
 		extensionCopy.Status.RecommendedVersion = recommended
 	} else {
@@ -92,16 +89,14 @@ func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *c
 }
 
 func (r *ExtensionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	klog.V(4).Infof("sync extension: %s ", req.String())
-
 	extension := &corev1alpha1.Extension{}
 	if err := r.Client.Get(ctx, req.NamespacedName, extension); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !controllerutil.ContainsFinalizer(extension, ExtensionFinalizer) {
+	if !controllerutil.ContainsFinalizer(extension, extensionProtection) {
 		expected := extension.DeepCopy()
-		controllerutil.AddFinalizer(expected, ExtensionFinalizer)
+		controllerutil.AddFinalizer(expected, extensionProtection)
 		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(extension))
 	}
 
@@ -115,6 +110,6 @@ func (r *ExtensionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 func (r *ExtensionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	return ctrl.NewControllerManagedBy(mgr).
-		Named("extension-controller").
+		Named(extensionController).
 		For(&corev1alpha1.Extension{}).Complete(r)
 }

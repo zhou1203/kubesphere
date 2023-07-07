@@ -39,6 +39,10 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"kubesphere.io/utils/helm"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -48,17 +52,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
-	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	"kubesphere.io/utils/helm"
-
 	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 const (
 	subscriptionController          = "subscription-controller"
-	subscriptionFinalizer           = "subscriptions.kubesphere.io"
+	subscriptionFinalizer           = "kubesphere.io/subscription-protection"
 	systemWorkspace                 = "system-workspace"
 	targetNamespaceFormat           = "extension-%s"
 	agentReleaseFormat              = "%s-agent"
@@ -122,7 +121,7 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	// Multicluster installation
+	// Multi-cluster installation
 	if sub.Spec.ClusterScheduling != nil {
 		if err := r.syncClusterSchedulingStatus(ctx, sub); err != nil {
 			logger.Error(err, "failed to sync scheduling status")
