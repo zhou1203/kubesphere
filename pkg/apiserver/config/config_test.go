@@ -29,10 +29,10 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization"
 	"kubesphere.io/kubesphere/pkg/models/terminal"
+	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/simple/client/multicluster"
 )
 
 func newTestConfig() (*Config, error) {

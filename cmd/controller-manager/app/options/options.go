@@ -29,10 +29,11 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
+
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
+	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/simple/client/multicluster"
 )
 
 type KubeSphereControllerManagerOptions struct {

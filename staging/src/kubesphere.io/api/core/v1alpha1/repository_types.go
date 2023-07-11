@@ -16,7 +16,9 @@ limitations under the License.
 
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 type UpdateStrategy struct {
 	RegistryPoll `json:"registryPoll,omitempty"`
@@ -26,15 +28,22 @@ type RegistryPoll struct {
 	Interval metav1.Duration `json:"interval"`
 }
 
+type BasicAuth struct {
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
 type RepositorySpec struct {
 	Image          string          `json:"image,omitempty"`
 	URL            string          `json:"url,omitempty"`
 	Description    string          `json:"description,omitempty"`
+	BasicAuth      *BasicAuth      `json:"basicAuth,omitempty"`
 	UpdateStrategy *UpdateStrategy `json:"updateStrategy,omitempty"`
 }
 
 type RepositoryStatus struct {
-	LastSyncTime metav1.Time `json:"lastSyncTime"`
+	// +optional
+	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty'"`
 }
 
 // +kubebuilder:object:root=true

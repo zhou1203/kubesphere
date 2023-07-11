@@ -19,7 +19,11 @@ package v1alpha2
 import (
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"kubesphere.io/kubesphere/pkg/models/marketplace"
+
+	"kubesphere.io/kubesphere/pkg/api"
 	kubesphereconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
 )
@@ -30,21 +34,30 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
 
-func AddToContainer(c *restful.Container, config *kubesphereconfig.Config) error {
+func AddToContainer(c *restful.Container, config *kubesphereconfig.Config, client client.Client) error {
 	webservice := runtime.NewWebService(GroupVersion)
 
 	webservice.Route(webservice.GET("/configs/oauth").
 		Doc("Information about the authorization server are published.").
 		To(func(request *restful.Request, response *restful.Response) {
-			response.WriteEntity(config.AuthenticationOptions.OAuthOptions)
+			_ = response.WriteEntity(config.AuthenticationOptions.OAuthOptions)
 		}))
 
 	webservice.Route(webservice.GET("/configs/configz").
 		Doc("Information about the server configuration").
 		To(func(request *restful.Request, response *restful.Response) {
-			response.WriteAsJson(config)
+			_ = response.WriteAsJson(config)
 		}))
 
+	webservice.Route(webservice.GET("/configs/marketplace").
+		Doc("Retrieve marketplace configuration").
+		To(func(request *restful.Request, response *restful.Response) {
+			options, err := marketplace.LoadOptions(request.Request.Context(), client)
+			if err != nil {
+				api.HandleError(response, request, err)
+			}
+			_ = response.WriteEntity(options)
+		}))
 	c.Add(webservice)
 	return nil
 }
