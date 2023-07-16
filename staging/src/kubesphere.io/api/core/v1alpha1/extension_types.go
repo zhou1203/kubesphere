@@ -24,8 +24,8 @@ import (
 type InstallationMode string
 
 const (
-	InstallationModeHostOnly = "HostOnly"
-	InstallationMulticluster = "Multicluster"
+	InstallationModeHostOnly InstallationMode = "HostOnly"
+	InstallationMulticluster InstallationMode = "Multicluster"
 )
 
 // Provider describes an extension provider.
@@ -69,6 +69,7 @@ type ExtensionVersionSpec struct {
 	ChartDataRef *ConfigMapKeyRef `json:"chartDataRef,omitempty"`
 	ChartURL     string           `json:"chartURL,omitempty"`
 	// +kubebuilder:default:=HostOnly
+	// +kubebuilder:validation:Enum=HostOnly;Multicluster
 	InstallationMode InstallationMode `json:"installationMode,omitempty"`
 	// ExternalDependencies
 	ExternalDependencies []ExternalDependency `json:"externalDependencies,omitempty"`
@@ -122,11 +123,11 @@ type ExtensionVersionInfo struct {
 }
 
 type ExtensionStatus struct {
-	State              string                 `json:"state,omitempty"`
-	SubscribedVersion  string                 `json:"subscribedVersion,omitempty"`
-	RecommendedVersion string                 `json:"recommendedVersion,omitempty"`
-	Versions           []ExtensionVersionInfo `json:"versions,omitempty"`
-	Conditions         []metav1.Condition     `json:"conditions,omitempty"`
+	State                 string                 `json:"state,omitempty"`
+	PlannedInstallVersion string                 `json:"plannedInstallVersion,omitempty"`
+	RecommendedVersion    string                 `json:"recommendedVersion,omitempty"`
+	Versions              []ExtensionVersionInfo `json:"versions,omitempty"`
+	Conditions            []metav1.Condition     `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

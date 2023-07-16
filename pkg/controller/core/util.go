@@ -138,7 +138,7 @@ func isReleaseNotFoundError(err error) bool {
 	return strings.Contains(err.Error(), driver.ErrReleaseNotFound.Error())
 }
 
-func clusterConfig(sub *corev1alpha1.Subscription, clusterName string) string {
+func clusterConfig(sub *corev1alpha1.InstallPlan, clusterName string) string {
 	if clusterName == "" {
 		return sub.Spec.Config
 	}
@@ -217,16 +217,16 @@ func fnvString(text string) string {
 
 func configHashAnnotationKey(clusterName string) string {
 	if clusterName == "" {
-		return corev1alpha1.SubscriptionConfigHashAnnotation
+		return corev1alpha1.InstallPlanConfigHashAnnotation
 	}
-	return fmt.Sprintf("%s-%s", corev1alpha1.SubscriptionConfigHashAnnotation, clusterName)
+	return fmt.Sprintf("%s-%s", corev1alpha1.InstallPlanConfigHashAnnotation, clusterName)
 }
 
-func configChanged(sub *corev1alpha1.Subscription, clusterName string) bool {
+func configChanged(sub *corev1alpha1.InstallPlan, clusterName string) bool {
 	return fnvString(clusterConfig(sub, clusterName)) != sub.Annotations[configHashAnnotationKey(clusterName)]
 }
 
-func setConfigHash(sub *corev1alpha1.Subscription, clusterName string) {
+func setConfigHash(sub *corev1alpha1.InstallPlan, clusterName string) {
 	configHash := fnvString(clusterConfig(sub, clusterName))
 	if sub.Annotations == nil {
 		sub.Annotations = map[string]string{

@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // +kubebuilder:object:generate=true
-// +groupName=kubesphere.io
+// +groupName=marketplace.kubesphere.io
 
 package v1alpha1
 
@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-const GroupName = "kubesphere.io"
+const GroupName = "marketplace.kubesphere.io"
 
 var (
 	// SchemeGroupVersion is group version used to register these objects
@@ -42,18 +42,8 @@ func Resource(resource string) schema.GroupResource {
 
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
-		&Repository{},
-		&RepositoryList{},
-		&Extension{},
-		&ExtensionList{},
-		&ExtensionVersion{},
-		&ExtensionVersionList{},
-		&InstallPlan{},
-		&InstallPlanList{},
-		&Category{},
-		&CategoryList{},
-		&ServiceAccount{},
-		&ServiceAccountList{},
+		&Subscription{},
+		&SubscriptionList{},
 	)
 	// Add the watch version that applies
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)

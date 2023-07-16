@@ -28,7 +28,7 @@ const (
 	StateUninstalled     = "Uninstalled"
 	StateUninstallFailed = "UninstallFailed"
 	// StatePreparing indicates that the Extension is in the Preparing state.
-	// This value is only used for Extension objects and is triggered when the state of its Subscription is empty
+	// This value is only used for Extension objects and is triggered when the state of its InstallPlan is empty
 	// and is changing to the Installing/Upgrading state.
 	StatePreparing = "Preparing"
 
@@ -45,10 +45,10 @@ const (
 	InstallationModeAnnotation     = "kubesphere.io/installation-mode"
 	ExternalDependenciesAnnotation = "kubesphere.io/external-dependencies"
 
-	ExtensionReferenceLabel    = "kubesphere.io/extension-ref"
-	RepositoryReferenceLabel   = "kubesphere.io/repository-ref"
-	SubscriptionReferenceLabel = "kubesphere.io/subscription-ref"
+	ExtensionReferenceLabel   = "kubesphere.io/extension-ref"
+	RepositoryReferenceLabel  = "kubesphere.io/repository-ref"
+	InstallPlanReferenceLabel = "kubesphere.io/installplan-ref"
 
-	ForceDeleteAnnotation            = "kubesphere.io/force-delete"
-	SubscriptionConfigHashAnnotation = "kubesphere.io/config-hash"
+	ForceDeleteAnnotation           = "kubesphere.io/force-delete"
+	InstallPlanConfigHashAnnotation = "kubesphere.io/config-hash"
 )

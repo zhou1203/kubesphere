@@ -37,18 +37,18 @@ type ClusterScheduling struct {
 	Overrides map[string]string `json:"overrides,omitempty"`
 }
 
-type SubscriptionState struct {
+type InstallPlanState struct {
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 	State              string      `json:"state"`
 }
 
 type InstallationStatus struct {
-	State           string              `json:"state,omitempty"`
-	ReleaseName     string              `json:"releaseName,omitempty"`
-	TargetNamespace string              `json:"targetNamespace,omitempty"`
-	JobName         string              `json:"jobName,omitempty"`
-	Conditions      []metav1.Condition  `json:"conditions,omitempty"`
-	StateHistory    []SubscriptionState `json:"stateHistory,omitempty"`
+	State           string             `json:"state,omitempty"`
+	ReleaseName     string             `json:"releaseName,omitempty"`
+	TargetNamespace string             `json:"targetNamespace,omitempty"`
+	JobName         string             `json:"jobName,omitempty"`
+	Conditions      []metav1.Condition `json:"conditions,omitempty"`
+	StateHistory    []InstallPlanState `json:"stateHistory,omitempty"`
 }
 
 type ExtensionRef struct {
@@ -58,7 +58,7 @@ type ExtensionRef struct {
 
 type UpgradeStrategy string
 
-type SubscriptionSpec struct {
+type InstallPlanSpec struct {
 	Extension ExtensionRef `json:"extension"`
 	Enabled   bool         `json:"enabled"`
 	// +kubebuilder:default:=Manual
@@ -67,7 +67,7 @@ type SubscriptionSpec struct {
 	ClusterScheduling *ClusterScheduling `json:"clusterScheduling,omitempty"`
 }
 
-type SubscriptionStatus struct {
+type InstallPlanStatus struct {
 	InstallationStatus `json:",inline"`
 	// ClusterSchedulingStatuses describes the subchart installation status of the extension
 	ClusterSchedulingStatuses map[string]InstallationStatus `json:"clusterSchedulingStatuses,omitempty"`
@@ -77,18 +77,18 @@ type SubscriptionStatus struct {
 // +kubebuilder:resource:categories="extensions",scope="Cluster"
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"
 
-// Subscription describes the configuration and the extension version to be subscribed.
-type Subscription struct {
+// InstallPlan defines how to install an extension in the cluster.
+type InstallPlan struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              SubscriptionSpec   `json:"spec,omitempty"`
-	Status            SubscriptionStatus `json:"status,omitempty"`
+	Spec              InstallPlanSpec   `json:"spec,omitempty"`
+	Status            InstallPlanStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-type SubscriptionList struct {
+type InstallPlanList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Subscription `json:"items"`
+	Items           []InstallPlan `json:"items"`
 }

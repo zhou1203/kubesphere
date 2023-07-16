@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
 	"net/http"
 	rt "runtime"
 	"strconv"
@@ -37,6 +38,8 @@ import (
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"kubesphere.io/kubesphere/pkg/multicluster"
 
 	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/basic"
@@ -60,6 +63,7 @@ import (
 	gatewayv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha2"
 	iamapiv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/iam/v1alpha2"
 	iamapiv1beta1 "kubesphere.io/kubesphere/pkg/kapis/iam/v1beta1"
+	"kubesphere.io/kubesphere/pkg/kapis/marketplace"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/overview"
@@ -170,7 +174,7 @@ func (s *APIServer) installKubeSphereAPIs() {
 
 	counter := overviewclient.New(s.ResourceManager)
 	counter.RegisterResource(overviewclient.NewDefaultRegisterOptions()...)
-	urlruntime.Must(configv1alpha2.AddToContainer(s.container, s.Config))
+	urlruntime.Must(configv1alpha2.AddToContainer(s.container, s.Config, s.RuntimeClient))
 	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.RuntimeCache))
 	urlruntime.Must(operationsv1alpha2.AddToContainer(s.container, s.RuntimeClient))
 	urlruntime.Must(resourcesv1alpha2.AddToContainer(s.container, s.RuntimeClient,
@@ -196,6 +200,10 @@ func (s *APIServer) installKubeSphereAPIs() {
 	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
 	urlruntime.Must(gatewayv1alpha2.AddToContainer(s.container, s.RuntimeCache))
 	urlruntime.Must(overview.AddToContainer(s.container, counter))
+
+	if s.Config.MultiClusterOptions.ClusterRole == multicluster.ClusterRoleHost {
+		urlruntime.Must(marketplace.AddToContainer(s.container, s.RuntimeClient))
+	}
 }
 
 // installHealthz creates the healthz endpoint for this server

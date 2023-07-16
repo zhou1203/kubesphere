@@ -20,11 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
-	"helm.sh/helm/v3/pkg/repo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -166,8 +166,20 @@ func (r *RepositoryReconciler) createOrUpdateExtensionVersion(ctx context.Contex
 	})
 }
 
-func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.IndexFile, repo *corev1alpha1.Repository) error {
+func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *corev1alpha1.Repository, repoURL string) error {
 	logger := klog.FromContext(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cred := helm.RepoCredential{}
+	if repo.Spec.BasicAuth != nil {
+		cred.Username = repo.Spec.BasicAuth.Username
+		cred.Password = repo.Spec.BasicAuth.Password
+	}
+	index, err := helm.LoadRepoIndex(ctx, repoURL, cred)
+	if err != nil {
+		return err
+	}
+
 	for extensionName, versions := range index.Entries {
 		extensionVersions := make([]corev1alpha1.ExtensionVersion, 0, len(versions))
 		for _, version := range versions {
@@ -189,7 +201,17 @@ func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.I
 			}
 			var chartURL string
 			if len(version.URLs) > 0 {
-				chartURL = version.URLs[0]
+				versionURL := version.URLs[0]
+				u, err := url.Parse(versionURL)
+				if err != nil {
+					logger.Error(err, "failed to parse chart URL", "url", versionURL)
+					continue
+				}
+				if u.Host == "" {
+					chartURL = fmt.Sprintf("%s/%s", repoURL, versionURL)
+				} else {
+					chartURL = u.String()
+				}
 			}
 
 			var description corev1alpha1.Locales
@@ -211,7 +233,7 @@ func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.I
 			}
 
 			var installationMode corev1alpha1.InstallationMode
-			if version.Annotations[corev1alpha1.InstallationModeAnnotation] == corev1alpha1.InstallationMulticluster {
+			if version.Annotations[corev1alpha1.InstallationModeAnnotation] == string(corev1alpha1.InstallationMulticluster) {
 				installationMode = corev1alpha1.InstallationMulticluster
 			} else {
 				installationMode = corev1alpha1.InstallationModeHostOnly
@@ -275,17 +297,6 @@ func (r *RepositoryReconciler) syncExtensions(ctx context.Context, index *repo.I
 	return nil
 }
 
-func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *corev1alpha1.Repository, url string) error {
-	newCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	// TODO support TLS and auth
-	index, err := helm.LoadRepoIndex(newCtx, url, helm.RepoCredential{})
-	if err != nil {
-		return err
-	}
-	return r.syncExtensions(ctx, index, repo)
-}
-
 func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *corev1alpha1.Repository) (ctrl.Result, error) {
 	registryPollInterval := minimumRegistryPollInterval
 	if repo.Spec.UpdateStrategy != nil && repo.Spec.UpdateStrategy.Interval.Duration > minimumRegistryPollInterval {
@@ -333,14 +344,15 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 		repoURL = fmt.Sprintf("http://%s.%s.svc", deployment.Name, constants.KubeSphereNamespace)
 	}
 
-	if repoURL != "" && time.Now().After(repo.Status.LastSyncTime.Add(registryPollInterval)) {
+	outOfSync := repo.Status.LastSyncTime == nil || time.Now().After(repo.Status.LastSyncTime.Add(registryPollInterval))
+	if repoURL != "" && outOfSync {
 		if err := r.syncExtensionsFromURL(ctx, repo, repoURL); err != nil {
 			r.recorder.Eventf(repo, corev1.EventTypeWarning, "ExtensionsSyncFailed", err.Error())
 			return ctrl.Result{}, fmt.Errorf("failed to sync extensions: %s", err)
 		}
 		r.recorder.Eventf(repo, corev1.EventTypeNormal, "RepositorySynced", "")
 		repo = repo.DeepCopy()
-		repo.Status.LastSyncTime = metav1.Now()
+		repo.Status.LastSyncTime = &metav1.Time{Time: time.Now()}
 		if err := r.Update(ctx, repo); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update repository: %s", err)
 		}

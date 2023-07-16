@@ -38,6 +38,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/job"
 	"kubesphere.io/kubesphere/pkg/controller/ksserviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/loginrecord"
+	"kubesphere.io/kubesphere/pkg/controller/marketplace"
 	"kubesphere.io/kubesphere/pkg/controller/namespace"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/role"
@@ -50,8 +51,8 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
 	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
+	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/simple/client/multicluster"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
@@ -88,6 +89,7 @@ var allControllers = []string{
 	"extension-webhook",
 	"ks-serviceaccount",
 	"secret",
+	"marketplace",
 }
 
 // setup all available controllers one by one
@@ -275,6 +277,11 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	// "secret" controller
 	if cmOptions.IsControllerEnabled("secret") {
 		addControllerWithSetup(mgr, "secret", &secret.Reconciler{TokenIssuer: issuer})
+	}
+
+	// marketplace controller
+	if cmOptions.IsControllerEnabled("marketplace") {
+		addControllerWithSetup(mgr, "marketplace", &marketplace.Controller{})
 	}
 
 	// log all controllers process result
