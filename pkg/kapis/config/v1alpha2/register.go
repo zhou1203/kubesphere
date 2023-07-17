@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha2
 
 import (
+	"time"
+
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,7 +57,17 @@ func AddToContainer(c *restful.Container, config *kubesphereconfig.Config, clien
 			options, err := marketplace.LoadOptions(request.Request.Context(), client)
 			if err != nil {
 				api.HandleError(response, request, err)
+				return
 			}
+
+			if options.Account != nil && time.Now().After(options.Account.ExpiresAt) {
+				options.Account = nil
+				if err := marketplace.SaveOptions(request.Request.Context(), client, options); err != nil {
+					api.HandleError(response, request, err)
+					return
+				}
+			}
+
 			_ = response.WriteEntity(options)
 		}))
 	c.Add(webservice)

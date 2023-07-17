@@ -66,7 +66,23 @@ func (h *handler) handleFiles(request *restful.Request, response *restful.Respon
 		response.WriteEntity(files)
 		return
 	}
-	resp, err := http.Get(extensionVersion.Spec.ChartURL)
+	repo := &corev1alpha1.Repository{}
+	if err := h.cache.Get(request.Request.Context(), types.NamespacedName{Name: extensionVersion.Spec.Repository}, repo); err != nil {
+		api.HandleInternalError(response, request, err)
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodGet, extensionVersion.Spec.ChartURL, nil)
+	if err != nil {
+		api.HandleInternalError(response, request, err)
+		return
+	}
+
+	if repo.Spec.BasicAuth != nil {
+		req.SetBasicAuth(repo.Spec.BasicAuth.Username, repo.Spec.BasicAuth.Password)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		api.HandleInternalError(response, request, err)
 		return
@@ -77,5 +93,6 @@ func (h *handler) handleFiles(request *restful.Request, response *restful.Respon
 		api.HandleInternalError(response, request, err)
 		return
 	}
-	response.WriteEntity(files)
+
+	_ = response.WriteEntity(files)
 }

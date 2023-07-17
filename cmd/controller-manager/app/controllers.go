@@ -84,7 +84,7 @@ var allControllers = []string{
 	"clusterrulegroup",
 	"globalrulegroup",
 	"repository",
-	"subscription",
+	"installplan",
 	"extension",
 	"extension-webhook",
 	"ks-serviceaccount",
@@ -137,12 +137,12 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "repository", repoReconciler)
 	}
 
-	if cmOptions.IsControllerEnabled("subscription") {
-		subscriptionReconciler, err := core.NewSubscriptionReconciler(cmOptions.KubernetesOptions.KubeConfig)
+	if cmOptions.IsControllerEnabled("installplan") {
+		installPlanReconciler, err := core.NewInstallPlanReconciler(cmOptions.KubernetesOptions.KubeConfig)
 		if err != nil {
-			return fmt.Errorf("failed to create subscription controller: %v", err)
+			return fmt.Errorf("failed to create installplan controller: %v", err)
 		}
-		addControllerWithSetup(mgr, "subscription", subscriptionReconciler)
+		addControllerWithSetup(mgr, "installplan", installPlanReconciler)
 	}
 
 	// "workspacetemplate" controller

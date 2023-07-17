@@ -21,6 +21,9 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/golang-jwt/jwt/v4"
+	"k8s.io/client-go/util/retry"
+
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	marketplacev1alpha1 "kubesphere.io/api/marketplace/v1alpha1"
 
@@ -109,19 +112,26 @@ func (h *handler) callback(request *restful.Request, response *restful.Response)
 		api.HandleError(response, request, err)
 		return
 	}
-	userInfo, err := client.UserInfo()
+	userInfo, err := client.UserInfo(token.AccessToken)
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
 	}
+	claims := &jwt.RegisteredClaims{}
+	_, _, err = jwt.NewParser(jwt.WithoutClaimsValidation()).ParseUnverified(token.AccessToken, claims)
+	if err != nil {
+		api.HandleError(response, request, fmt.Errorf("failed to parse access token: %s", err))
+		return
+	}
 	options.Account = &marketplace.Account{
 		AccessToken:  token.AccessToken,
-		ExpiresIn:    token.ExpiresIn,
+		ExpiresAt:    claims.ExpiresAt.Time,
 		UserID:       userInfo.ID,
 		Username:     userInfo.Username,
 		Email:        userInfo.Email,
 		HeadImageURL: userInfo.HeadImageURL,
 	}
+	options.OAuthOptions.Bind = nil
 	if err := marketplace.SaveOptions(request.Request.Context(), h.client, options); err != nil {
 		api.HandleError(response, request, err)
 		return
@@ -150,29 +160,45 @@ func (h *handler) sync(request *restful.Request, response *restful.Response) {
 		api.HandleError(response, request, err)
 		return
 	}
-
 	client := marketplace.NewClient(options)
-	subscriptions, err := client.ListSubscriptions()
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
 	}
+	subscriptions, err := client.ListSubscriptions()
+	if err != nil {
+		if marketplace.IsForbiddenError(err) {
+			options.Account = nil
+			if err := marketplace.SaveOptions(request.Request.Context(), h.client, options); err != nil {
+				api.HandleError(response, request, fmt.Errorf("failed to update marketplace options: %s", err))
+				return
+			}
+		}
+		api.HandleError(response, request, fmt.Errorf("failed to list subscriptions: %s", err))
+		return
+	}
 
 	for _, subscription := range subscriptions {
-		extensionList := &corev1alpha1.ExtensionList{}
-		if err := h.client.List(request.Request.Context(), extensionList, runtimeclient.MatchingLabels{marketplacev1alpha1.ExtensionID: subscription.ExtensionID}); err != nil {
-			api.HandleError(response, request, err)
-			return
-		}
-		if len(extensionList.Items) > 0 {
-			extension := extensionList.Items[0]
-			if extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
-				extension.Labels[marketplacev1alpha1.Subscribed] = "true"
-				if err := h.client.Update(request.Request.Context(), &extension); err != nil {
-					api.HandleError(response, request, err)
-					return
+		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			extensions := &corev1alpha1.ExtensionList{}
+			if err := h.client.List(request.Request.Context(), extensions,
+				runtimeclient.MatchingLabels{marketplacev1alpha1.ExtensionID: subscription.ExtensionID}); err != nil {
+				return err
+			}
+			if len(extensions.Items) > 0 {
+				extension := extensions.Items[0]
+				if extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
+					extension.Labels[marketplacev1alpha1.Subscribed] = "true"
+					if err := h.client.Update(request.Request.Context(), &extension); err != nil {
+						return err
+					}
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			api.HandleError(response, request, fmt.Errorf("failed to sync extension status: %s", err))
+			return
 		}
 	}
 	_ = response.WriteEntity(errors.None)

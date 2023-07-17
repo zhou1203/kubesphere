@@ -28,12 +28,12 @@ type Options struct {
 }
 
 type Account struct {
-	AccessToken  string `json:"-" yaml:"accessToken"`
-	UserID       string `json:"userID" yaml:"userID"`
-	ExpiresIn    int64  `json:"expiresIn" yaml:"expiresIn"`
-	Email        string `json:"email" yaml:"email"`
-	HeadImageURL string `json:"headImageURL" yaml:"headImageURL"`
-	Username     string `json:"username" yaml:"username"`
+	AccessToken  string    `json:"-" yaml:"accessToken"`
+	UserID       string    `json:"userID" yaml:"userID"`
+	ExpiresAt    time.Time `json:"expiresAt" yaml:"expiresAt"`
+	Email        string    `json:"email" yaml:"email"`
+	HeadImageURL string    `json:"headImageURL" yaml:"headImageURL"`
+	Username     string    `json:"username" yaml:"username"`
 }
 
 type Bind struct {
