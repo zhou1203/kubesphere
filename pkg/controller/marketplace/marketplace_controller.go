@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"k8s.io/client-go/util/retry"
+
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -106,25 +108,37 @@ func (r *Controller) syncSubscriptions() {
 	marketplaceClient := marketplace.NewClient(options)
 	subscriptions, err := marketplaceClient.ListSubscriptions()
 	if err != nil {
+		if marketplace.IsForbiddenError(err) {
+			options.Account = nil
+			if err := marketplace.SaveOptions(r.ctx, r.Client, options); err != nil {
+				klog.Errorf("failed to save marketplace options: %s", err)
+				return
+			}
+		}
 		klog.Errorf("failed to sync subscriptions: %s", err)
 		return
 	}
 
 	for _, subscription := range subscriptions {
-		extensionList := &corev1alpha1.ExtensionList{}
-		if err := r.List(r.ctx, extensionList, client.MatchingLabels{marketplacev1alpha1.ExtensionID: subscription.ExtensionID}); err != nil {
-			klog.Errorf("failed to sync subscriptions: %s", err)
-			return
-		}
-		if len(extensionList.Items) > 0 {
-			extension := extensionList.Items[0]
-			if extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
-				extension.Labels[marketplacev1alpha1.Subscribed] = "true"
-				if err := r.Update(r.ctx, &extension); err != nil {
-					klog.Errorf("failed to update extension: %s", err)
-					continue
+		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			extensions := &corev1alpha1.ExtensionList{}
+			if err := r.List(r.ctx, extensions,
+				client.MatchingLabels{marketplacev1alpha1.ExtensionID: subscription.ExtensionID}); err != nil {
+				return err
+			}
+			if len(extensions.Items) > 0 {
+				extension := extensions.Items[0]
+				if extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
+					extension.Labels[marketplacev1alpha1.Subscribed] = "true"
+					if err := r.Update(r.ctx, &extension); err != nil {
+						return err
+					}
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			klog.Errorf("failed to sync extension status: %s", err)
 		}
 	}
 }

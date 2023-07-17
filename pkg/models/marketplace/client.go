@@ -1,25 +1,28 @@
 package marketplace
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
+	"k8s.io/klog/v2"
 
 	"k8s.io/client-go/util/retry"
-	"k8s.io/klog/v2"
+)
+
+const (
+	reasonPermissionDenied = "permission denied"
 )
 
 type Interface interface {
 	ExtensionID(extensionName string) (string, error)
 	ListSubscriptions() ([]Subscription, error)
 	CreateToken(clusterID, code, codeVerifier string) (*Token, error)
-	UserInfo() (*UserInfo, error)
+	UserInfo(token string) (*UserInfo, error)
 }
 
 type client struct {
@@ -80,9 +83,12 @@ type Subscription struct {
 }
 
 func (c *client) ExtensionID(extensionName string) (string, error) {
+	if err := c.checkAccessToken(); err != nil {
+		return "", err
+	}
 	var extensionID string
 	err := retry.OnError(retry.DefaultRetry, func(err error) bool {
-		return true
+		return !IsForbiddenError(err)
 	}, func() error {
 		body := strings.NewReader(fmt.Sprintf("{\"paginator\":{\"page\":1},\"names\":[\"%s\"]}", extensionName))
 		resp, err := c.httpClient.Post(fmt.Sprintf("%s/apis/extension/v1/extensions/search", c.options.URL), "application/json", body)
@@ -90,6 +96,16 @@ func (c *client) ExtensionID(extensionName string) (string, error) {
 			return err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode > http.StatusOK {
+			message, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == http.StatusForbidden {
+				return fmt.Errorf("%s: %s", reasonPermissionDenied, message)
+			}
+			return fmt.Errorf("failed to list subscriptions: %s", message)
+		}
 		result := &ExtensionList{}
 		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
 			return err
@@ -105,8 +121,8 @@ func (c *client) ExtensionID(extensionName string) (string, error) {
 	return extensionID, err
 }
 
-func (c *client) UserInfo() (*UserInfo, error) {
-	var userInfo *UserInfo
+func (c *client) UserInfo(token string) (*UserInfo, error) {
+	userInfo := &UserInfo{}
 	err := retry.OnError(retry.DefaultRetry, func(err error) bool {
 		return true
 	}, func() error {
@@ -114,12 +130,23 @@ func (c *client) UserInfo() (*UserInfo, error) {
 		if err != nil {
 			return fmt.Errorf("failed to create user info request: %s", err)
 		}
-		userInfoReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+		userInfoReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		userInfoResp, err := c.httpClient.Do(userInfoReq)
 		if err != nil {
-			return fmt.Errorf("failed to exchange access token: %s", err)
+			return fmt.Errorf("failed to fetch user info: %s", err)
 		}
 		defer userInfoResp.Body.Close()
+		if userInfoResp.StatusCode > http.StatusOK {
+			message, err := io.ReadAll(userInfoResp.Body)
+			if err != nil {
+				return err
+			}
+			if userInfoResp.StatusCode == http.StatusForbidden {
+				return fmt.Errorf("%s: %s", reasonPermissionDenied, message)
+			}
+			return fmt.Errorf("failed to fetch user info: %s", message)
+		}
+
 		if err := json.NewDecoder(userInfoResp.Body).Decode(userInfo); err != nil {
 			return fmt.Errorf("failed to decode userInfo response: %s", err)
 		}
@@ -129,12 +156,15 @@ func (c *client) UserInfo() (*UserInfo, error) {
 }
 
 func (c *client) ListSubscriptions() ([]Subscription, error) {
+	if err := c.checkAccessToken(); err != nil {
+		return nil, fmt.Errorf("%s: %s", reasonPermissionDenied, err)
+	}
 	page := 1
 	subscriptions := make([]Subscription, 0)
 	for {
 		result := &SubscriptionList{}
 		err := retry.OnError(retry.DefaultRetry, func(err error) bool {
-			return true
+			return !IsForbiddenError(err)
 		}, func() error {
 			body := strings.NewReader(fmt.Sprintf("{\"paginator\":{\"page\":%d}}", page))
 			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/apis/extension/v1/users/%s/extensions/subscriptions/search", c.options.URL, c.options.Account.UserID), body)
@@ -147,12 +177,18 @@ func (c *client) ListSubscriptions() ([]Subscription, error) {
 			if err != nil {
 				return err
 			}
-			data, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
 			defer resp.Body.Close()
-			if err = json.NewDecoder(io.NopCloser(bytes.NewBuffer(data))).Decode(result); err != nil {
+			if resp.StatusCode > http.StatusOK {
+				message, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return err
+				}
+				if resp.StatusCode == http.StatusForbidden {
+					return fmt.Errorf("%s: %s", reasonPermissionDenied, message)
+				}
+				return fmt.Errorf("failed to list subscriptions: %s", message)
+			}
+			if err = json.NewDecoder(resp.Body).Decode(result); err != nil {
 				return err
 			}
 			subscriptions = append(subscriptions, result.Subscriptions...)
@@ -177,21 +213,29 @@ func (c *client) CreateToken(clusterID, code, codeVerifier string) (*Token, erro
 	values.Add("client_id", c.options.OAuthOptions.ClientID)
 	values.Add("client_secret", c.options.OAuthOptions.ClientSecret)
 	values.Add("grant_type", "authorization_code")
-
 	tokenResp, err := http.PostForm(fmt.Sprintf("%s/apis/auth/v1/token", c.options.URL), values)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange access token: %s", err)
 	}
 	defer tokenResp.Body.Close()
-
 	token := &Token{}
 	if err := json.NewDecoder(tokenResp.Body).Decode(token); err != nil {
 		return nil, fmt.Errorf("failed to decode token response: %s", err)
 	}
-
 	return token, nil
+}
+
+func (c *client) checkAccessToken() error {
+	if c.options.Account == nil || time.Now().After(c.options.Account.ExpiresAt) {
+		return fmt.Errorf("not authorized")
+	}
+	return nil
 }
 
 func NewClient(options *Options) Interface {
 	return &client{options: options, httpClient: http.DefaultClient}
+}
+
+func IsForbiddenError(err error) bool {
+	return strings.Contains(err.Error(), reasonPermissionDenied)
 }
