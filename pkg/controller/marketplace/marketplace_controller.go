@@ -59,16 +59,20 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{}, nil
 	}
 
-	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] == options.RepositorySyncOptions.RepoName &&
-		extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
-		if err := r.syncExtensionID(ctx, options, extension); err != nil {
-			return reconcile.Result{}, err
-		}
+	if options.Account == nil {
+		logger.V(4).Info("marketplace account not bound, skip synchronization")
+		return ctrl.Result{}, nil
 	}
-	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] == options.RepositorySyncOptions.RepoName &&
-		extension.Labels[marketplacev1alpha1.ExtensionID] != "" {
-		if err := r.syncSubscription(ctx, options, extension); err != nil {
-			return reconcile.Result{}, err
+
+	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] == options.RepositorySyncOptions.RepoName {
+		if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
+			if err := r.syncExtensionID(ctx, options, extension); err != nil {
+				return reconcile.Result{}, err
+			}
+		} else {
+			if err := r.syncSubscription(ctx, options, extension); err != nil {
+				return reconcile.Result{}, err
+			}
 		}
 	}
 
@@ -270,7 +274,6 @@ func (r *Controller) syncSubscription(ctx context.Context, options *marketplace.
 	if err != nil {
 		return err
 	}
-
 	subscribed := len(subscriptions) > 0
 	if subscribed && extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
 		extension = extension.DeepCopy()
@@ -281,6 +284,5 @@ func (r *Controller) syncSubscription(ctx context.Context, options *marketplace.
 		delete(extension.Labels, marketplacev1alpha1.Subscribed)
 		return r.Update(ctx, extension, &client.UpdateOptions{})
 	}
-
 	return nil
 }
