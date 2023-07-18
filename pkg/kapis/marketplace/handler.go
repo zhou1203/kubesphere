@@ -165,7 +165,7 @@ func (h *handler) sync(request *restful.Request, response *restful.Response) {
 		api.HandleError(response, request, err)
 		return
 	}
-	subscriptions, err := client.ListSubscriptions()
+	subscriptions, err := client.ListSubscriptions("")
 	if err != nil {
 		if marketplace.IsForbiddenError(err) {
 			options.Account = nil
