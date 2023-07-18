@@ -20,7 +20,7 @@ const (
 
 type Interface interface {
 	ExtensionID(extensionName string) (string, error)
-	ListSubscriptions() ([]Subscription, error)
+	ListSubscriptions(extensionID string) ([]Subscription, error)
 	CreateToken(clusterID, code, codeVerifier string) (*Token, error)
 	UserInfo(token string) (*UserInfo, error)
 }
@@ -113,7 +113,7 @@ func (c *client) ExtensionID(extensionName string) (string, error) {
 		if len(result.Extensions) == 1 && result.Extensions[0].Name == extensionName {
 			extensionID = result.Extensions[0].ExtensionID
 		} else {
-			klog.V(4).Infof("extensionID not exists %s: %v", extensionName, result.Extensions)
+			klog.V(4).Infof("extensionID for %s not exists: %v", extensionName, result.Extensions)
 		}
 		return nil
 	})
@@ -155,7 +155,7 @@ func (c *client) UserInfo(token string) (*UserInfo, error) {
 	return userInfo, err
 }
 
-func (c *client) ListSubscriptions() ([]Subscription, error) {
+func (c *client) ListSubscriptions(extensionID string) ([]Subscription, error) {
 	if err := c.checkAccessToken(); err != nil {
 		return nil, fmt.Errorf("%s: %s", reasonPermissionDenied, err)
 	}
@@ -166,7 +166,12 @@ func (c *client) ListSubscriptions() ([]Subscription, error) {
 		err := retry.OnError(retry.DefaultRetry, func(err error) bool {
 			return !IsForbiddenError(err)
 		}, func() error {
-			body := strings.NewReader(fmt.Sprintf("{\"paginator\":{\"page\":%d}}", page))
+			var body io.Reader
+			if extensionID == "" {
+				body = strings.NewReader(fmt.Sprintf("{\"paginator\":{\"page\":%d}}", page))
+			} else {
+				body = strings.NewReader(fmt.Sprintf("{\"paginator\":{\"page\":%d},\"extension_ids\":[\"%s\"]}", page, extensionID))
+			}
 			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/apis/extension/v1/users/%s/extensions/subscriptions/search", c.options.URL, c.options.Account.UserID), body)
 			if err != nil {
 				return err

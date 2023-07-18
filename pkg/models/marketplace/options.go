@@ -80,12 +80,11 @@ func LoadOptions(ctx context.Context, client runtimeclient.Client) (*Options, er
 		if errors.IsNotFound(err) {
 			return nil, errors.NewBadRequest("marketplace configuration not exists")
 		}
-
-		return nil, errors.NewInternalError(fmt.Errorf("failed to load marketplace configuration: %s", err))
+		return nil, fmt.Errorf("failed to load marketplace configuration: %s", err)
 	}
 	options := &Options{}
 	if err := yaml.NewDecoder(bytes.NewReader(optionsSecret.Data[ConfigurationFileKey])).Decode(options); err != nil {
-		return nil, errors.NewInternalError(fmt.Errorf("failed to decode marketplace configuration: %s", err))
+		return nil, fmt.Errorf("failed to decode marketplace configuration: %s", err)
 	}
 	return options, nil
 }
@@ -97,11 +96,11 @@ func SaveOptions(ctx context.Context, client runtimeclient.Client, options *Opti
 			if errors.IsNotFound(err) {
 				return errors.NewBadRequest("marketplace configuration not exists")
 			}
-			return errors.NewInternalError(fmt.Errorf("failed to load marketplace configuration: %s", err))
+			return fmt.Errorf("failed to load marketplace configuration: %s", err)
 		}
 		data, err := yaml.Marshal(options)
 		if err != nil {
-			return errors.NewInternalError(fmt.Errorf("failed to encode marketplace configuration: %s", err))
+			return fmt.Errorf("failed to encode marketplace configuration: %s", err)
 		}
 
 		optionsSecret.Data[ConfigurationFileKey] = data
@@ -109,7 +108,7 @@ func SaveOptions(ctx context.Context, client runtimeclient.Client, options *Opti
 	})
 
 	if err != nil {
-		return errors.NewInternalError(fmt.Errorf("failed to update marketplace configuration: %s", err))
+		return fmt.Errorf("failed to update marketplace configuration: %s", err)
 	}
 
 	return nil
