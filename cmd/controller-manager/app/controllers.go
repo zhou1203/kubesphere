@@ -94,75 +94,15 @@ var allControllers = []string{
 
 // setup all available controllers one by one
 func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *options.KubeSphereControllerManagerOptions) error {
-	// begin init necessary clients
-	var clusterClientSet clusterclient.Interface
-	var err error
-	if cmOptions.MultiClusterOptions.ClusterRole == multicluster.ClusterRoleHost {
-		clusterClientSet, err = clusterclient.NewClusterClientSet(mgr.GetCache())
-		if err != nil {
-			return err
-		}
-	}
-
-	// end init clients
-
 	// begin init controller and add to manager one by one
-
-	// "user" controller
-	if cmOptions.IsControllerEnabled("user") {
-		userController := &user.Reconciler{
-			AuthenticationOptions: cmOptions.AuthenticationOptions,
-			ClusterClientSet:      clusterClientSet,
-		}
-		addControllerWithSetup(mgr, "user", userController)
-	}
-
-	var k8sVersion string
-	if cmOptions.IsControllerEnabled("extension") {
-		info, err := client.Kubernetes().Discovery().ServerVersion()
-		if err == nil {
-			k8sVersion = info.GitVersion
-		} else {
-			return err
-		}
-		extensionReconciler := &core.ExtensionReconciler{K8sVersion: k8sVersion}
-		addControllerWithSetup(mgr, "extension", extensionReconciler)
-
-		extensionVersionReconciler := &core.ExtensionVersionReconciler{K8sVersion: k8sVersion}
-		addControllerWithSetup(mgr, "extensionversion", extensionVersionReconciler)
-	}
-
-	if cmOptions.IsControllerEnabled("repository") {
-		repoReconciler := &core.RepositoryReconciler{}
-		addControllerWithSetup(mgr, "repository", repoReconciler)
-	}
-
-	if cmOptions.IsControllerEnabled("installplan") {
-		installPlanReconciler, err := core.NewInstallPlanReconciler(cmOptions.KubernetesOptions.KubeConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create installplan controller: %v", err)
-		}
-		addControllerWithSetup(mgr, "installplan", installPlanReconciler)
-	}
-
-	// "workspacetemplate" controller
-	if cmOptions.IsControllerEnabled("workspacetemplate") && cmOptions.MultiClusterOptions.ClusterRole == multicluster.ClusterRoleHost {
-		addControllerWithSetup(mgr, "workspacetemplate", &workspacetemplate.Reconciler{ClusterClientSet: clusterClientSet})
+	// init controllers for host cluster
+	if err := addHostControllers(mgr, client, cmOptions); err != nil {
+		return err
 	}
 
 	// "workspace" controller
 	if cmOptions.IsControllerEnabled("workspace") {
 		addControllerWithSetup(mgr, "workspace", &workspace.Reconciler{})
-	}
-
-	// "workspacerole" controller
-	if cmOptions.IsControllerEnabled("workspacerole") {
-		addControllerWithSetup(mgr, "workspacerole", &workspacerole.Reconciler{ClusterClientSet: clusterClientSet})
-	}
-
-	// "workspacerolebinding" controller
-	if cmOptions.IsControllerEnabled("workspacerolebinding") {
-		addControllerWithSetup(mgr, "workspacerolebinding", &workspacerolebinding.Reconciler{ClusterClientSet: clusterClientSet})
 	}
 
 	// "namespace" controller
@@ -225,16 +165,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "roletemplate", roletemplateController)
 	}
 
-	// "globalrole" controller
-	if cmOptions.IsControllerEnabled("globalrole") {
-		addControllerWithSetup(mgr, "globalrole", &globalrole.Reconciler{ClusterClientSet: clusterClientSet})
-	}
-
-	// "globalrolebinding" controller
-	if cmOptions.IsControllerEnabled("globalrolebinding") {
-		addControllerWithSetup(mgr, "globalrolebinding", &globalrolebinding.Reconciler{ClusterClientSet: clusterClientSet})
-	}
-
 	// "groupbinding" controller
 	if cmOptions.IsControllerEnabled("groupbinding") {
 		addControllerWithSetup(mgr, "groupbinding", &groupbinding.Reconciler{})
@@ -245,43 +175,18 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "group", &group.Reconciler{})
 	}
 
-	// "cluster" controller
-	if cmOptions.IsControllerEnabled("cluster") {
-		clusterReconciler, err := cluster.NewReconciler(client.Config(), cmOptions.MultiClusterOptions.HostClusterName, cmOptions.MultiClusterOptions.ClusterControllerResyncPeriod)
-		if err != nil {
-			klog.Fatalf("Unable to create Cluster controller: %v", err)
-		}
-		// Register reconciler
-		addControllerWithSetup(mgr, "cluster", clusterReconciler)
-		// Register timed tasker
-		addController(mgr, "cluster", clusterReconciler)
-	}
-
-	// extension webhook
-	if cmOptions.IsControllerEnabled("extension-webhook") {
-		addControllerWithSetup(mgr, "extension-webhook", &extension.JSBundleWebhook{})
-		addControllerWithSetup(mgr, "extension-webhook", &extension.APIServiceWebhook{})
-		addControllerWithSetup(mgr, "extension-webhook", &extension.ReverseProxyWebhook{})
-	}
-
-	issuer, err := token.NewIssuer(cmOptions.AuthenticationOptions)
-	if err != nil {
-		return err
-	}
-
 	// "serviceaccount" controller
 	if cmOptions.IsControllerEnabled("ks-serviceaccount") {
 		addControllerWithSetup(mgr, "ks-serviceaccount", &ksserviceaccount.Reconciler{})
 	}
 
 	// "secret" controller
+	issuer, err := token.NewIssuer(cmOptions.AuthenticationOptions)
+	if err != nil {
+		return err
+	}
 	if cmOptions.IsControllerEnabled("secret") {
 		addControllerWithSetup(mgr, "secret", &secret.Reconciler{TokenIssuer: issuer})
-	}
-
-	// marketplace controller
-	if cmOptions.IsControllerEnabled("marketplace") {
-		addControllerWithSetup(mgr, "marketplace", &marketplace.Controller{})
 	}
 
 	// log all controllers process result
@@ -295,6 +200,105 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		} else {
 			klog.Infof("%s controller is disabled by controller selectors.", name)
 		}
+	}
+
+	return nil
+}
+
+func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *options.KubeSphereControllerManagerOptions) error {
+	if cmOptions.MultiClusterOptions.ClusterRole != multicluster.ClusterRoleHost {
+		return nil
+	}
+
+	clusterClientSet, err := clusterclient.NewClusterClientSet(mgr.GetCache())
+	if err != nil {
+		return err
+	}
+
+	// "user" controller
+	if cmOptions.IsControllerEnabled("user") {
+		userController := &user.Reconciler{
+			AuthenticationOptions: cmOptions.AuthenticationOptions,
+			ClusterClientSet:      clusterClientSet,
+		}
+		addControllerWithSetup(mgr, "user", userController)
+	}
+
+	var k8sVersion string
+	if cmOptions.IsControllerEnabled("extension") {
+		info, err := client.Kubernetes().Discovery().ServerVersion()
+		if err == nil {
+			k8sVersion = info.GitVersion
+		} else {
+			return err
+		}
+		extensionReconciler := &core.ExtensionReconciler{K8sVersion: k8sVersion}
+		addControllerWithSetup(mgr, "extension", extensionReconciler)
+
+		extensionVersionReconciler := &core.ExtensionVersionReconciler{K8sVersion: k8sVersion}
+		addControllerWithSetup(mgr, "extensionversion", extensionVersionReconciler)
+	}
+
+	// extension webhook
+	if cmOptions.IsControllerEnabled("extension-webhook") {
+		addControllerWithSetup(mgr, "extension-webhook", &extension.JSBundleWebhook{})
+		addControllerWithSetup(mgr, "extension-webhook", &extension.APIServiceWebhook{})
+		addControllerWithSetup(mgr, "extension-webhook", &extension.ReverseProxyWebhook{})
+	}
+
+	if cmOptions.IsControllerEnabled("repository") {
+		repoReconciler := &core.RepositoryReconciler{}
+		addControllerWithSetup(mgr, "repository", repoReconciler)
+	}
+
+	if cmOptions.IsControllerEnabled("installplan") {
+		installPlanReconciler, err := core.NewInstallPlanReconciler(cmOptions.KubernetesOptions.KubeConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create installplan controller: %v", err)
+		}
+		addControllerWithSetup(mgr, "installplan", installPlanReconciler)
+	}
+
+	// marketplace controller
+	if cmOptions.IsControllerEnabled("marketplace") {
+		addControllerWithSetup(mgr, "marketplace", &marketplace.Controller{})
+	}
+
+	// "workspacetemplate" controller
+	if cmOptions.IsControllerEnabled("workspacetemplate") {
+		addControllerWithSetup(mgr, "workspacetemplate", &workspacetemplate.Reconciler{ClusterClientSet: clusterClientSet})
+	}
+
+	// "workspacerole" controller
+	if cmOptions.IsControllerEnabled("workspacerole") {
+		addControllerWithSetup(mgr, "workspacerole", &workspacerole.Reconciler{ClusterClientSet: clusterClientSet})
+	}
+
+	// "workspacerolebinding" controller
+	if cmOptions.IsControllerEnabled("workspacerolebinding") {
+		addControllerWithSetup(mgr, "workspacerolebinding", &workspacerolebinding.Reconciler{ClusterClientSet: clusterClientSet})
+	}
+
+	// "globalrole" controller
+	if cmOptions.IsControllerEnabled("globalrole") {
+		addControllerWithSetup(mgr, "globalrole", &globalrole.Reconciler{ClusterClientSet: clusterClientSet})
+	}
+
+	// "globalrolebinding" controller
+	if cmOptions.IsControllerEnabled("globalrolebinding") {
+		addControllerWithSetup(mgr, "globalrolebinding", &globalrolebinding.Reconciler{ClusterClientSet: clusterClientSet})
+	}
+
+	// "cluster" controller
+	if cmOptions.IsControllerEnabled("cluster") {
+		clusterReconciler, err := cluster.NewReconciler(client.Config(), cmOptions.MultiClusterOptions.HostClusterName, cmOptions.MultiClusterOptions.ClusterControllerResyncPeriod)
+		if err != nil {
+			klog.Fatalf("Unable to create Cluster controller: %v", err)
+		}
+		// Register reconciler
+		addControllerWithSetup(mgr, "cluster", clusterReconciler)
+		// Register timed tasker
+		addController(mgr, "cluster", clusterReconciler)
 	}
 
 	return nil
