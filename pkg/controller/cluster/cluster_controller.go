@@ -350,11 +350,20 @@ func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *cluste
 func (r *Reconciler) syncClusterStatus(ctx context.Context, cluster *clusterv1alpha1.Cluster, clusterClient kubernetes.Interface) (ctrl.Result, error) {
 	v, err := r.tryFetchKubeSphereVersion(ctx, clusterClient)
 	if err != nil {
+		// The KubeSphere service is unavailable
 		klog.Errorf("failed to get KubeSphere version, err: %#v", err)
-	} else {
-		cluster.Status.KubeSphereVersion = v
+		r.updateClusterCondition(cluster, clusterv1alpha1.ClusterCondition{
+			Type:               clusterv1alpha1.ClusterReady,
+			Status:             corev1.ConditionFalse,
+			LastUpdateTime:     metav1.Now(),
+			LastTransitionTime: metav1.Now(),
+			Reason:             string(clusterv1alpha1.ClusterReady),
+			Message:            err.Error(),
+		})
+		return ctrl.Result{}, r.Update(ctx, cluster)
 	}
 
+	cluster.Status.KubeSphereVersion = v
 	readyCondition := clusterv1alpha1.ClusterCondition{
 		Type:               clusterv1alpha1.ClusterReady,
 		Status:             corev1.ConditionTrue,
