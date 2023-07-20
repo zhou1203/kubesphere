@@ -6,30 +6,27 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	"kubesphere.io/kubesphere/pkg/constants"
-
-	"k8s.io/client-go/util/retry"
-
-	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	marketplacev1alpha1 "kubesphere.io/api/marketplace/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models/marketplace"
 )
 
@@ -59,17 +56,12 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{}, nil
 	}
 
-	if options.Account == nil {
-		logger.V(4).Info("marketplace account not bound, skip synchronization")
-		return ctrl.Result{}, nil
-	}
-
 	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] == options.RepositorySyncOptions.RepoName {
 		if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
 			if err := r.syncExtensionID(ctx, options, extension); err != nil {
 				return reconcile.Result{}, err
 			}
-		} else {
+		} else if options.Account != nil && options.Account.AccessToken != "" {
 			if err := r.syncSubscription(ctx, options, extension); err != nil {
 				return reconcile.Result{}, err
 			}
@@ -116,12 +108,12 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 			secret := obj.(*corev1.Secret)
 			options := &marketplace.Options{}
 			if err := yaml.NewDecoder(bytes.NewReader(secret.Data[marketplace.ConfigurationFileKey])).Decode(options); err != nil {
-				klog.Errorf("failed to decode marketplace configuration: %s", err)
+				r.logger.Error(err, "failed to decode marketplace configuration")
 				return requests
 			}
 			extensions := &corev1alpha1.ExtensionList{}
 			if err := r.List(context.Background(), extensions, client.MatchingLabels{corev1alpha1.RepositoryReferenceLabel: options.RepositorySyncOptions.RepoName}); err != nil {
-				klog.Errorf("failed to list extensions: %v", err)
+				r.logger.Error(err, "failed to list extensions")
 				return requests
 			}
 			for _, extension := range extensions.Items {
@@ -192,23 +184,19 @@ func (r *Controller) syncSubscriptions() {
 	defer cancel()
 	options, err := marketplace.LoadOptions(ctx, r.Client)
 	if err != nil {
-		klog.Errorf("failed to sync subscriptions: %s", err)
+		r.logger.Error(err, "failed to sync subscriptions")
+		return
+	}
+	if options.Account == nil || options.Account.AccessToken == "" {
+		r.logger.V(4).Info("marketplace account not bound, skip synchronization")
 		return
 	}
 	marketplaceClient := marketplace.NewClient(options)
 	subscriptions, err := marketplaceClient.ListSubscriptions("")
 	if err != nil {
-		if marketplace.IsForbiddenError(err) {
-			options.Account = nil
-			if err := marketplace.SaveOptions(ctx, r.Client, options); err != nil {
-				klog.Errorf("failed to save marketplace options: %s", err)
-				return
-			}
-		}
-		klog.Errorf("failed to sync subscriptions: %s", err)
+		r.logger.Error(err, "failed to sync subscriptions")
 		return
 	}
-
 	for _, subscription := range subscriptions {
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			extensions := &corev1alpha1.ExtensionList{}
@@ -228,7 +216,7 @@ func (r *Controller) syncSubscriptions() {
 			return nil
 		})
 		if err != nil {
-			klog.Errorf("failed to sync extension status: %s", err)
+			r.logger.Error(err, "failed to sync subscriptions")
 		}
 	}
 }

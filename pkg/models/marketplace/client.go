@@ -7,11 +7,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
-
-	"k8s.io/klog/v2"
 
 	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -83,12 +81,9 @@ type Subscription struct {
 }
 
 func (c *client) ExtensionID(extensionName string) (string, error) {
-	if err := c.checkAccessToken(); err != nil {
-		return "", err
-	}
 	var extensionID string
 	err := retry.OnError(retry.DefaultRetry, func(err error) bool {
-		return !IsForbiddenError(err)
+		return true
 	}, func() error {
 		body := strings.NewReader(fmt.Sprintf("{\"paginator\":{\"page\":1},\"names\":[\"%s\"]}", extensionName))
 		resp, err := c.httpClient.Post(fmt.Sprintf("%s/apis/extension/v1/extensions/search", c.options.URL), "application/json", body)
@@ -100,9 +95,6 @@ func (c *client) ExtensionID(extensionName string) (string, error) {
 			message, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return err
-			}
-			if resp.StatusCode == http.StatusForbidden {
-				return fmt.Errorf("%s: %s", reasonPermissionDenied, message)
 			}
 			return fmt.Errorf("failed to list subscriptions: %s", message)
 		}
@@ -117,7 +109,6 @@ func (c *client) ExtensionID(extensionName string) (string, error) {
 		}
 		return nil
 	})
-
 	return extensionID, err
 }
 
@@ -156,9 +147,6 @@ func (c *client) UserInfo(token string) (*UserInfo, error) {
 }
 
 func (c *client) ListSubscriptions(extensionID string) ([]Subscription, error) {
-	if err := c.checkAccessToken(); err != nil {
-		return nil, fmt.Errorf("%s: %s", reasonPermissionDenied, err)
-	}
 	page := 1
 	subscriptions := make([]Subscription, 0)
 	for {
@@ -228,13 +216,6 @@ func (c *client) CreateToken(clusterID, code, codeVerifier string) (*Token, erro
 		return nil, fmt.Errorf("failed to decode token response: %s", err)
 	}
 	return token, nil
-}
-
-func (c *client) checkAccessToken() error {
-	if c.options.Account == nil || time.Now().After(c.options.Account.ExpiresAt) {
-		return fmt.Errorf("not authorized")
-	}
-	return nil
 }
 
 func NewClient(options *Options) Interface {
