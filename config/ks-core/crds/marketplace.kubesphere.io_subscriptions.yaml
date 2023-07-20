@@ -71,7 +71,6 @@ spec:
                 type: string
             required:
             - createdAt
-            - deletedAt
             - expiredAt
             - extensionID
             - extraInfo

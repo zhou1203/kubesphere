@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+
 	"kubesphere.io/kubesphere/pkg/models/marketplace"
 )
 
@@ -198,7 +199,8 @@ func (r *Controller) syncSubscriptions() {
 		return
 	}
 	for _, subscription := range subscriptions {
-		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		var name string
+		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			extensions := &corev1alpha1.ExtensionList{}
 			if err := r.List(ctx, extensions,
 				client.MatchingLabels{marketplacev1alpha1.ExtensionID: subscription.ExtensionID}); err != nil {
@@ -206,6 +208,7 @@ func (r *Controller) syncSubscriptions() {
 			}
 			if len(extensions.Items) > 0 {
 				extension := extensions.Items[0]
+				name = extension.Name
 				if extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
 					extension.Labels[marketplacev1alpha1.Subscribed] = "true"
 					if err := r.Update(ctx, &extension); err != nil {
@@ -218,7 +221,63 @@ func (r *Controller) syncSubscriptions() {
 		if err != nil {
 			r.logger.Error(err, "failed to sync subscriptions")
 		}
+		if name != "" {
+			err = r.saveSubscriptionCR(ctx, subscription, name)
+			if err != nil {
+				klog.Errorf("failed to sync SubscriptionCR: %s", err)
+			}
+		}
 	}
+}
+func parseTime(timeString string) *metav1.Time {
+	empty := metav1.NewTime(time.Time{})
+	if timeString == "" {
+		return &empty
+	}
+	parsedTime, err := time.Parse(time.RFC3339, timeString)
+	if err != nil {
+		return &empty
+	}
+	Time := metav1.NewTime(parsedTime)
+	return &Time
+}
+func (r *Controller) saveSubscriptionCR(ctx context.Context, subscription marketplace.Subscription, name string) error {
+
+	keyName := fmt.Sprintf("%s-%s", name, subscription.SubscriptionID)
+	subCR := &marketplacev1alpha1.Subscription{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: keyName,
+		},
+	}
+
+	mutateFn := func() error {
+		subCR.Labels = map[string]string{
+			marketplacev1alpha1.ExtensionID:      subscription.ExtensionID,
+			corev1alpha1.ExtensionReferenceLabel: name,
+		}
+		subCR.SubscriptionSpec.ExtensionName = name
+		subCR.SubscriptionStatus.ExpiredAt = parseTime(subscription.ExpiredAt)
+		subCR.SubscriptionStatus.StartedAt = parseTime(subscription.StartedAt)
+		subCR.SubscriptionStatus.CreatedAt = parseTime(subscription.CreatedAt)
+		subCR.SubscriptionStatus.ExtensionID = subscription.ExtensionID
+		subCR.SubscriptionStatus.ExtraInfo = subscription.ExtraInfo
+		subCR.SubscriptionStatus.OrderID = subscription.OrderID
+		subCR.SubscriptionStatus.UpdatedAt = parseTime(subscription.UpdatedAt)
+		subCR.SubscriptionStatus.UserID = subscription.UserID
+		subCR.SubscriptionStatus.SubscriptionID = subscription.SubscriptionID
+		subCR.SubscriptionStatus.UserSubscriptionID = subscription.UserSubscriptionID
+		if subscription.DeletedAt != "" {
+			subCR.SubscriptionStatus.DeletedAt = parseTime(subscription.DeletedAt)
+		}
+
+		return nil
+	}
+	operationResult, err := controllerutil.CreateOrUpdate(ctx, r.Client, subCR, mutateFn)
+	if err != nil {
+		return err
+	}
+	klog.Infof("Subscription %s has been %s", keyName, operationResult)
+	return nil
 }
 
 func (r *Controller) initMarketplaceRepository(ctx context.Context, options *marketplace.Options) error {
