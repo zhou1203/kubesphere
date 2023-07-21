@@ -107,7 +107,7 @@ func (d *DynamicResourceHandler) HandleServiceError(serviceError restful.Service
 		}
 		result, err = d.ListResources(req.Request.Context(), gvr, reqInfo.Namespace, q)
 	case request.VerbCreate:
-		obj, ok := result.(metav1.Object)
+		obj, ok := object.(metav1.Object)
 		if reqInfo.Workspace != "" && ok && obj.GetLabels()[tenantv1alpha1.WorkspaceLabel] != reqInfo.Workspace {
 			labels := obj.GetLabels()
 			if labels == nil {
