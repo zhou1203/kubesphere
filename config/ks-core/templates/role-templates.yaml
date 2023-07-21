@@ -1073,29 +1073,7 @@ items:
             - cluster
           verbs:
             - list
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/role-template-rules: '{"basic": "view"}'
-      labels:
-        iam.kubesphere.io/category: ""
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-devops-basic
-    spec:
-      displayName:
-        en: ""
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - devops
-            - devopsprojects
-          verbs:
-            - get
-            - list
-            - watch
+
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: RoleTemplate
     metadata:
@@ -1202,29 +1180,6 @@ items:
     kind: RoleTemplate
     metadata:
       annotations:
-        iam.kubesphere.io/dependencies: '["namespace-view-credentials"]'
-        iam.kubesphere.io/role-template-rules: '{"credentials": "manage"}'
-      labels:
-        iam.kubesphere.io/aggregate-to-operator: ""
-        iam.kubesphere.io/category: credentials-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-manage-credentials
-    spec:
-      displayName:
-        en: Credentials Management
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - credentials
-            - credentials/usage
-          verbs:
-            - '*'
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
         iam.kubesphere.io/dependencies: '["namespace-view-custom-monitoring"]'
         iam.kubesphere.io/role-template-rules: '{"custom-monitoring": "manage"}'
       labels:
@@ -1243,27 +1198,6 @@ items:
             - monitoring.coreos.com
           resources:
             - '*'
-          verbs:
-            - '*'
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/role-template-rules: '{"devops-settings": "manage"}'
-      labels:
-        iam.kubesphere.io/category: devops-settings
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-manage-devops-settings
-    spec:
-      displayName:
-        en: DevOps Settings
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - devops
-            - devopsprojects
           verbs:
             - '*'
   - apiVersion: iam.kubesphere.io/v1beta1
@@ -1298,28 +1232,6 @@ items:
     kind: RoleTemplate
     metadata:
       annotations:
-        iam.kubesphere.io/dependencies: '["namespace-view-gitrepositories"]'
-        iam.kubesphere.io/role-template-rules: '{"gitrepositories": "manage"}'
-      labels:
-        iam.kubesphere.io/aggregate-to-operator: ""
-        iam.kubesphere.io/category: code-repositories-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-manage-gitrepositories
-    spec:
-      displayName:
-        en: Code Repositories Management
-      rules:
-        - apiGroups:
-            - devops.kubesphere.io
-          resources:
-            - gitrepositories
-          verbs:
-            - '*'
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
         iam.kubesphere.io/role-template-rules: '{"members": "manage"}'
       labels:
         iam.kubesphere.io/category: access-control
@@ -1335,64 +1247,6 @@ items:
           resources:
             - members
             - rolebindings
-          verbs:
-            - '*'
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/dependencies: '["namespace-view-pipelines", "namespace-view-pipelineruns"]'
-        iam.kubesphere.io/role-template-rules: '{"pipelineruns": "manage"}'
-      labels:
-        iam.kubesphere.io/aggregate-to-operator: ""
-        iam.kubesphere.io/category: pipelines-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-manage-pipelineruns
-    spec:
-      displayName:
-        en: PipelineRuns Management
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - pipelineruns
-            - pipelines/runs
-            - pipelines/pipelineruns
-            - pipelineruns/nodedetails
-            - pipelineruns/status
-          verbs:
-            - '*'
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/dependencies: '["namespace-view-pipelines", "namespace-manage-pipelineruns",
-        "namespace-view-credentials"]'
-        iam.kubesphere.io/role-template-rules: '{"pipelines": "manage", "pipelineruns":
-        "manage"}'
-      labels:
-        iam.kubesphere.io/aggregate-to-operator: ""
-        iam.kubesphere.io/category: pipelines-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-manage-pipelines
-    spec:
-      displayName:
-        en: Pipelines Management
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - pipelines
-            - pipelines/runs
-            - pipelines/branches
-            - pipelines/checkScriptCompile
-            - pipelines/consolelog
-            - pipelines/scan
-            - pipelines/sonarstatus
-            - clustertemplates
-            - clustertemplates/render
           verbs:
             - '*'
   - apiVersion: iam.kubesphere.io/v1beta1
@@ -1695,31 +1549,6 @@ items:
     kind: RoleTemplate
     metadata:
       annotations:
-        iam.kubesphere.io/role-template-rules: '{"credentials": "view"}'
-      labels:
-        iam.kubesphere.io/aggregate-to-operator: ""
-        iam.kubesphere.io/aggregate-to-viewer: ""
-        iam.kubesphere.io/category: credentials-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-view-credentials
-    spec:
-      displayName:
-        en: Credentials View
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - credentials
-            - credentials/usage
-          verbs:
-            - get
-            - list
-            - watch
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
         iam.kubesphere.io/role-template-rules: '{"custom-monitoring": "view"}'
       labels:
         iam.kubesphere.io/aggregate-to-operator: ""
@@ -1772,31 +1601,6 @@ items:
     kind: RoleTemplate
     metadata:
       annotations:
-        iam.kubesphere.io/dependencies: '["namespace-view-credentials"]'
-        iam.kubesphere.io/role-template-rules: '{"gitrepositories": "view"}'
-      labels:
-        iam.kubesphere.io/aggregate-to-operator: ""
-        iam.kubesphere.io/aggregate-to-viewer: ""
-        iam.kubesphere.io/category: code-repositories-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-view-gitrepositories
-    spec:
-      displayName:
-        en: Code Repositories View
-      rules:
-        - apiGroups:
-            - devops.kubesphere.io
-          resources:
-            - gitrepositories
-          verbs:
-            - get
-            - list
-            - watch
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
         iam.kubesphere.io/role-template-rules: '{"members": "view"}'
       labels:
         iam.kubesphere.io/aggregate-to-operator: ""
@@ -1818,74 +1622,6 @@ items:
             - get
             - list
             - watch
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/role-template-rules: '{"pipelineruns": "view"}'
-      labels:
-        iam.kubesphere.io/aggregate-to-operator: ""
-        iam.kubesphere.io/aggregate-to-viewer: ""
-        iam.kubesphere.io/category: pipelines-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-view-pipelineruns
-    spec:
-      displayName:
-        en: PipelineRuns View
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - pipelineruns
-            - pipelines/runs
-            - pipelines/pipelineruns
-            - pipelineruns/artifacts
-            - pipelineruns/nodedetails
-            - pipelineruns/status
-          verbs:
-            - get
-            - list
-            - watch
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/dependencies: '["namespace-view-pipelineruns", "namespace-view-gitrepositories"]'
-        iam.kubesphere.io/role-template-rules: '{"pipelines": "view", "pipelineruns":
-        "view"}'
-      labels:
-        iam.kubesphere.io/aggregate-to-operator: ""
-        iam.kubesphere.io/aggregate-to-viewer: ""
-        iam.kubesphere.io/category: pipelines-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/namespace: ""
-      name: namespace-view-pipelines
-    spec:
-      displayName:
-        en: Pipelines View
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - pipelines
-            - pipelines/runs
-            - pipelines/branches
-            - pipelines/checkScriptCompile
-            - pipelines/consolelog
-            - pipelines/scan
-            - pipelines/sonarstatus
-            - jenkins/labelsData
-          verbs:
-            - get
-            - list
-            - watch
-        - apiGroups:
-            - ""
-          resources:
-            - events
-          verbs:
-            - list
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: RoleTemplate
     metadata:
@@ -2031,28 +1767,7 @@ items:
       displayName:
         en: Cluster Roles View
       rules: []
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/role-template-rules: '{"devops": "create"}'
-      labels:
-        iam.kubesphere.io/category: devops-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/workspace: ""
-      name: workspace-create-devops
-    spec:
-      displayName:
-        en: DevOps Create
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - devops
-            - devopsprojects
-          verbs:
-            - create
-            - watch
+
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: RoleTemplate
     metadata:
@@ -2131,43 +1846,7 @@ items:
             - '*'
           verbs:
             - '*'
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/dependencies: '["workspace-view-devops","workspace-view-members","workspace-create-devops"]'
-        iam.kubesphere.io/role-template-rules: '{"devops": "manage"}'
-      labels:
-        iam.kubesphere.io/category: devops-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/workspace: ""
-      name: workspace-manage-devops
-    spec:
-      displayName:
-        en: DevOps Management
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - pipelines
-            - pipelines/runs
-            - pipelines/pipelineruns
-            - pipelines/branches
-            - pipelines/checkScriptCompile
-            - pipelines/consolelog
-            - pipelines/scan
-            - pipelines/sonarstatus
-            - pipelineruns
-            - pipelineruns/nodedetails
-            - checkCron
-            - credentials
-            - credentials/usage
-            - roles
-            - members
-            - devops
-            - devopsprojects
-          verbs:
-            - '*'
+
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: RoleTemplate
     metadata:
@@ -2447,44 +2126,7 @@ items:
             - get
             - list
             - watch
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
-        iam.kubesphere.io/role-template-rules: '{"devops": "view"}'
-      labels:
-        iam.kubesphere.io/category: devops-management
-        iam.kubesphere.io/role-template: "true"
-        scope.iam.kubesphere.io/workspace: ""
-      name: workspace-view-devops
-    spec:
-      displayName:
-        en: DevOps View
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - pipelines
-            - pipelines/runs
-            - pipelines/pipelineruns
-            - pipelines/branches
-            - pipelines/checkScriptCompile
-            - pipelines/consolelog
-            - pipelines/scan
-            - pipelines/sonarstatus
-            - pipelineruns
-            - pipelineruns/nodedetails
-            - checkCron
-            - credentials
-            - credentials/usage
-            - roles
-            - members
-            - devops
-            - devopsprojects
-          verbs:
-            - get
-            - list
-            - watch
+
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: RoleTemplate
     metadata:
