@@ -114,10 +114,6 @@ func (in *SubscriptionStatus) DeepCopyInto(out *SubscriptionStatus) {
 		in, out := &in.CreatedAt, &out.CreatedAt
 		*out = (*in).DeepCopy()
 	}
-	if in.DeletedAt != nil {
-		in, out := &in.DeletedAt, &out.DeletedAt
-		*out = (*in).DeepCopy()
-	}
 	if in.UpdatedAt != nil {
 		in, out := &in.UpdatedAt, &out.UpdatedAt
 		*out = (*in).DeepCopy()
