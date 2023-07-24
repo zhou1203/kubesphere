@@ -572,6 +572,9 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 	for _, name := range roleTemplateNames {
 		template, err := h.am.GetRoleTemplate(name)
 		if err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
 			api.HandleError(response, request, err)
 			return
 		}

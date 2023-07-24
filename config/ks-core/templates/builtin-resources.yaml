@@ -472,9 +472,6 @@ items:
           - workspace-manage-projects
           - workspace-view-projects
           - workspace-create-projects
-          - workspace-create-devops
-          - workspace-view-devops
-          - workspace-manage-devops
           - workspace-manage-app-templates
           - workspace-view-app-templates
           - workspace-manage-app-repos
@@ -489,7 +486,7 @@ items:
       kind: WorkspaceRole
       metadata:
         annotations:
-          iam.kubesphere.io/aggregation-roles: '["workspace-manage-workspace-settings","workspace-view-workspace-settings","workspace-manage-projects","workspace-view-projects","workspace-create-projects","workspace-create-devops","workspace-view-devops","workspace-manage-devops","workspace-manage-app-templates","workspace-view-app-templates","workspace-manage-app-repos","workspace-view-app-repos","workspace-view-members","workspace-manage-members","workspace-manage-roles","workspace-view-roles","workspace-manage-groups","workspace-view-groups"]'
+          iam.kubesphere.io/aggregation-roles: '["workspace-manage-workspace-settings","workspace-view-workspace-settings","workspace-manage-projects","workspace-view-projects","workspace-create-projects","workspace-manage-app-templates","workspace-view-app-templates","workspace-manage-app-repos","workspace-view-app-repos","workspace-view-members","workspace-manage-members","workspace-manage-roles","workspace-view-roles","workspace-manage-groups","workspace-view-groups"]'
           kubesphere.io/creator: system
         name: admin
       rules:
@@ -535,7 +532,6 @@ items:
       aggregationRoleTemplates:
         templateNames:
           - workspace-create-projects
-          - workspace-create-devops
           - workspace-view-app-templates
           - workspace-manage-app-templates
           - workspace-view-workspace-settings
@@ -543,7 +539,7 @@ items:
       kind: WorkspaceRole
       metadata:
         annotations:
-          iam.kubesphere.io/aggregation-roles: '["workspace-create-projects","workspace-create-devops","workspace-view-app-templates","workspace-manage-app-templates","workspace-view-workspace-settings"]'
+          iam.kubesphere.io/aggregation-roles: '["workspace-create-projects","workspace-view-app-templates","workspace-manage-app-templates","workspace-view-workspace-settings"]'
           kubesphere.io/creator: system
         name: self-provisioner
       rules:
@@ -581,7 +577,6 @@ items:
             scope.iam.kubesphere.io/workspace: ""
         templateNames:
           - workspace-view-projects
-          - workspace-view-devops
           - workspace-view-app-templates
           - workspace-view-app-repos
           - workspace-view-members
@@ -592,7 +587,7 @@ items:
       kind: WorkspaceRole
       metadata:
         annotations:
-          iam.kubesphere.io/aggregation-roles: '["workspace-view-projects","workspace-view-devops","workspace-view-app-templates","workspace-view-app-repos","workspace-view-members","workspace-view-roles","workspace-view-groups","workspace-view-workspace-settings"]'
+          iam.kubesphere.io/aggregation-roles: '["workspace-view-projects","workspace-view-app-templates","workspace-view-app-repos","workspace-view-members","workspace-view-roles","workspace-view-groups","workspace-view-workspace-settings"]'
           kubesphere.io/creator: system
         name: viewer
       rules:
@@ -617,7 +612,6 @@ items:
         scope.iam.kubesphere.io/global: ""
         scope.iam.kubesphere.io/namespace: ""
         scope.iam.kubesphere.io/workspace: ""
-        scope.iam.kubesphere.io/devops: ""
       name: access-control
     spec:
       displayName:
