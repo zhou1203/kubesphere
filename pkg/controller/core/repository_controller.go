@@ -17,17 +17,19 @@ limitations under the License.
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"path"
+	"strings"
 	"time"
 
-	"k8s.io/client-go/util/retry"
-
 	"github.com/go-logr/logr"
-	"gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -35,7 +37,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	"kubesphere.io/utils/helm"
@@ -93,14 +97,8 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 		}
 
 		extension.Labels[corev1alpha1.RepositoryReferenceLabel] = repo.Name
-		extension.Spec = corev1alpha1.ExtensionSpec{
-			ExtensionInfo: &corev1alpha1.ExtensionInfo{
-				DisplayName: extensionVersion.Spec.DisplayName,
-				Description: extensionVersion.Spec.Description,
-				Icon:        extensionVersion.Spec.Icon,
-				Provider:    extensionVersion.Spec.Provider,
-			},
-		}
+		extension.Spec.ExtensionInfo = extensionVersion.Spec.ExtensionInfo
+
 		if err := controllerutil.SetOwnerReference(repo, extension, r.Scheme()); err != nil {
 			return err
 		}
@@ -161,6 +159,12 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 				logger.Info("version metadata is empty", "repo", repo.Name)
 				continue
 			}
+
+			if version.Name != extensionName {
+				logger.Info("invalid extension version found", "want", extensionName, "got", version.Name)
+				continue
+			}
+
 			var chartURL string
 			if len(version.URLs) > 0 {
 				versionURL := version.URLs[0]
@@ -182,7 +186,7 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 			}
 
 			if extensionVersionSpec == nil {
-				klog.FromContext(ctx).V(4).Info("extension version spec not found: %s", chartURL)
+				logger.V(4).Info("extension version spec not found: %s", chartURL)
 				continue
 			}
 
@@ -446,14 +450,42 @@ func (r *RepositoryReconciler) loadExtensionVersionSpecFrom(ctx context.Context,
 		for _, file := range files {
 			if file.Name == extensionFileName {
 				extensionVersionSpec := &corev1alpha1.ExtensionVersionSpec{}
-				if err := yaml.Unmarshal(file.Data, extensionVersionSpec); err != nil {
+				if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(file.Data), 1024).Decode(extensionVersionSpec); err != nil {
 					logger.V(4).Info("invalid extension version spec: %s", string(file.Data))
 					return nil
 				}
 				result = extensionVersionSpec
-				return nil
+				break
 			}
 		}
+
+		if strings.HasPrefix(result.Icon, "http://") ||
+			strings.HasPrefix(result.Icon, "https://") ||
+			strings.HasPrefix(result.Icon, "data:image") {
+			return nil
+		}
+
+		absPath := strings.TrimPrefix(result.Icon, "./")
+		var iconData []byte
+		for _, file := range files {
+			if file.Name == absPath {
+				iconData = file.Data
+				break
+			}
+		}
+
+		if iconData == nil {
+			logger.V(4).Info("invalid extension icon path: %s", absPath)
+			return nil
+		}
+
+		mimeType := mime.TypeByExtension(path.Ext(result.Icon))
+		if mimeType == "" {
+			mimeType = http.DetectContentType(iconData)
+		}
+
+		base64EncodedData := base64.StdEncoding.EncodeToString(iconData)
+		result.Icon = fmt.Sprintf("data:%s;base64,%s", mimeType, base64EncodedData)
 		return nil
 	})
 
