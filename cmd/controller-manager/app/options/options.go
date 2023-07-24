@@ -34,12 +34,14 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"kubesphere.io/kubesphere/pkg/telemetry"
 )
 
 type KubeSphereControllerManagerOptions struct {
 	KubernetesOptions     *k8s.KubernetesOptions
 	AuthenticationOptions *authentication.Options
 	MultiClusterOptions   *multicluster.Options
+	TelemetryOptions      *telemetry.Options
 	LeaderElect           bool
 	LeaderElection        *leaderelection.LeaderElectionConfig
 	WebhookCertDir        string

@@ -35,6 +35,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"kubesphere.io/kubesphere/pkg/telemetry"
 )
 
 // Package config saves configuration for running KubeSphere components
@@ -139,6 +140,9 @@ type Config struct {
 	MultiClusterOptions   *multicluster.Options   `json:"multicluster,omitempty" yaml:"multicluster,omitempty" mapstructure:"multicluster"`
 	AuditingOptions       *auditing.Options       `json:"auditing,omitempty" yaml:"auditing,omitempty" mapstructure:"auditing"`
 	TerminalOptions       *terminal.Options       `json:"terminal,omitempty" yaml:"terminal,omitempty" mapstructure:"terminal"`
+
+	// enable/disable telemetry。
+	TelemetryOptions *telemetry.Options `json:"telemetry,omitempty" yaml:"telemetry,omitempty" mapstructure:"telemetry"`
 }
 
 // New config creates a default non-empty Config
@@ -151,6 +155,7 @@ func New() *Config {
 		MultiClusterOptions:   multicluster.NewOptions(),
 		TerminalOptions:       terminal.NewTerminalOptions(),
 		AuditingOptions:       auditing.NewAuditingOptions(),
+		TelemetryOptions:      telemetry.NewTelemetryOptions(),
 	}
 }
 

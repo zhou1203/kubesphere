@@ -1,0 +1,48 @@
+/*
+Copyright 2023 The KubeSphere Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package store
+
+import (
+	"context"
+
+	"golang.org/x/sync/errgroup"
+)
+
+const cloudID = "cloudId"
+
+// Store Where data be saved
+type Store interface {
+	// Save collector data.
+	Save(ctx context.Context, data map[string]interface{}) error
+}
+
+type multiStore []Store
+
+func NewMultiStore(s ...Store) Store {
+	return multiStore(s)
+}
+
+func (m multiStore) Save(ctx context.Context, data map[string]interface{}) error {
+	var g errgroup.Group
+	for _, s := range m {
+		ms := s
+		g.Go(func() error {
+			return ms.Save(ctx, data)
+		})
+	}
+	return g.Wait()
+}

@@ -34,6 +34,7 @@ import (
 	marketplacev1alpha1 "kubesphere.io/api/marketplace/v1alpha1"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	storagev1alpha1 "kubesphere.io/api/storage/v1alpha1"
+	telemetryv1alpha1 "kubesphere.io/api/telemetry/v1alpha1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 )
@@ -54,6 +55,7 @@ var localSchemeBuilder = runtime.SchemeBuilder{
 	tenantv1alpha2.AddToScheme,
 	gatewayv1alpha2.AddToScheme,
 	marketplacev1alpha1.AddToScheme,
+	telemetryv1alpha1.AddToScheme,
 }
 
 var AddToScheme = localSchemeBuilder.AddToScheme

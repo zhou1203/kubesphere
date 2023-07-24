@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v2"
+	"k8s.io/utils/pointer"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
@@ -33,6 +34,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"kubesphere.io/kubesphere/pkg/telemetry"
 )
 
 func newTestConfig() (*Config, error) {
@@ -78,6 +80,12 @@ func newTestConfig() (*Config, error) {
 		TerminalOptions: &terminal.Options{
 			Image:   "alpine:3.15",
 			Timeout: 600,
+		},
+		TelemetryOptions: &telemetry.Options{
+			Enabled:             pointer.Bool(true),
+			KSCloudURL:          pointer.String("https://clouddev.kubesphere.io"),
+			Period:              pointer.Duration(time.Hour * 24),
+			ClusterInfoLiveTime: pointer.Duration(time.Hour * 24 * 365),
 		},
 	}
 	return conf, nil

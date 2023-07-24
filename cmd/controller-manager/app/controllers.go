@@ -46,6 +46,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/secret"
 	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/storage/capability"
+	"kubesphere.io/kubesphere/pkg/controller/telemetry"
 	"kubesphere.io/kubesphere/pkg/controller/user"
 	"kubesphere.io/kubesphere/pkg/controller/workspace"
 	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
@@ -301,6 +302,9 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 		addController(mgr, "cluster", clusterReconciler)
 	}
 
+	if *cmOptions.TelemetryOptions.Enabled {
+		addControllerWithSetup(mgr, "telemetry", &telemetry.Reconciler{Options: cmOptions.TelemetryOptions})
+	}
 	return nil
 }
 
