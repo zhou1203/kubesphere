@@ -1046,7 +1046,7 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, p
 		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: plan.Spec.Extension.Name}),
 	}
 	if extensionVersion.Spec.InstallationMode == corev1alpha1.InstallationMulticluster {
-		options = append(options, helm.SetOverrides([]string{"tags.extension=true", "extension.enabled=true", "tags.agent=false", "agent.enabled=false"}))
+		options = append(options, helm.SetOverrides([]string{"tags.extension=true", "tags.agent=false"}))
 	}
 
 	jobName, err := executor.Upgrade(ctx, releaseName, charData, []byte(plan.Spec.Config), options...)
@@ -1110,7 +1110,7 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(ctx context.Context
 		helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)),
 		helm.SetInstall(true),
 		helm.SetKubeAsUser(fmt.Sprintf("system:serviceaccount:%s:default", targetNamespace)),
-		helm.SetOverrides([]string{"tags.agent=true", "agent.enabled=true", "tags.extension=false", "extension.enabled=false"}),
+		helm.SetOverrides([]string{"tags.agent=true", "tags.extension=false"}),
 		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: plan.Spec.Extension.Name}),
 	}
 

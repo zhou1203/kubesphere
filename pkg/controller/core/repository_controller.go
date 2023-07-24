@@ -18,13 +18,17 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
-	"reflect"
 	"time"
 
+	"k8s.io/client-go/util/retry"
+
 	"github.com/go-logr/logr"
+	"gopkg.in/yaml.v3"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,7 +36,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	"kubesphere.io/utils/helm"
@@ -50,7 +53,10 @@ const (
 	minimumRegistryPollInterval = 15 * time.Minute
 	defaultRequeueInterval      = 15 * time.Second
 	generateNameFormat          = "repository-%s"
+	extensionFileName           = "extension.yaml"
 )
+
+var extensionRepoConflict = fmt.Errorf("extension repo mismatch")
 
 var _ reconcile.Reconciler = &RepositoryReconciler{}
 
@@ -72,98 +78,66 @@ func (r *RepositoryReconciler) reconcileDelete(ctx context.Context, repo *corev1
 
 // createOrUpdateExtension create a new extension if the extension does not exist.
 // Or it will update info of the extension.
-func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo *corev1alpha1.Repository, extensionName string, latestExtensionVersion *corev1alpha1.ExtensionVersion) (*corev1alpha1.Extension, error) {
+func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo *corev1alpha1.Repository, extensionName string, extensionVersion *corev1alpha1.ExtensionVersion) (*corev1alpha1.Extension, error) {
 	logger := klog.FromContext(ctx)
-	extension := &corev1alpha1.Extension{}
-	if err := r.Get(ctx, types.NamespacedName{Name: extensionName}, extension); err != nil {
-		if apierrors.IsNotFound(err) {
-			extension = &corev1alpha1.Extension{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: extensionName,
-					Labels: map[string]string{
-						corev1alpha1.RepositoryReferenceLabel: repo.Name,
-					},
-				},
-			}
-			extension.Spec = corev1alpha1.ExtensionSpec{
-				ExtensionInfo: &corev1alpha1.ExtensionInfo{
-					DisplayName: latestExtensionVersion.Spec.DisplayName,
-					Description: latestExtensionVersion.Spec.Description,
-					Icon:        latestExtensionVersion.Spec.Icon,
-					Provider:    latestExtensionVersion.Spec.Provider,
-				},
-			}
-			if err := controllerutil.SetOwnerReference(repo, extension, r.Scheme()); err != nil {
-				return nil, err
-			}
-			logger.V(4).Info("create extension", "repo", repo.Name, "extension", extensionName)
-			if err := r.Create(ctx, extension, &client.CreateOptions{}); err != nil {
-				logger.Error(err, "failed to create extension", "repo", repo.Name, "extension", extensionName)
-				return nil, err
-			}
-		} else {
-			return nil, err
+	extension := &corev1alpha1.Extension{ObjectMeta: metav1.ObjectMeta{Name: extensionName}}
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, extension, func() error {
+		originRepoName := extension.Labels[corev1alpha1.RepositoryReferenceLabel]
+		if originRepoName != "" && originRepoName != repo.Name {
+			logger.Error(extensionRepoConflict, "extension", extensionName, "want", originRepoName, "got", repo.Name)
+			return extensionRepoConflict
 		}
-	}
 
-	// conflict extension
-	if extension.ObjectMeta.Labels[corev1alpha1.RepositoryReferenceLabel] != repo.Name {
-		logger.Info("conflict extension found", "repo", extension.ObjectMeta.Labels[corev1alpha1.RepositoryReferenceLabel], "extension", extensionName)
-		return nil, nil
-	}
-
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		if err := r.Get(ctx, types.NamespacedName{Name: extensionName}, extension); err != nil {
-			return err
+		if extension.Labels == nil {
+			extension.Labels = make(map[string]string)
 		}
-		extension = extension.DeepCopy()
+
+		extension.Labels[corev1alpha1.RepositoryReferenceLabel] = repo.Name
 		extension.Spec = corev1alpha1.ExtensionSpec{
 			ExtensionInfo: &corev1alpha1.ExtensionInfo{
-				DisplayName: latestExtensionVersion.Spec.DisplayName,
-				Description: latestExtensionVersion.Spec.Description,
-				Icon:        latestExtensionVersion.Spec.Icon,
-				Provider:    latestExtensionVersion.Spec.Provider,
+				DisplayName: extensionVersion.Spec.DisplayName,
+				Description: extensionVersion.Spec.Description,
+				Icon:        extensionVersion.Spec.Icon,
+				Provider:    extensionVersion.Spec.Provider,
 			},
 		}
-		return r.Update(ctx, extension)
+		if err := controllerutil.SetOwnerReference(repo, extension, r.Scheme()); err != nil {
+			return err
+		}
+		return nil
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update extension: %s", err)
 	}
 
+	logger.V(4).Info("extension successfully updated", "operation", op, "name", extension.Name)
 	return extension, nil
 }
 
 func (r *RepositoryReconciler) createOrUpdateExtensionVersion(ctx context.Context, repo *corev1alpha1.Repository, extension *corev1alpha1.Extension, extensionVersion *corev1alpha1.ExtensionVersion) error {
 	logger := klog.FromContext(ctx)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		version := &corev1alpha1.ExtensionVersion{}
-		if err := r.Get(ctx, types.NamespacedName{Name: extensionVersion.Name}, version); err != nil {
-			if apierrors.IsNotFound(err) {
-				if err := controllerutil.SetOwnerReference(extension, extensionVersion, r.Scheme()); err != nil {
-					return err
-				}
-				logger.V(4).Info("create extension version", "repo", repo.Name, "version", extensionVersion.Name)
-				if err := r.Create(ctx, extensionVersion, &client.CreateOptions{}); err != nil {
-					logger.Error(err, "failed to create extension version", "repo", repo.Name, "version", extensionVersion.Name)
-					return err
-				}
-				return nil
-			} else {
-				return err
-			}
+	version := &corev1alpha1.ExtensionVersion{ObjectMeta: metav1.ObjectMeta{Name: extensionVersion.Name}}
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, version, func() error {
+		if version.Labels == nil {
+			version.Labels = make(map[string]string)
 		}
-		if !reflect.DeepEqual(version.Spec, extensionVersion.Spec) {
-			version.Spec = extensionVersion.Spec
-			logger.V(4).Info("update extension version", "repo", repo.Name, "version", extensionVersion.Name)
-			if err := r.Update(ctx, version); err != nil {
-				logger.Error(err, "failed to update extension version", "repo", repo.Name, "version", extensionVersion.Name)
-				return err
-			}
+		for k, v := range extensionVersion.Labels {
+			version.Labels[k] = v
+		}
+		version.Spec = extensionVersion.Spec
+		if err := controllerutil.SetOwnerReference(extension, extensionVersion, r.Scheme()); err != nil {
+			return err
 		}
 		return nil
 	})
+
+	if err != nil {
+		return fmt.Errorf("failed to update extension version: %s", err)
+	}
+
+	logger.V(4).Info("extension version successfully updated", "operation", op, "name", extensionVersion.Name)
+	return nil
 }
 
 func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *corev1alpha1.Repository, repoURL string) error {
@@ -187,18 +161,6 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 				logger.Info("version metadata is empty", "repo", repo.Name)
 				continue
 			}
-
-			var provider map[corev1alpha1.LanguageCode]*corev1alpha1.Provider
-			if len(version.Maintainers) > 0 {
-				maintainer := version.Maintainers[0]
-				provider = map[corev1alpha1.LanguageCode]*corev1alpha1.Provider{
-					corev1alpha1.DefaultLanguageCode: {
-						Name:  maintainer.Name,
-						URL:   maintainer.URL,
-						Email: maintainer.Email,
-					},
-				}
-			}
 			var chartURL string
 			if len(version.URLs) > 0 {
 				versionURL := version.URLs[0]
@@ -214,65 +176,25 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 				}
 			}
 
-			var description corev1alpha1.Locales
-			if version.Description != "" {
-				if err := json.Unmarshal([]byte(version.Description), &description); err != nil {
-					description = corev1alpha1.Locales{
-						corev1alpha1.DefaultLanguageCode: corev1alpha1.LocaleString(version.Description),
-					}
-				}
+			extensionVersionSpec, err := r.loadExtensionVersionSpecFrom(ctx, chartURL, repo)
+			if err != nil {
+				return fmt.Errorf("failed to load extension version spec: %s", err)
 			}
 
-			var displayName corev1alpha1.Locales
-			if displayNameAnnotation := version.Annotations[corev1alpha1.DisplayNameAnnotation]; displayNameAnnotation != "" {
-				if err := json.Unmarshal([]byte(displayNameAnnotation), &displayName); err != nil {
-					displayName = corev1alpha1.Locales{
-						corev1alpha1.DefaultLanguageCode: corev1alpha1.LocaleString(displayNameAnnotation),
-					}
-				}
+			if extensionVersionSpec == nil {
+				klog.FromContext(ctx).V(4).Info("extension version spec not found: %s", chartURL)
+				continue
 			}
 
-			var installationMode corev1alpha1.InstallationMode
-			if version.Annotations[corev1alpha1.InstallationModeAnnotation] == string(corev1alpha1.InstallationMulticluster) {
-				installationMode = corev1alpha1.InstallationMulticluster
-			} else {
-				installationMode = corev1alpha1.InstallationModeHostOnly
-			}
-
-			var externalDependencies []corev1alpha1.ExternalDependency
-			if externalDependenciesAnnotation := version.Annotations[corev1alpha1.ExternalDependenciesAnnotation]; externalDependenciesAnnotation != "" {
-				if err := json.Unmarshal([]byte(externalDependenciesAnnotation), &externalDependencies); err != nil {
-					logger.V(4).Info("invalid external dependencies annotation", "annotation", externalDependenciesAnnotation)
-				}
-			}
-
-			ksVersion := version.Annotations[corev1alpha1.KSVersionAnnotation]
 			extensionVersions = append(extensionVersions, corev1alpha1.ExtensionVersion{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: fmt.Sprintf("%s-%s", version.Name, version.Version),
+					Name: fmt.Sprintf("%s-%s", extensionName, extensionVersionSpec.Version),
 					Labels: map[string]string{
 						corev1alpha1.RepositoryReferenceLabel: repo.Name,
 						corev1alpha1.ExtensionReferenceLabel:  extensionName,
 					},
 				},
-				Spec: corev1alpha1.ExtensionVersionSpec{
-					Keywords:         version.Keywords,
-					Repository:       repo.Name,
-					Version:          version.Version,
-					KubeVersion:      version.KubeVersion,
-					KSVersion:        ksVersion,
-					Home:             version.Home,
-					Sources:          version.Sources,
-					InstallationMode: installationMode,
-					ExtensionInfo: &corev1alpha1.ExtensionInfo{
-						DisplayName: displayName,
-						Description: description,
-						Icon:        version.Icon,
-						Provider:    provider,
-					},
-					ChartURL:             chartURL,
-					ExternalDependencies: externalDependencies,
-				},
+				Spec: *extensionVersionSpec,
 			})
 		}
 
@@ -280,17 +202,18 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 		if latestExtensionVersion == nil {
 			continue
 		}
+
 		extension, err := r.createOrUpdateExtension(ctx, repo, extensionName, latestExtensionVersion)
 		if err != nil {
-			return err
+			if err == extensionRepoConflict {
+				continue
+			}
+			return fmt.Errorf("failed to create or update extension: %s", err)
 		}
-		// ignore conflict
-		if extension == nil {
-			continue
-		}
+
 		for _, extensionVersion := range extensionVersions {
 			if err := r.createOrUpdateExtensionVersion(ctx, repo, extension, &extensionVersion); err != nil {
-				return err
+				return fmt.Errorf("failed to create or update extension version: %s", err)
 			}
 		}
 	}
@@ -339,7 +262,6 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 			return ctrl.Result{Requeue: true, RequeueAfter: defaultRequeueInterval}, nil
 		}
 
-		// TODO support custom port
 		// ready to sync
 		repoURL = fmt.Sprintf("http://%s.%s.svc", deployment.Name, constants.KubeSphereNamespace)
 	}
@@ -476,4 +398,68 @@ func (r *RepositoryReconciler) deployRepository(ctx context.Context, repo *corev
 	}
 
 	return nil
+}
+
+type retriable struct {
+	err error
+}
+
+func (r retriable) Error() string {
+	return r.err.Error()
+}
+
+func (r *RepositoryReconciler) loadExtensionVersionSpecFrom(ctx context.Context, chartURL string, repo *corev1alpha1.Repository) (*corev1alpha1.ExtensionVersionSpec, error) {
+	logger := klog.FromContext(ctx)
+	var result *corev1alpha1.ExtensionVersionSpec
+	err := retry.OnError(retry.DefaultRetry, func(err error) bool {
+		_, r := err.(retriable)
+		return r
+	}, func() error {
+		req, err := http.NewRequest(http.MethodGet, chartURL, nil)
+		if err != nil {
+			return err
+		}
+
+		if repo.Spec.BasicAuth != nil {
+			req.SetBasicAuth(repo.Spec.BasicAuth.Username, repo.Spec.BasicAuth.Password)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return retriable{err: err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			data, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf(string(data))
+		}
+
+		files, err := loader.LoadArchiveFiles(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		for _, file := range files {
+			if file.Name == extensionFileName {
+				extensionVersionSpec := &corev1alpha1.ExtensionVersionSpec{}
+				if err := yaml.Unmarshal(file.Data, extensionVersionSpec); err != nil {
+					logger.V(4).Info("invalid extension version spec: %s", string(file.Data))
+					return nil
+				}
+				result = extensionVersionSpec
+				return nil
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch chart data from %s: %s", chartURL, err)
+	}
+
+	return result, nil
 }
