@@ -190,6 +190,9 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 				continue
 			}
 
+			extensionVersionSpec.Repository = repo.Name
+			extensionVersionSpec.ChartDataRef = nil
+			extensionVersionSpec.ChartURL = chartURL
 			extensionVersions = append(extensionVersions, corev1alpha1.ExtensionVersion{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: fmt.Sprintf("%s-%s", extensionName, extensionVersionSpec.Version),
