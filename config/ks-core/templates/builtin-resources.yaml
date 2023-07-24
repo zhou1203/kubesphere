@@ -142,12 +142,6 @@ items:
       name: authenticated
     rules:
       - apiGroups:
-          - openpitrix.io
-        resources:
-          - clusters/namespaces
-        verbs:
-          - '*'
-      - apiGroups:
           - config.kubesphere.io
         resources:
           - configs
@@ -185,103 +179,12 @@ items:
           - get
           - list
       - apiGroups:
-          - openpitrix.io
-        resources:
-          - apps
-          - apps/audits
-          - categories
-          - attachments
-          - applications
-        verbs:
-          - get
-          - list
-      - apiGroups:
-          - openpitrix.io
-        resources:
-          - apps
-          - apps/versions
-          - repos
-        verbs:
-          - '*'
-      - apiGroups:
-          - monitoring.kubesphere.io
-          - metering.kubesphere.io
-          - monitoring.coreos.com
-        resources:
-          - cluster
-        verbs:
-          - list
-      - apiGroups:
-          - devops.kubesphere.io
-        resources:
-          - s2ibuildertemplates
-          - search
-          - crumbissuer
-        verbs:
-          - list
-      - apiGroups:
-          - devops.kubesphere.io
-        resources:
-          - ci
-        verbs:
-          - get
-      - apiGroups:
           - resources.kubesphere.io
         resources:
           - namespaces
           - services
         verbs:
           - list
-      - apiGroups:
-          - devops.kubesphere.io
-        resources:
-          - tojenkinsfile
-          - tojson
-          - scms/verify
-          - scms/servers
-          - scms/organizations
-          - webhook
-        verbs:
-          - create
-          - list
-          - get
-      - apiGroups:
-          - devops.kubesphere.io
-        resources:
-          - clustertemplates
-        verbs:
-          - list
-          - get
-      - apiGroups:
-          - devops.kubesphere.io
-        resources:
-          - clustertemplates/render
-        verbs:
-          - create
-      - apiGroups:
-          - gitops.kubesphere.io
-        resources:
-          - clusters
-        verbs:
-          - list
-      - apiGroups:
-          - alerting.kubesphere.io
-        resources:
-          - comment
-          - metric
-          - resource_type
-        verbs:
-          - list
-      - apiGroups:
-          - notification.kubesphere.io
-          - alerting.kubesphere.io
-        resources:
-          - addresses
-          - addresslists
-          - comment
-        verbs:
-          - list
-          - create
       - apiGroups:
           - tenant.kubesphere.io
         resources:
@@ -372,17 +275,14 @@ items:
           scope.iam.kubesphere.io/cluster: ""
       templateNames:
         - cluster-manage-project-resources
-        - cluster-view-alerting-policies
         - cluster-view-volumes
         - cluster-manage-volume-snapshots
         - cluster-view-storageclasses
-        - cluster-view-cluster-monitoring
         - cluster-manage-volume-snapshot-classes
         - cluster-manage-roles
         - cluster-view-project-resources
         - cluster-manage-members
         - cluster-manage-nodes
-        - cluster-manage-cluster-monitoring
         - cluster-view-nodes
         - cluster-manage-network-resources
         - role-template-view-roles
@@ -391,8 +291,6 @@ items:
         - cluster-view-volume-snapshots
         - cluster-view-volume-snapshot-classes
         - cluster-view-crds
-        - cluster-view-alerting-messages
-        - cluster-manage-alerting-policies
         - cluster-view-members
         - cluster-manage-volumes
         - cluster-manage-storageclasses
@@ -497,8 +395,7 @@ items:
           "role-template-view-app-workloads","role-template-manage-app-workloads",
           "role-template-view-volumes","role-template-manage-volumes", "role-template-view-snapshots","role-template-manage-snapshots",
           "role-template-view-secrets","role-template-manage-secrets", "role-template-view-serviceaccount","role-template-manage-serviceaccount",
-          "role-template-view-configmaps","role-template-manage-configmaps", "role-template-view-alerting-policies","role-template-manage-alerting-policies",
-          "role-template-view-alerting-messages", "role-template-view-custom-monitoring","role-template-manage-custom-monitoring"]'
+          "role-template-view-configmaps","role-template-manage-configmaps"]'
           kubesphere.io/creator: system
         name: operator
       rules:
@@ -515,23 +412,14 @@ items:
             - apps
             - extensions
             - batch
-            - logging.kubesphere.io
-            - monitoring.kubesphere.io
-            - monitoring.coreos.com
-            - metering.kubesphere.io
-            - notification.kubesphere.io
             - autoscaling
-            - alerting.kubesphere.io
-            - openpitrix.io
             - app.k8s.io
-            - servicemesh.kubesphere.io
             - operations.kubesphere.io
             - resources.kubesphere.io
             - config.istio.io
             - events.k8s.io
             - events.kubesphere.io
             - snapshot.storage.k8s.io
-            - monitoring.coreos.com
             - networking.k8s.io
           resources:
             - '*'
@@ -554,9 +442,8 @@ items:
       metadata:
         annotations:
           iam.kubesphere.io/aggregation-roles: '["role-template-view-members","role-template-view-roles",
-          "role-template-view-app-workloads","role-template-view-custom-monitoring",
-          "role-template-view-volumes","role-template-view-snapshots", "role-template-view-secrets","role-template-view-configmaps","role-template-view-serviceaccount",
-          "role-template-view-alerting-policies","role-template-view-alerting-messages"]'
+          "role-template-view-app-workloads","role-template-view-volumes","role-template-view-snapshots",
+          "role-template-view-secrets","role-template-view-configmaps","role-template-view-serviceaccount"]'
           kubesphere.io/creator: system
         name: viewer
       rules:
@@ -638,14 +525,6 @@ items:
             - get
             - list
             - watch
-        - apiGroups:
-            - monitoring.kubesphere.io
-            - metering.kubesphere.io
-            - monitoring.coreos.com
-          resources:
-            - namespaces
-          verbs:
-            - list
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: RoleBase
     metadata:
@@ -684,28 +563,10 @@ items:
             - '*'
           resources:
             - namespaces
-            - federatednamespaces
-            - devops
-            - devopsprojects
           verbs:
             - create
             - watch
-        - apiGroups:
-            - monitoring.kubesphere.io
-            - metering.kubesphere.io
-            - monitoring.coreos.com
-          resources:
-            - namespaces
-            - workloads
-          verbs:
-            - get
-            - list
-        - apiGroups:
-            - openpitrix.io
-          resources:
-            - '*'
-          verbs:
-            - '*'
+
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: RoleBase
     metadata:
@@ -798,15 +659,6 @@ items:
     spec:
       displayName:
         en: Cluster Settings
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: Category
-    metadata:
-      labels:
-        scope.iam.kubesphere.io/cluster: ""
-      name: monitoring-and-alerting
-    spec:
-      displayName:
-        en: Monitoring & Alerting
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: Category
     metadata:
