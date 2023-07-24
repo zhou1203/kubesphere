@@ -207,7 +207,7 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 		}
 		klog.FromContext(ctx).V(4).Info("workspace successfully synced", "operation", op)
 	} else {
-		orphan := metav1.DeletePropagationOrphan
+		orphan := metav1.DeletePropagationBackground
 		err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}},
 			&client.DeleteOptions{PropagationPolicy: &orphan})
 		return client.IgnoreNotFound(err)
