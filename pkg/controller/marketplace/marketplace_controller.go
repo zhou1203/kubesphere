@@ -266,10 +266,6 @@ func (r *Controller) saveSubscriptionCR(ctx context.Context, subscription market
 		subCR.SubscriptionStatus.UserID = subscription.UserID
 		subCR.SubscriptionStatus.SubscriptionID = subscription.SubscriptionID
 		subCR.SubscriptionStatus.UserSubscriptionID = subscription.UserSubscriptionID
-		if subscription.DeletedAt != "" {
-			subCR.SubscriptionStatus.DeletedAt = parseTime(subscription.DeletedAt)
-		}
-
 		return nil
 	}
 	operationResult, err := controllerutil.CreateOrUpdate(ctx, r.Client, subCR, mutateFn)

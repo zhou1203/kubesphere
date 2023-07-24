@@ -22,7 +22,6 @@ type SubscriptionStatus struct {
 	ExpiredAt          *metav1.Time `json:"expiredAt"`
 	StartedAt          *metav1.Time `json:"startedAt"`
 	CreatedAt          *metav1.Time `json:"createdAt"`
-	DeletedAt          *metav1.Time `json:"deletedAt"`
 	ExtensionID        string       `json:"extensionID"`
 	ExtraInfo          string       `json:"extraInfo"`
 	OrderID            string       `json:"orderID"`
