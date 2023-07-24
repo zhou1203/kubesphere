@@ -84,8 +84,10 @@ func (h ksCloudStore) Save(ctx context.Context, data map[string]interface{}) err
 	if options, err := marketplace.LoadOptions(ctx, h.client); err != nil {
 		klog.Warningf("connot get cloudID %s", err)
 		data[cloudID] = ""
-	} else {
+	} else if options.Account != nil {
 		data[cloudID] = options.Account.UserID
+	} else {
+		data[cloudID] = ""
 	}
 
 	// convert req data

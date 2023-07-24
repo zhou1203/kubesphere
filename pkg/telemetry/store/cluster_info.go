@@ -42,9 +42,12 @@ func (c *clusterInfoStore) Save(ctx context.Context, data map[string]interface{}
 	if options, err := marketplace.LoadOptions(ctx, c.client); err != nil {
 		klog.Warningf("connot get cloudID %s", err)
 		data[cloudID] = ""
-	} else {
+	} else if options.Account != nil {
 		data[cloudID] = options.Account.UserID
+	} else {
+		data[cloudID] = ""
 	}
+
 	status := &telemetryv1alpha1.ClusterInfoStatus{}
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(data, status); err != nil {
 		return err
