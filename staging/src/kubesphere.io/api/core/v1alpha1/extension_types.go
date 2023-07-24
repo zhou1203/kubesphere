@@ -48,16 +48,16 @@ type ExtensionInfo struct {
 
 // ExtensionSpec only contains basic extension information copied from the latest ExtensionVersion.
 type ExtensionSpec struct {
-	*ExtensionInfo `json:",inline"`
+	ExtensionInfo `json:",inline"`
 }
 
 // ExtensionVersionSpec contains the details of a specific version extension.
 type ExtensionVersionSpec struct {
-	*ExtensionInfo `json:",inline"`
-	Version        string   `json:"version,omitempty"`
-	Keywords       []string `json:"keywords,omitempty"`
-	Sources        []string `json:"sources,omitempty"`
-	Repository     string   `json:"repository,omitempty"`
+	ExtensionInfo `json:",inline"`
+	Version       string   `json:"version,omitempty"`
+	Keywords      []string `json:"keywords,omitempty"`
+	Sources       []string `json:"sources,omitempty"`
+	Repository    string   `json:"repository,omitempty"`
 	// KubeVersion is a SemVer constraint specifying the version of Kubernetes required.
 	// eg: >= 1.2.0, see https://github.com/Masterminds/semver for more info.
 	KubeVersion string `json:"kubeVersion,omitempty"`
