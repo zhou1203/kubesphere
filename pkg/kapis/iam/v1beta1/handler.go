@@ -176,7 +176,7 @@ func (h *iamHandler) CreateUser(req *restful.Request, resp *restful.Response) {
 	}
 
 	if globalRole != "" {
-		if err := h.am.CreateGlobalRoleBinding(user.Name, globalRole); err != nil {
+		if err := h.am.CreateOrUpdateGlobalRoleBinding(user.Name, globalRole); err != nil {
 			api.HandleError(resp, req, err)
 			return
 		}
@@ -257,7 +257,7 @@ func (h *iamHandler) updateGlobalRoleBinding(operator authuser.Info, user *iamv1
 		return errors.NewForbidden(iamv1beta1.Resource(iamv1beta1.ResourcesSingularUser),
 			user.Name, fmt.Errorf("update global role binding is not allowed"))
 	}
-	if err := h.am.CreateGlobalRoleBinding(user.Name, globalRole); err != nil {
+	if err := h.am.CreateOrUpdateGlobalRoleBinding(user.Name, globalRole); err != nil {
 		return err
 	}
 	return nil
@@ -430,7 +430,7 @@ func (h *iamHandler) CreateClusterMembers(request *restful.Request, response *re
 	}
 
 	for _, member := range members {
-		err := h.am.CreateClusterRoleBinding(member.Username, member.RoleRef)
+		err := h.am.CreateOrUpdateClusterRoleBinding(member.Username, member.RoleRef)
 		if err != nil {
 			api.HandleError(response, request, err)
 			return
@@ -464,7 +464,7 @@ func (h *iamHandler) CreateNamespaceMembers(request *restful.Request, response *
 	}
 
 	for _, member := range members {
-		err := h.am.CreateNamespaceRoleBinding(member.Username, namespace, member.RoleRef)
+		err := h.am.CreateOrUpdateNamespaceRoleBinding(member.Username, namespace, member.RoleRef)
 		if err != nil {
 			api.HandleError(response, request, err)
 			return
@@ -658,7 +658,7 @@ func (h *iamHandler) CreateWorkspaceMembers(request *restful.Request, response *
 	}
 
 	for _, member := range members {
-		err := h.am.CreateUserWorkspaceRoleBinding(member.Username, workspace, member.RoleRef)
+		err := h.am.CreateOrUpdateUserWorkspaceRoleBinding(member.Username, workspace, member.RoleRef)
 		if err != nil {
 			api.HandleError(response, request, err)
 			return
@@ -679,4 +679,115 @@ func (h *iamHandler) RemoveWorkspaceMember(request *restful.Request, response *r
 	}
 
 	response.WriteEntity(servererr.None)
+}
+
+func (h *iamHandler) UpdateWorkspaceMember(request *restful.Request, response *restful.Response) {
+	workspace := request.PathParameter("workspace")
+	memberName := request.PathParameter("workspacemember")
+
+	var member Member
+	err := request.ReadEntity(&member)
+	if err != nil {
+		api.HandleBadRequest(response, request, err)
+		return
+	}
+
+	if memberName != member.Username {
+		api.HandleBadRequest(response, request, NewErrIncorrectUsername(memberName))
+		return
+	}
+
+	bindings, err := h.am.ListWorkspaceRoleBindings(memberName, "", nil, workspace)
+	if err != nil {
+		api.HandleInternalError(response, request, err)
+		return
+	}
+	if len(bindings) == 0 {
+		api.HandleBadRequest(response, request, NewErrMemberNotExist(member.Username))
+		return
+	}
+
+	err = h.am.CreateOrUpdateUserWorkspaceRoleBinding(member.Username, workspace, member.RoleRef)
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+	response.WriteEntity(servererr.None)
+}
+
+func (h *iamHandler) UpdateClusterMember(request *restful.Request, response *restful.Response) {
+	memberName := request.PathParameter("clustermember")
+
+	var member Member
+	err := request.ReadEntity(&member)
+	if err != nil {
+		api.HandleBadRequest(response, request, err)
+		return
+	}
+
+	if memberName != member.Username {
+		api.HandleBadRequest(response, request, NewErrIncorrectUsername(memberName))
+		return
+	}
+
+	bindings, err := h.am.ListClusterRoleBindings(memberName, "")
+	if err != nil {
+		api.HandleInternalError(response, request, err)
+		return
+	}
+	if len(bindings) == 0 {
+		api.HandleBadRequest(response, request, NewErrMemberNotExist(member.Username))
+		return
+	}
+
+	err = h.am.CreateOrUpdateClusterRoleBinding(member.Username, member.RoleRef)
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+
+	response.WriteEntity(servererr.None)
+}
+
+func (h *iamHandler) UpdateNamespaceMember(request *restful.Request, response *restful.Response) {
+	namespace := request.PathParameter("namespace")
+	memberName := request.PathParameter("namespacemember")
+
+	var member Member
+	err := request.ReadEntity(&member)
+	if err != nil {
+		api.HandleBadRequest(response, request, err)
+		return
+	}
+
+	if memberName != member.Username {
+		api.HandleBadRequest(response, request, NewErrIncorrectUsername(memberName))
+		return
+	}
+
+	bindings, err := h.am.ListRoleBindings(member.Username, "", nil, namespace)
+	if err != nil {
+		api.HandleInternalError(response, request, err)
+		return
+	}
+	if len(bindings) == 0 {
+		api.HandleBadRequest(response, request, NewErrMemberNotExist(member.Username))
+		return
+	}
+
+	err = h.am.CreateOrUpdateNamespaceRoleBinding(member.Username, namespace, member.RoleRef)
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+
+	response.WriteEntity(servererr.None)
+}
+
+func NewErrMemberNotExist(username string) error {
+	return fmt.Errorf("member %s not exist", username)
+}
+
+func NewErrIncorrectUsername(username string) error {
+	return fmt.Errorf("incorrect username %s, the username must equal to the member", username)
 }

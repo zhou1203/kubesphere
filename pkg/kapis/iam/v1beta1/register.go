@@ -77,6 +77,12 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Doc("Delete a member from current cluster.").
 		Param(ws.PathParameter("clustermember", "cluster member's username")).
 		Returns(http.StatusOK, api.StatusOK, errors.None))
+	ws.Route(ws.PUT("/clustermembers/{clustermember}").
+		To(handler.UpdateClusterMember).
+		Doc("Update member from the cluster").
+		Param(ws.PathParameter("clustermember", "the member name from cluster")).
+		Reads(Member{}).
+		Returns(http.StatusOK, api.StatusOK, errors.None))
 
 	ws.Route(ws.GET("/workspaces/{workspace}/workspacemembers").
 		To(handler.ListWorkspaceMembers).
@@ -84,6 +90,13 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Doc("List all members in the specified workspace.").
 		Param(ws.PathParameter("workspace", "workspace name")).
 		Returns(http.StatusOK, api.StatusOK, api.ListResult{Items: []runtime.Object{&iamv1beta1.User{}}}))
+	ws.Route(ws.PUT("/workspaces/{workspace}/workspacemembers/{workspacemember}").
+		To(handler.UpdateWorkspaceMember).
+		Doc("Update member from the workspace").
+		Param(ws.PathParameter("workspace", "workspace name")).
+		Param(ws.PathParameter("workspacemember", "the member from workspace")).
+		Reads(Member{}).
+		Returns(http.StatusOK, api.StatusOK, errors.None))
 	ws.Route(ws.POST("/workspaces/{workspace}/workspacemembers").
 		To(handler.CreateWorkspaceMembers).
 		Doc("Add members to current cluster in bulk.").
@@ -114,6 +127,13 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Doc("Delete a member from the namespace.").
 		Param(ws.PathParameter("namespace", "namespace")).
 		Param(ws.PathParameter("member", "namespace member's username")).
+		Returns(http.StatusOK, api.StatusOK, errors.None))
+	ws.Route(ws.PUT("/namespaces/{namespace}/namespacemembers/{namespacemember}").
+		To(handler.UpdateNamespaceMember).
+		Param(ws.PathParameter("namespace", "namespace")).
+		Param(ws.PathParameter("namespacemember", "the member from namespace")).
+		Doc("Update member from the namespace").
+		Reads(Member{}).
 		Returns(http.StatusOK, api.StatusOK, errors.None))
 
 	ws.Route(ws.GET("/users/{username}/roletemplates").

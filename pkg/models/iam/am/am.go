@@ -69,10 +69,10 @@ type AccessManagementInterface interface {
 
 	GetRoleTemplate(name string) (*iamv1beta1.RoleTemplate, error)
 
-	CreateGlobalRoleBinding(username string, globalRole string) error
-	CreateUserWorkspaceRoleBinding(username string, workspace string, role string) error
-	CreateNamespaceRoleBinding(username string, namespace string, role string) error
-	CreateClusterRoleBinding(username string, role string) error
+	CreateOrUpdateGlobalRoleBinding(username string, globalRole string) error
+	CreateOrUpdateUserWorkspaceRoleBinding(username string, workspace string, role string) error
+	CreateOrUpdateNamespaceRoleBinding(username string, namespace string, role string) error
+	CreateOrUpdateClusterRoleBinding(username string, role string) error
 
 	RemoveGlobalRoleBinding(username string) error
 	RemoveUserFromWorkspace(username string, workspace string) error
@@ -476,7 +476,7 @@ func (am *amOperator) ListGroupRoleBindings(workspace string, query *query.Query
 	return result, nil
 }
 
-func (am *amOperator) CreateGlobalRoleBinding(username string, role string) error {
+func (am *amOperator) CreateOrUpdateGlobalRoleBinding(username string, role string) error {
 	if _, err := am.GetGlobalRole(role); err != nil {
 		return err
 	}
@@ -521,7 +521,7 @@ func (am *amOperator) CreateGlobalRoleBinding(username string, role string) erro
 	return am.resourceManager.Create(context.Background(), &globalRoleBinding)
 }
 
-func (am *amOperator) CreateUserWorkspaceRoleBinding(username string, workspace string, role string) error {
+func (am *amOperator) CreateOrUpdateUserWorkspaceRoleBinding(username string, workspace string, role string) error {
 	if _, err := am.GetWorkspaceRole(workspace, role); err != nil {
 		return err
 	}
@@ -567,7 +567,7 @@ func (am *amOperator) CreateUserWorkspaceRoleBinding(username string, workspace 
 	return am.resourceManager.Create(context.Background(), &roleBinding)
 }
 
-func (am *amOperator) CreateNamespaceRoleBinding(username string, namespace string, role string) error {
+func (am *amOperator) CreateOrUpdateNamespaceRoleBinding(username string, namespace string, role string) error {
 	if _, err := am.GetNamespaceRole(namespace, role); err != nil {
 		return err
 	}
@@ -618,7 +618,7 @@ func (am *amOperator) CreateNamespaceRoleBinding(username string, namespace stri
 	return nil
 }
 
-func (am *amOperator) CreateClusterRoleBinding(username string, role string) error {
+func (am *amOperator) CreateOrUpdateClusterRoleBinding(username string, role string) error {
 	if _, err := am.GetClusterRole(role); err != nil {
 		return err
 	}
