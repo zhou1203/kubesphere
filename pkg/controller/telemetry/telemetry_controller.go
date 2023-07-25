@@ -49,12 +49,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// init Reconciler
+	r.Client = mgr.GetClient()
+
+	// start telemetry
 	if err := mgr.Add(telemetry.NewTelemetry(
 		telemetry.WithClient(mgr.GetClient()),
 		telemetry.WithOptions(r.Options)),
 	); err != nil {
 		return err
 	}
+
+	// start watch ClusterInfo
 	return builder.
 		ControllerManagedBy(mgr).
 		For(&telemetryv1alpha1.ClusterInfo{}).

@@ -18,10 +18,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	telemetryv1alpha1 "kubesphere.io/api/telemetry/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,9 +49,16 @@ func (c *clusterInfoStore) Save(ctx context.Context, data map[string]interface{}
 	}
 
 	status := &telemetryv1alpha1.ClusterInfoStatus{}
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(data, status); err != nil {
+	// convert data to status
+	// data contains structured data in the form of a struct type. It is not registered in the runtime. It is preferable to use JSON conversion.
+	if jsonBytes, err := json.Marshal(data); err != nil {
 		return err
+	} else {
+		if err := json.Unmarshal(jsonBytes, status); err != nil {
+			return err
+		}
 	}
+
 	obj := &telemetryv1alpha1.ClusterInfo{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: status.TotalTime.UTC().Format(defaultNameFormat),

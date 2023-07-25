@@ -302,7 +302,7 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 		addController(mgr, "cluster", clusterReconciler)
 	}
 
-	if *cmOptions.TelemetryOptions.Enabled {
+	if cmOptions.TelemetryOptions != nil && cmOptions.TelemetryOptions.Enabled != nil && *cmOptions.TelemetryOptions.Enabled {
 		addControllerWithSetup(mgr, "telemetry", &telemetry.Reconciler{Options: cmOptions.TelemetryOptions})
 	}
 	return nil
