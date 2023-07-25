@@ -156,7 +156,7 @@ func updateNamespaceQuota(tmpResourceList, resourceList v1.ResourceList) {
 
 func (c *resourceQuotaGetter) getNamespaceResourceQuota(namespace string) (*v1.ResourceQuotaStatus, error) {
 	resourceQuotaList := &v1.ResourceQuotaList{}
-	if err := c.cache.List(context.Background(), resourceQuotaList); err != nil {
+	if err := c.cache.List(context.Background(), resourceQuotaList, runtimeclient.InNamespace(namespace)); err != nil {
 		klog.Error(err)
 		return nil, err
 	} else if len(resourceQuotaList.Items) == 0 {
