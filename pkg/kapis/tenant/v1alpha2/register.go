@@ -210,6 +210,12 @@ func AddToContainer(c *restful.Container, cacheClient runtimeclient.Client, audi
 		Writes(auditingv1alpha1.APIResponse{}).
 		Returns(http.StatusOK, api.StatusOK, auditingv1alpha1.APIResponse{}))
 
+	ws.Route(ws.POST("/workspaces/{workspace}/resourcequotas").
+		To(handler.CreateWorkspaceResourceQuota).
+		Doc("Create resource quota.").
+		Reads(quotav1alpha2.ResourceQuota{}).
+		Returns(http.StatusOK, api.StatusOK, quotav1alpha2.ResourceQuota{}))
+
 	ws.Route(ws.DELETE("/workspaces/{workspace}/resourcequotas/{resourcequota}").
 		To(handler.DeleteWorkspaceResourceQuota).
 		Param(ws.PathParameter("workspace", "workspace name")).
