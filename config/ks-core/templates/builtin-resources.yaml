@@ -152,6 +152,8 @@ items:
           - iam.kubesphere.io
         resources:
           - users
+          - roletemplates
+          - categories
         verbs:
           - list
       - apiGroups:
@@ -191,6 +193,13 @@ items:
           - workspacetemplates
         verbs:
           - patch
+      - apiGroups:
+          - extensions.kubesphere.io
+        resources:
+          - jsbundles
+        verbs:
+          - get
+          - list
   - aggregationRoleTemplates:
       roleSelector:
         matchLabels:
