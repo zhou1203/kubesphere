@@ -58,7 +58,7 @@ const (
 // Reconciler reconciles a User object
 type Reconciler struct {
 	client.Client
-	KubeconfigClient      kubeconfig.Interface
+	KubeconfigOperator    kubeconfig.Interface
 	AuthenticationOptions *authentication.Options
 	logger                logr.Logger
 	recorder              record.EventRecorder
@@ -169,9 +169,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 	}
 
-	if r.KubeconfigClient != nil {
-		// ensure user KubeconfigClient configmap is created
-		if err := r.KubeconfigClient.CreateKubeConfig(user); err != nil {
+	if r.KubeconfigOperator != nil {
+		// ensure user KubeconfigOperator configmap is created
+		if err := r.KubeconfigOperator.CreateKubeConfig(user); err != nil {
 			r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 			return ctrl.Result{}, err
 		}

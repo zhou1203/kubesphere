@@ -52,6 +52,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
 	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
+	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
@@ -221,6 +222,7 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 		userController := &user.Reconciler{
 			AuthenticationOptions: cmOptions.AuthenticationOptions,
 			ClusterClientSet:      clusterClientSet,
+			KubeconfigOperator:    kubeconfig.NewOperator(mgr.GetClient(), client.Config()),
 		}
 		addControllerWithSetup(mgr, "user", userController)
 	}
