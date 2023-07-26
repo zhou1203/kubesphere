@@ -362,7 +362,7 @@ func (t *tenantOperator) PatchNamespace(workspace string, namespace *corev1.Name
 	if err != nil {
 		return nil, err
 	}
-	newNamespace := old.DeepCopy()
+	newNamespace := namespace.DeepCopy()
 	if newNamespace.Labels != nil {
 		newNamespace.Labels[tenantv1alpha1.WorkspaceLabel] = workspace
 	}
