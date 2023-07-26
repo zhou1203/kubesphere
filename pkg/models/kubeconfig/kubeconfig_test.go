@@ -18,13 +18,12 @@ package kubeconfig
 import (
 	"testing"
 
-	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	"kubesphere.io/kubesphere/pkg/scheme"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 const fakeKubeConfig = `

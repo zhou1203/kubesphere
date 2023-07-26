@@ -18,18 +18,13 @@ package constants
 
 const (
 	KubeSystemNamespace        = "kube-system"
-	IstioNamespace             = "istio-system"
-	KubeSphereLoggingNamespace = "kubesphere-logging-system"
 	KubeSphereNamespace        = "kubesphere-system"
-	KubeSphereControlNamespace = "kubesphere-controls-system"
 	KubeSphereAPIServerName    = "ks-apiserver"
-	PorterNamespace            = "porter-system"
 	KubeSphereConfigName       = "kubesphere-config"
 	KubeSphereConfigMapDataKey = "kubesphere.yaml"
 	KubectlPodNamePrefix       = "ks-managed-kubectl"
 
 	WorkspaceLabelKey        = "kubesphere.io/workspace"
-	NamespaceLabelKey        = "kubesphere.io/namespace"
 	DisplayNameAnnotationKey = "kubesphere.io/alias-name"
 	CreatorAnnotationKey     = "kubesphere.io/creator"
 	UsernameLabelKey         = "kubesphere.io/username"
@@ -72,5 +67,5 @@ const (
 )
 
 var (
-	SystemNamespaces = []string{KubeSphereNamespace, KubeSphereLoggingNamespace, KubeSystemNamespace, IstioNamespace, PorterNamespace}
+	SystemNamespaces = []string{KubeSphereNamespace, KubeSystemNamespace}
 )

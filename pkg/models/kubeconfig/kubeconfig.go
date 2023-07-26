@@ -26,26 +26,23 @@ import (
 	"os"
 	"time"
 
-	"k8s.io/apimachinery/pkg/types"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	"kubesphere.io/kubesphere/pkg/scheme"
-
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	certutil "k8s.io/client-go/util/cert"
 	"k8s.io/klog/v2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-
 	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/utils/pkiutil"
 )
 
@@ -69,30 +66,30 @@ type Interface interface {
 }
 
 type operator struct {
-	cache     runtimeclient.Reader
-	client    runtimeclient.Client
+	reader    runtimeclient.Reader
+	writer    runtimeclient.Writer
 	config    *rest.Config
 	masterURL string
 }
 
-func NewOperator(cacheClient runtimeclient.Client, config *rest.Config) Interface {
-	return &operator{client: cacheClient, cache: cacheClient, config: config}
+func NewOperator(client runtimeclient.Client, config *rest.Config) Interface {
+	return &operator{writer: client, reader: client, config: config}
 }
 
-func NewReadOnlyOperator(cacheReader runtimeclient.Reader, masterURL string) Interface {
-	return &operator{cache: cacheReader, masterURL: masterURL}
+func NewReadOnlyOperator(reader runtimeclient.Reader, masterURL string) Interface {
+	return &operator{reader: reader, masterURL: masterURL}
 }
 
 // CreateKubeConfig Create kubeconfig configmap in KubeSphereControlNamespace for the specified user
 func (o *operator) CreateKubeConfig(user *iamv1beta1.User) error {
 	configName := fmt.Sprintf(kubeconfigNameFormat, user.Name)
 
-	cm := &corev1.ConfigMap{}
-	err := o.cache.Get(context.Background(),
-		types.NamespacedName{Namespace: constants.KubeSphereControlNamespace, Name: configName}, cm)
+	secret := &corev1.Secret{}
+	err := o.reader.Get(context.Background(),
+		types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: configName}, secret)
 
 	// already exist and cert will not expire in 3 days
-	if err == nil && !isExpired(cm, user.Name) {
+	if err == nil && !isExpired(secret, user.Name) {
 		return nil
 	}
 
@@ -144,9 +141,9 @@ func (o *operator) CreateKubeConfig(user *iamv1beta1.User) error {
 	}
 
 	// update configmap if it already exists.
-	if !cm.CreationTimestamp.IsZero() {
-		cm.Data = map[string]string{kubeconfigFileName: string(kubeconfig)}
-		if err = o.client.Update(context.Background(), cm); err != nil {
+	if !secret.CreationTimestamp.IsZero() {
+		secret.StringData = map[string]string{kubeconfigFileName: string(kubeconfig)}
+		if err = o.writer.Update(context.Background(), secret); err != nil {
 			klog.Errorln(err)
 			return err
 		}
@@ -154,25 +151,25 @@ func (o *operator) CreateKubeConfig(user *iamv1beta1.User) error {
 	}
 
 	// create a new config
-	cm = &corev1.ConfigMap{
+	secret = &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       configMapKind,
 			APIVersion: configMapAPIVersion,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configName,
-			Namespace: constants.KubeSphereControlNamespace,
+			Namespace: constants.KubeSphereNamespace,
 			Labels:    map[string]string{constants.UsernameLabelKey: user.Name},
 		},
-		Data: map[string]string{kubeconfigFileName: string(kubeconfig)},
+		StringData: map[string]string{kubeconfigFileName: string(kubeconfig)},
 	}
 
-	if err = controllerutil.SetControllerReference(user, cm, scheme.Scheme); err != nil {
+	if err = controllerutil.SetControllerReference(user, secret, scheme.Scheme); err != nil {
 		klog.Errorln(err)
 		return err
 	}
 
-	if err = o.client.Create(context.Background(), cm); err != nil {
+	if err = o.writer.Create(context.Background(), secret); err != nil {
 		klog.Errorln(err)
 		return err
 	}
@@ -182,16 +179,16 @@ func (o *operator) CreateKubeConfig(user *iamv1beta1.User) error {
 
 // GetKubeConfig returns kubeconfig data for the specified user
 func (o *operator) GetKubeConfig(username string) (string, error) {
-	configName := fmt.Sprintf(kubeconfigNameFormat, username)
+	secretName := fmt.Sprintf(kubeconfigNameFormat, username)
 
-	cm := &corev1.ConfigMap{}
-	if err := o.cache.Get(context.Background(),
-		types.NamespacedName{Namespace: constants.KubeSphereControlNamespace, Name: configName}, cm); err != nil {
+	secret := &corev1.Secret{}
+	if err := o.reader.Get(context.Background(),
+		types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: secretName}, secret); err != nil {
 		klog.Errorln(err)
 		return "", err
 	}
 
-	data := []byte(cm.Data[kubeconfigFileName])
+	data := []byte(secret.Data[kubeconfigFileName])
 	kubeconfig, err := clientcmd.Load(data)
 	if err != nil {
 		klog.Errorln(err)
@@ -267,7 +264,7 @@ func (o *operator) createCSR(username string) error {
 	}
 
 	// create csr
-	if err = o.client.Create(context.Background(), k8sCSR); err != nil {
+	if err = o.writer.Create(context.Background(), k8sCSR); err != nil {
 		klog.Errorln(err)
 		return err
 	}
@@ -275,32 +272,32 @@ func (o *operator) createCSR(username string) error {
 	return nil
 }
 
-// UpdateKubeconfig Update client key and client certificate after CertificateSigningRequest has been approved
+// UpdateKubeconfig Update writer key and writer certificate after CertificateSigningRequest has been approved
 func (o *operator) UpdateKubeconfig(username string, csr *certificatesv1.CertificateSigningRequest) error {
-	configName := fmt.Sprintf(kubeconfigNameFormat, username)
-	cm := &corev1.ConfigMap{}
-	if err := o.cache.Get(context.Background(),
-		types.NamespacedName{Namespace: constants.KubeSphereControlNamespace, Name: configName}, cm); err != nil {
+	secretName := fmt.Sprintf(kubeconfigNameFormat, username)
+	secret := &corev1.Secret{}
+	if err := o.reader.Get(context.Background(),
+		types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: secretName}, secret); err != nil {
 		klog.Errorln(err)
 		return err
 	}
-	cm = applyCert(cm, csr)
-	if err := o.client.Update(context.Background(), cm); err != nil {
+	secret = applyCert(secret, csr)
+	if err := o.writer.Update(context.Background(), secret); err != nil {
 		klog.Errorln(err)
 		return err
 	}
 	return nil
 }
 
-func applyCert(cm *corev1.ConfigMap, csr *certificatesv1.CertificateSigningRequest) *corev1.ConfigMap {
-	data := []byte(cm.Data[kubeconfigFileName])
+func applyCert(secret *corev1.Secret, csr *certificatesv1.CertificateSigningRequest) *corev1.Secret {
+	data := secret.Data[kubeconfigFileName]
 	kubeconfig, err := clientcmd.Load(data)
 	if err != nil {
 		klog.Error(err)
-		return cm
+		return secret
 	}
 
-	username := getControlledUsername(cm)
+	username := getControlledUsername(secret)
 	privateKey := csr.Annotations[privateKeyAnnotation]
 	clientCert := csr.Status.Certificate
 	kubeconfig.AuthInfos = map[string]*clientcmdapi.AuthInfo{
@@ -313,14 +310,14 @@ func applyCert(cm *corev1.ConfigMap, csr *certificatesv1.CertificateSigningReque
 	data, err = clientcmd.Write(*kubeconfig)
 	if err != nil {
 		klog.Error(err)
-		return cm
+		return secret
 	}
 
-	cm.Data[kubeconfigFileName] = string(data)
-	return cm
+	secret.StringData[kubeconfigFileName] = string(data)
+	return secret
 }
 
-func getControlledUsername(cm *corev1.ConfigMap) string {
+func getControlledUsername(cm *corev1.Secret) string {
 	for _, ownerReference := range cm.OwnerReferences {
 		if ownerReference.Kind == iamv1beta1.ResourceKindUser {
 			return ownerReference.Name
@@ -329,9 +326,9 @@ func getControlledUsername(cm *corev1.ConfigMap) string {
 	return ""
 }
 
-// isExpired returns whether the client certificate in kubeconfig is expired
-func isExpired(cm *corev1.ConfigMap, username string) bool {
-	data := []byte(cm.Data[kubeconfigFileName])
+// isExpired returns whether the writer certificate in kubeconfig is expired
+func isExpired(cm *corev1.Secret, username string) bool {
+	data := cm.Data[kubeconfigFileName]
 	kubeconfig, err := clientcmd.Load(data)
 	if err != nil {
 		klog.Errorln(err)
