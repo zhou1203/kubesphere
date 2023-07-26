@@ -109,6 +109,12 @@ func AddToContainer(container *restful.Container, im im.IdentityManagementInterf
 		Param(ws.PathParameter("workspace", "workspace name")).
 		Param(ws.PathParameter("workspacemember", "workspace member's username")).
 		Returns(http.StatusOK, api.StatusOK, errors.None))
+	ws.Route(ws.GET("/workspaces/{workspace}/workspacemembers/{workspacemember}").
+		To(handler.DescribeWorkspaceMember).
+		Doc("Describe workspace member.").
+		Param(ws.PathParameter("workspace", "workspace name")).
+		Param(ws.PathParameter("workspacemember", "the member from workspace")).
+		Returns(http.StatusOK, api.StatusOK, Member{}))
 
 	ws.Route(ws.GET("/namespaces/{namespace}/namespacemembers").
 		To(handler.ListNamespaceMembers).

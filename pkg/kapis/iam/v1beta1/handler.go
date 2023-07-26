@@ -681,6 +681,21 @@ func (h *iamHandler) RemoveWorkspaceMember(request *restful.Request, response *r
 	response.WriteEntity(servererr.None)
 }
 
+func (h *iamHandler) DescribeWorkspaceMember(request *restful.Request, response *restful.Response) {
+	workspace := request.PathParameter("workspace")
+	memberName := request.PathParameter("workspacemember")
+	bindings, err := h.am.ListWorkspaceRoleBindings(memberName, "", nil, workspace)
+	if err != nil {
+		api.HandleInternalError(response, request, err)
+		return
+	}
+	if len(bindings) == 0 {
+		api.HandleBadRequest(response, request, NewErrMemberNotExist(memberName))
+		return
+	}
+	_ = response.WriteEntity(Member{Username: memberName, RoleRef: bindings[0].RoleRef.Name})
+}
+
 func (h *iamHandler) UpdateWorkspaceMember(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 	memberName := request.PathParameter("workspacemember")
