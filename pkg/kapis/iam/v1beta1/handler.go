@@ -693,7 +693,14 @@ func (h *iamHandler) DescribeWorkspaceMember(request *restful.Request, response 
 		api.HandleBadRequest(response, request, NewErrMemberNotExist(memberName))
 		return
 	}
-	_ = response.WriteEntity(Member{Username: memberName, RoleRef: bindings[0].RoleRef.Name})
+
+	user, err := h.im.DescribeUser(memberName)
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+	user.Annotations[iamv1beta1.WorkspaceRoleAnnotation] = bindings[0].RoleRef.Name
+	_ = response.WriteEntity(user)
 }
 
 func (h *iamHandler) UpdateWorkspaceMember(request *restful.Request, response *restful.Response) {
