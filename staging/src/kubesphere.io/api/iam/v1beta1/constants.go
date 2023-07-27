@@ -51,6 +51,7 @@ const (
 	LastPasswordChangeTimeAnnotation      = "iam.kubesphere.io/last-password-change-time"
 	RoleAnnotation                        = "iam.kubesphere.io/role"
 	RoleTemplateLabel                     = "iam.kubesphere.io/role-template"
+	ScopeLabelPrefix                      = "scope.iam.kubesphere.io/"
 	ScopeLabelFormat                      = "scope.iam.kubesphere.io/%s"
 	UserReferenceLabel                    = "iam.kubesphere.io/user-ref"
 	RoleReferenceLabel                    = "iam.kubesphere.io/role-ref"

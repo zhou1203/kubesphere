@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -155,10 +156,22 @@ func (r *Reconciler) reconcileWorkspaceOwnerReference(ctx context.Context, names
 }
 
 func (r *Reconciler) initRoles(ctx context.Context, namespace *corev1.Namespace) error {
+	if namespace.Annotations[constants.CreatorAnnotationKey] == "" {
+		return nil
+	}
+
 	logger := klog.FromContext(ctx)
+
 	var templates iamv1beta1.RoleBaseList
-	// scope.iam.kubesphere.io/namespace: ""
-	if err := r.List(ctx, &templates, client.MatchingLabels{fmt.Sprintf(iamv1beta1.ScopeLabelFormat, iamv1beta1.ScopeNamespace): ""}); err != nil {
+	// scope.iam.kubesphere.io/xxxxx: ""
+	matchingLabels := client.MatchingLabels{fmt.Sprintf(iamv1beta1.ScopeLabelFormat, iamv1beta1.ScopeNamespace): ""}
+	for annoK, annoV := range namespace.Annotations {
+		if strings.HasPrefix(annoK, iamv1beta1.ScopeLabelPrefix) && annoV == "" {
+			matchingLabels = client.MatchingLabels{annoK: annoV}
+			break
+		}
+	}
+	if err := r.List(ctx, &templates, matchingLabels); err != nil {
 		return err
 	}
 	for _, template := range templates.Items {
