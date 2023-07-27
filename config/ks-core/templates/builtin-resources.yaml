@@ -200,6 +200,13 @@ items:
         verbs:
           - get
           - list
+      - apiGroups:
+          - kubesphere.io
+        resources:
+          - extensions
+        verbs:
+          - get
+          - list
   - aggregationRoleTemplates:
       roleSelector:
         matchLabels:
@@ -474,7 +481,7 @@ items:
       aggregationRoleTemplates:
         roleSelectors:
           - matchLabels:
-              scope.iam.kubesphere.io/workspace: ""
+              iam.kubesphere.io/aggregate-to-admin: ""
         templateNames:
           - workspace-manage-workspace-settings
           - workspace-view-workspace-settings
@@ -513,6 +520,9 @@ items:
         scope.iam.kubesphere.io/workspace: ""
     role:
       aggregationRoleTemplates:
+        roleSelector:
+          matchLabels:
+            iam.kubesphere.io/aggregate-to-regular: ""
         templateNames:
           - workspace-view-workspace-settings
       apiVersion: iam.kubesphere.io/v1beta1
@@ -539,6 +549,9 @@ items:
         scope.iam.kubesphere.io/workspace: ""
     role:
       aggregationRoleTemplates:
+        roleSelector:
+          matchLabels:
+            iam.kubesphere.io/aggregate-to-self-provisioner: ""
         templateNames:
           - workspace-create-projects
           - workspace-view-app-templates
@@ -582,8 +595,7 @@ items:
       aggregationRoleTemplates:
         roleSelector:
           matchLabels:
-            iam.kubesphere.io/resource: view
-            scope.iam.kubesphere.io/workspace: ""
+            iam.kubesphere.io/aggregate-to-viewer: ""
         templateNames:
           - workspace-view-projects
           - workspace-view-app-templates
