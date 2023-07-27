@@ -128,6 +128,9 @@ type ExtensionStatus struct {
 	RecommendedVersion    string                 `json:"recommendedVersion,omitempty"`
 	Versions              []ExtensionVersionInfo `json:"versions,omitempty"`
 	Conditions            []metav1.Condition     `json:"conditions,omitempty"`
+	// +optional
+	// ClusterSchedulingStatuses describes the subchart installation status of the extension
+	ClusterSchedulingStatuses map[string]InstallationStatus `json:"clusterSchedulingStatuses,omitempty"`
 }
 
 // +kubebuilder:object:root=true
