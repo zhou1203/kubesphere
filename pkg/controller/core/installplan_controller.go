@@ -749,9 +749,9 @@ func (r *InstallPlanReconciler) updateExtensionStatus(ctx context.Context, exten
 		expected := extension.DeepCopy()
 		expected.Status.State = status.State
 		expected.Status.PlannedInstallVersion = status.PlannedInstallVersion
+		expected.Status.ClusterSchedulingStatuses = status.ClusterSchedulingStatuses
 
-		if expected.Status.State != extension.Status.State ||
-			expected.Status.PlannedInstallVersion != extension.Status.PlannedInstallVersion {
+		if !reflect.DeepEqual(extension.Status, expected.Status) {
 			if err := r.Update(ctx, expected); err != nil {
 				return err
 			}
@@ -769,6 +769,7 @@ func (r *InstallPlanReconciler) syncExtensionStatus(ctx context.Context, plan *c
 	if plan.Status.State == corev1alpha1.StateUninstalled {
 		expected.State = ""
 		expected.PlannedInstallVersion = ""
+		expected.ClusterSchedulingStatuses = nil
 	} else if plan.Status.State == corev1alpha1.StateInstalled {
 		if plan.Spec.Enabled {
 			expected.State = corev1alpha1.StateEnabled
@@ -776,9 +777,11 @@ func (r *InstallPlanReconciler) syncExtensionStatus(ctx context.Context, plan *c
 			expected.State = corev1alpha1.StateDisabled
 		}
 		expected.PlannedInstallVersion = plan.Spec.Extension.Version
+		expected.ClusterSchedulingStatuses = plan.Status.ClusterSchedulingStatuses
 	} else {
 		expected.State = plan.Status.State
 		expected.PlannedInstallVersion = plan.Spec.Extension.Version
+		expected.ClusterSchedulingStatuses = plan.Status.ClusterSchedulingStatuses
 	}
 	return r.updateExtensionStatus(ctx, plan.Spec.Extension.Name, expected)
 }
