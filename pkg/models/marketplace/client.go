@@ -21,6 +21,7 @@ type Interface interface {
 	ListSubscriptions(extensionID string) ([]Subscription, error)
 	CreateToken(clusterID, code, codeVerifier string) (*Token, error)
 	UserInfo(token string) (*UserInfo, error)
+	Revoke(clusterID string) error
 }
 
 type client struct {
@@ -216,6 +217,33 @@ func (c *client) CreateToken(clusterID, code, codeVerifier string) (*Token, erro
 		return nil, fmt.Errorf("failed to decode token response: %s", err)
 	}
 	return token, nil
+}
+
+func (c *client) Revoke(clusterID string) error {
+	if c.options.Account == nil {
+		return fmt.Errorf("cluster is not authorized")
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/apis/auth/v1/users/%s/consents?cluster_id=%s", c.options.URL, c.options.Account.UserID, clusterID), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.options.Account.AccessToken))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	} else {
+		message, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("failed to revoke cluster authorization %s: %s", clusterID, message)
+	}
 }
 
 func NewClient(options *Options) Interface {
