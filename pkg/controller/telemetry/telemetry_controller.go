@@ -17,21 +17,32 @@ limitations under the License.
 package telemetry
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
+	"k8s.io/klog/v2"
 	telemetryv1alpha1 "kubesphere.io/api/telemetry/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
-	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/telemetry"
 )
 
+const (
+	// defaultTelemetryEndpoint for telemetry endpoint
+	defaultTelemetryEndpoint = "/apis/telemetry/v1/clusterinfos?cluster_id=${cluster_id}"
+)
+
 type Reconciler struct {
 	*telemetry.Options
-	runtimeClient.Client
+	runtimeclient.Client
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
@@ -39,13 +50,77 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	if err := r.Client.Get(ctx, request.NamespacedName, clusterInfo); err != nil {
 		return reconcile.Result{}, err
 	}
+	// ignore delete resource
+	if clusterInfo.DeletionTimestamp != nil {
+		return reconcile.Result{}, nil
+	}
+
 	// Clean up expired data.
-	if clusterInfo.DeletionTimestamp == nil && clusterInfo.CreationTimestamp.Add(*r.Options.ClusterInfoLiveTime).Before(time.Now()) {
+	if clusterInfo.CreationTimestamp.Add(*r.Options.ClusterInfoLiveTime).Before(time.Now()) {
 		if err := r.Client.Delete(ctx, clusterInfo); err != nil {
+			klog.Errorf("delete expired clusterInfo %s error %s", request.Name, err)
 			return reconcile.Result{}, err
 		}
 	}
+
+	if _, ok := clusterInfo.Annotations[telemetryv1alpha1.SyncAnnotation]; !ok {
+		if err := r.syncToKSCloud(ctx, clusterInfo); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
 	return reconcile.Result{}, nil
+}
+
+func (r *Reconciler) syncToKSCloud(ctx context.Context, clusterInfo *telemetryv1alpha1.ClusterInfo) error {
+	data := clusterInfo.Status.DeepCopy()
+
+	// get clusterId from data
+	clusterId := ""
+	for _, cluster := range data.Clusters {
+		if cluster.Role == "host" {
+			clusterId = cluster.Nid
+		}
+	}
+	if clusterId == "" { // When the data has not been collected yet
+		return fmt.Errorf("clusterInfo %s clusterId is empty, cannot sync to KSCloud", clusterInfo.Name)
+	}
+
+	// convert req data
+	reqData, err := json.Marshal(data)
+	if err != nil {
+		klog.Errorf("convert clusterInfo %s status to json error %v", clusterInfo.Name, err)
+		return err
+	}
+	telemetryReq := fmt.Sprintf(`{ "data": %s }`, string(reqData))
+	request, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s%s", *r.Options.KSCloudURL, strings.ReplaceAll(defaultTelemetryEndpoint, "${cluster_id}", clusterId)), bytes.NewBufferString(telemetryReq))
+	if err != nil {
+		klog.Errorf("new request for clusterInfo %s error %v", clusterInfo.Name, err)
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		klog.Errorf("do request for clusterInfo %s error %v", clusterInfo.Name, err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("resp code expect %v, but get code %v ", http.StatusOK, resp.StatusCode)
+	}
+
+	// add annotation to clusterInfo
+	newClusterInfo := clusterInfo.DeepCopy()
+	// sync to ksCloud
+	if newClusterInfo.Annotations == nil {
+		newClusterInfo.Annotations = make(map[string]string)
+	}
+	newClusterInfo.Annotations[telemetryv1alpha1.SyncAnnotation] = time.Now().Format(time.RFC3339)
+	if err := r.Client.Patch(ctx, newClusterInfo, runtimeclient.MergeFrom(clusterInfo.DeepCopy())); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
