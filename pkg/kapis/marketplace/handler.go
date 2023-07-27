@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	marketplacev1alpha1 "kubesphere.io/api/marketplace/v1alpha1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -175,6 +176,18 @@ func (h *handler) unbind(request *restful.Request, response *restful.Response) {
 		api.HandleError(response, request, err)
 		return
 	}
+
+	extensions := &corev1alpha1.ExtensionList{}
+	if err := h.client.List(request.Request.Context(), extensions,
+		runtimeclient.MatchingLabels{corev1alpha1.RepositoryReferenceLabel: options.RepositorySyncOptions.RepoName}); err != nil {
+		for _, item := range extensions.Items {
+			if err := marketplace.RemoveSubscription(request.Request.Context(), h.client, &item); err != nil {
+				klog.Errorf("failed to update extension status: %s", err)
+				continue
+			}
+		}
+	}
+
 	_ = response.WriteEntity(errors.None)
 }
 
@@ -196,6 +209,7 @@ func (h *handler) sync(request *restful.Request, response *restful.Response) {
 	}
 
 	for _, subscription := range subscriptions {
+		var extension *corev1alpha1.Extension
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			extensions := &corev1alpha1.ExtensionList{}
 			if err := h.client.List(request.Request.Context(), extensions,
@@ -203,10 +217,10 @@ func (h *handler) sync(request *restful.Request, response *restful.Response) {
 				return err
 			}
 			if len(extensions.Items) > 0 {
-				extension := extensions.Items[0]
+				extension = &extensions.Items[0]
 				if extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
 					extension.Labels[marketplacev1alpha1.Subscribed] = "true"
-					if err := h.client.Update(request.Request.Context(), &extension); err != nil {
+					if err := h.client.Update(request.Request.Context(), extension); err != nil {
 						return err
 					}
 				}
@@ -215,6 +229,16 @@ func (h *handler) sync(request *restful.Request, response *restful.Response) {
 		})
 		if err != nil {
 			api.HandleError(response, request, fmt.Errorf("failed to sync extension status: %s", err))
+			return
+		}
+
+		if extension == nil {
+			klog.Warningf("subscription %s related extension %s not found", subscription.SubscriptionID, subscription.ExtensionID)
+			continue
+		}
+
+		if err = marketplace.CreateOrUpdateSubscription(request.Request.Context(), h.client, extension, subscription); err != nil {
+			api.HandleError(response, request, fmt.Errorf("failed to update subscription: %s", err))
 			return
 		}
 	}
