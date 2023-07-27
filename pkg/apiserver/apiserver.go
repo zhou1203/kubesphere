@@ -66,7 +66,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/kapis/marketplace"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
-	"kubesphere.io/kubesphere/pkg/kapis/overview"
 	packagev1alpha1 "kubesphere.io/kubesphere/pkg/kapis/package/v1alpha1"
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha3"
@@ -172,15 +171,15 @@ func (s *APIServer) installKubeSphereAPIs() {
 	amOperator := am.NewOperator(s.ResourceManager)
 	rbacAuthorizer := rbac.NewRBACAuthorizer(amOperator)
 
-	counter := overviewclient.New(s.ResourceManager)
+	counter := overviewclient.New(s.RuntimeClient)
 	counter.RegisterResource(overviewclient.NewDefaultRegisterOptions()...)
 	urlruntime.Must(configv1alpha2.AddToContainer(s.container, s.Config, s.RuntimeClient))
-	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.RuntimeCache))
+	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.RuntimeCache, counter))
 	urlruntime.Must(operationsv1alpha2.AddToContainer(s.container, s.RuntimeClient))
 	urlruntime.Must(resourcesv1alpha2.AddToContainer(s.container, s.RuntimeClient,
 		s.KubernetesClient.Master(), s.Config.AuthenticationOptions.KubectlImage))
 	urlruntime.Must(tenantv1alpha2.AddToContainer(s.container, s.RuntimeClient,
-		s.AuditingClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer))
+		s.AuditingClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer, counter))
 	urlruntime.Must(tenantv1alpha3.AddToContainer(s.container, s.RuntimeClient,
 		s.AuditingClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer))
 	urlruntime.Must(terminalv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes(),
@@ -199,7 +198,6 @@ func (s *APIServer) installKubeSphereAPIs() {
 	urlruntime.Must(version.AddToContainer(s.container, s.KubernetesClient.Kubernetes().Discovery()))
 	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
 	urlruntime.Must(gatewayv1alpha2.AddToContainer(s.container, s.RuntimeCache))
-	urlruntime.Must(overview.AddToContainer(s.container, counter))
 
 	if s.Config.MultiClusterOptions.ClusterRole == multicluster.ClusterRoleHost {
 		urlruntime.Must(marketplace.AddToContainer(s.container, s.RuntimeClient))

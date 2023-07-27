@@ -203,7 +203,7 @@ func prepare() (*Handler, error) {
 		WithRuntimeObjects(services...).
 		Build()
 
-	handler := New(resourcev1alpha3.NewResourceGetter(client), components.NewComponentsGetter(client))
+	handler := New(resourcev1alpha3.NewResourceGetter(client), components.NewComponentsGetter(client), nil)
 	return handler, nil
 }
 

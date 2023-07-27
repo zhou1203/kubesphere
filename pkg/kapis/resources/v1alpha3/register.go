@@ -30,6 +30,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/components"
 	v2 "kubesphere.io/kubesphere/pkg/models/registries/v2"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
+	"kubesphere.io/kubesphere/pkg/simple/client/overview"
 
 	"net/http"
 )
@@ -50,10 +51,10 @@ func Resource(resource string) schema.GroupResource {
 	return GroupVersion.WithResource(resource).GroupResource()
 }
 
-func AddToContainer(c *restful.Container, cacheReader runtimeclient.Reader) error {
+func AddToContainer(c *restful.Container, cacheReader runtimeclient.Reader, counter overview.Counter) error {
 
 	webservice := runtime.NewWebService(GroupVersion)
-	handler := New(resourcev1alpha3.NewResourceGetter(cacheReader), components.NewComponentsGetter(cacheReader))
+	handler := New(resourcev1alpha3.NewResourceGetter(cacheReader), components.NewComponentsGetter(cacheReader), counter)
 
 	webservice.Route(webservice.GET("/{resources}").
 		To(handler.handleListResources).
@@ -142,6 +143,16 @@ func AddToContainer(c *restful.Container, cacheReader runtimeclient.Reader) erro
 		Metadata(restfulspec.KeyOpenAPITags, []string{tagNamespacedResource}).
 		Doc("List repository tags, this is an experimental API, use it by your own caution.").
 		Returns(http.StatusOK, ok, v2.RepositoryTags{}))
+
+	webservice.Route(webservice.GET("/metrics").
+		To(handler.GetClusterOverview).
+		Returns(http.StatusOK, api.StatusOK, overview.MetricResults{}).
+		Doc("Get clusters overview"))
+
+	webservice.Route(webservice.GET("/namespaces/{namespace}/metrics").
+		To(handler.GetNamespaceOverview).
+		Returns(http.StatusOK, api.StatusOK, overview.MetricResults{}).
+		Doc("Get namespace overview"))
 
 	c.Add(webservice)
 

@@ -20,18 +20,15 @@ import (
 	"encoding/json"
 	"fmt"
 
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
 	"github.com/emicklei/go-restful/v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
@@ -44,16 +41,23 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/models/tenant"
 	servererr "kubesphere.io/kubesphere/pkg/server/errors"
+	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
+	"kubesphere.io/kubesphere/pkg/simple/client/overview"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 type tenantHandler struct {
-	tenant tenant.Interface
+	tenant  tenant.Interface
+	auth    authorizer.Authorizer
+	counter overview.Counter
 }
 
 func NewTenantHandler(client runtimeclient.Client, auditingClient auditingclient.Client, clusterClient clusterclient.Interface,
-	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer) *tenantHandler {
+	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer, counter overview.Counter) *tenantHandler {
 	return &tenantHandler{
-		tenant: tenant.New(client, auditingClient, clusterClient, am, im, authorizer),
+		tenant:  tenant.New(client, auditingClient, clusterClient, am, im, authorizer),
+		auth:    authorizer,
+		counter: counter,
 	}
 }
 
@@ -544,4 +548,98 @@ func (h *tenantHandler) DescribeWorkspaceResourceQuota(r *restful.Request, respo
 	}
 
 	response.WriteEntity(resourceQuota)
+}
+
+func (h *tenantHandler) GetWorkspaceMetrics(req *restful.Request, resp *restful.Response) {
+	workspace := req.PathParameter("workspace")
+
+	user, ok := request.UserFrom(req.Request.Context())
+	if !ok {
+		err := fmt.Errorf("cannot obtain user info")
+		klog.Errorln(err)
+		api.HandleForbidden(resp, nil, err)
+		return
+	}
+	parameter := query.ParseQueryParameter(req)
+	prefix := "workspace"
+
+	namespaces, err := h.tenant.ListNamespaces(user, workspace, parameter)
+	if err != nil {
+		api.HandleInternalError(resp, req, err)
+		return
+	}
+
+	metrics, err := h.counter.GetMetrics([]string{overview.WorkspaceRoleBindingCount, overview.WorkspaceRoleCount},
+		"", workspace, prefix)
+	if err != nil {
+		api.HandleInternalError(resp, req, err)
+		return
+	}
+
+	metrics.AddMetric(overview.CustomMetric(overview.NamespaceCount, prefix, namespaces.TotalItems))
+
+	_ = resp.WriteEntity(metrics)
+
+}
+
+func (h *tenantHandler) GetPlatformMetrics(req *restful.Request, resp *restful.Response) {
+	user, ok := request.UserFrom(req.Request.Context())
+	if !ok {
+		err := fmt.Errorf("cannot obtain user info")
+		klog.Errorln(err)
+		api.HandleForbidden(resp, nil, err)
+		return
+	}
+	parameter := query.ParseQueryParameter(req)
+	prefix := "platform"
+
+	metricNames := []string{overview.UserCount}
+	attr := authorizer.AttributesRecord{
+		User:            user,
+		Verb:            "list",
+		APIGroup:        corev1alpha1.GroupName,
+		APIVersion:      corev1alpha1.SchemeGroupVersion.Version,
+		Resource:        "extensions",
+		ResourceRequest: true,
+		ResourceScope:   request.GlobalScope,
+	}
+
+	decision, _, err := h.auth.Authorize(attr)
+	if err != nil {
+		api.HandleInternalError(resp, req, err)
+		return
+	}
+
+	if decision == authorizer.DecisionAllow {
+		metricNames = append(metricNames, overview.ExtensionCount)
+	}
+
+	metrics, err := h.counter.GetMetrics(metricNames, "", "", prefix)
+	if err != nil {
+		api.HandleInternalError(resp, req, err)
+		return
+	}
+
+	// get workspace count
+	workspaces, err := h.tenant.ListWorkspaces(user, parameter)
+	if err != nil {
+		api.HandleInternalError(resp, req, err)
+		return
+	}
+	if workspaces.TotalItems != 0 {
+		metrics.AddMetric(overview.CustomMetric(overview.WorkspaceCount, prefix, workspaces.TotalItems))
+	}
+
+	// get cluster count
+	clusters, err := h.tenant.ListClusters(user, parameter)
+	if err != nil {
+		api.HandleInternalError(resp, req, err)
+		return
+	}
+	if clusters.TotalItems != 0 {
+		metrics.AddMetric(overview.CustomMetric(overview.ClusterCount, prefix, clusters.TotalItems))
+	}
+
+	_ = resp.WriteEntity(metrics)
+
 }

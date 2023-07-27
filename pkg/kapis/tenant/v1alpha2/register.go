@@ -19,17 +19,13 @@ package v1alpha2
 import (
 	"net/http"
 
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	auditingv1alpha1 "kubesphere.io/kubesphere/pkg/api/auditing/v1alpha1"
@@ -40,6 +36,9 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/server/errors"
+	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
+	"kubesphere.io/kubesphere/pkg/simple/client/overview"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 const (
@@ -54,11 +53,11 @@ func Resource(resource string) schema.GroupResource {
 
 func AddToContainer(c *restful.Container, cacheClient runtimeclient.Client, auditingClient auditingclient.Client,
 	clusterClient clusterclient.Interface, am am.AccessManagementInterface, im im.IdentityManagementInterface,
-	authorizer authorizer.Authorizer) error {
+	authorizer authorizer.Authorizer, counter overview.Counter) error {
 	mimePatch := []string{restful.MIME_JSON, runtime.MimeMergePatchJson, runtime.MimeJsonPatchJson}
 
 	ws := runtime.NewWebService(GroupVersion)
-	handler := NewTenantHandler(cacheClient, auditingClient, clusterClient, am, im, authorizer)
+	handler := NewTenantHandler(cacheClient, auditingClient, clusterClient, am, im, authorizer, counter)
 
 	ws.Route(ws.GET("/clusters").
 		To(handler.ListClusters).
@@ -240,6 +239,17 @@ func AddToContainer(c *restful.Container, cacheClient runtimeclient.Client, audi
 		Returns(http.StatusOK, api.StatusOK, quotav1alpha2.ResourceQuota{}).
 		Doc("Describe resource quota.").
 		Metadata(restfulspec.KeyOpenAPITags, []string{constants.WorkspaceTag}))
+
+	ws.Route(ws.GET("/workspaces/{workspace}/metrics").
+		To(handler.GetWorkspaceMetrics).
+		Param(ws.PathParameter("workspace", "workspace name")).
+		Returns(http.StatusOK, api.StatusOK, overview.MetricResults{})).
+		Doc("Get workspace metrics")
+
+	ws.Route(ws.GET("/metrics").
+		To(handler.GetPlatformMetrics).
+		Returns(http.StatusOK, api.StatusOK, overview.MetricResults{})).
+		Doc("Get platform metrics")
 
 	c.Add(ws)
 	return nil

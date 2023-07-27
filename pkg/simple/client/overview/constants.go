@@ -1,7 +1,10 @@
 package overview
 
 const (
+	WorkspaceCount        = "workspace_count"
+	ClusterCount          = "cluster_count"
 	NamespaceCount        = "namespace_count"
+	ExtensionCount        = "extension_count"
 	PodCount              = "pod_count"
 	DeploymentCount       = "deployment_count"
 	StatefulSetCount      = "statefulset_count"

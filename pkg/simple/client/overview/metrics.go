@@ -2,6 +2,7 @@ package overview
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -11,29 +12,31 @@ import (
 	v12 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/query"
-	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"kubesphere.io/api/tenant/v1alpha2"
 )
 
 type Counter interface {
 	RegisterResource(options ...RegisterOption)
-	GetMetrics(metricNames []string, namespace, prefix string, queryParam *query.Query) (*MetricResults, error)
+	GetMetrics(metricNames []string, namespace, workspace, prefix string) (*MetricResults, error)
 }
 
 var _ Counter = &metricsCounter{}
 
 type metricsCounter struct {
-	registerTypeMap map[string][]reflect.Type
-	resourceManager resourcev1beta1.ResourceManager
+	registerTypeMap map[string]reflect.Type
+	client          client.Client
 }
 
-func New(resourceManager resourcev1beta1.ResourceManager) Counter {
+func New(client client.Client) Counter {
 	collector := &metricsCounter{
-		registerTypeMap: make(map[string][]reflect.Type),
-		resourceManager: resourceManager,
+		registerTypeMap: make(map[string]reflect.Type),
+		client:          client,
 	}
 
 	return collector
@@ -46,38 +49,31 @@ func (r *metricsCounter) RegisterResource(options ...RegisterOption) {
 }
 
 func (r *metricsCounter) register(option RegisterOption) {
-	refTypes := make([]reflect.Type, 0)
-	for _, t := range option.Type {
-		refTypes = append(refTypes, reflect.TypeOf(t))
-	}
-
-	r.registerTypeMap[option.MetricsName] = refTypes
+	r.registerTypeMap[option.MetricsName] = reflect.TypeOf(option.Type)
 }
 
-func (r *metricsCounter) GetMetrics(metricNames []string, namespace, prefix string, queryParam *query.Query) (*MetricResults, error) {
+func (r *metricsCounter) GetMetrics(metricNames []string, namespace, workspace, prefix string) (*MetricResults, error) {
 	result := &MetricResults{Results: make([]Metric, 0)}
 	for _, n := range metricNames {
-		metric, err := r.collect(n, namespace, queryParam)
+		metric, err := r.collect(n, prefix, namespace, workspace)
 		if err != nil {
 			return nil, err
 		}
 
-		if prefix != "" {
-			metric.MetricName = fmt.Sprintf("%s_%s", prefix, metric.MetricName)
-		}
-		result.Results = append(result.Results, *metric)
-
+		result.AddMetric(metric)
 	}
 
 	return result, nil
 }
 
-type RegisterOption struct {
-	MetricsName string
-	Type        []client.ObjectList
+func CustomMetric(metricName, prefix string, count int) *Metric {
+	return newMetric(metricName, prefix, count)
 }
 
-func (r *metricsCounter) collect(metricName string, namespace string, queryParam *query.Query) (*Metric, error) {
+func newMetric(metricName, prefix string, count int) *Metric {
+	if prefix != "" {
+		metricName = fmt.Sprintf("%s_%s", prefix, metricName)
+	}
 	metric := &Metric{
 		MetricName: metricName,
 		Data: MetricData{
@@ -86,24 +82,48 @@ func (r *metricsCounter) collect(metricName string, namespace string, queryParam
 		},
 	}
 
-	for _, t := range r.registerTypeMap[metricName] {
-		objVal := reflect.New(t.Elem())
-		objList := objVal.Interface().(client.ObjectList)
-		err := r.resourceManager.List(context.Background(), namespace, queryParam, objList)
-		if err != nil {
-			return nil, err
-		}
+	value := MetricValue{
+		Value: []interface{}{
+			time.Now().Unix(),
+			count,
+		},
+	}
+	metric.Data.Result = append(metric.Data.Result, value)
 
-		value := MetricValue{
-			Value: []interface{}{
-				time.Now().Unix(),
-				meta.LenList(objList),
-			},
-		}
-		metric.Data.Result = append(metric.Data.Result, value)
+	return metric
+}
+
+type RegisterOption struct {
+	MetricsName string
+	Type        client.ObjectList
+}
+
+func (r *metricsCounter) collect(metricName, prefix, namespace, workspace string) (*Metric, error) {
+	t, exist := r.registerTypeMap[metricName]
+	if !exist {
+		return nil, errors.New("can not find metric type")
+	}
+	objVal := reflect.New(t.Elem())
+	objList := objVal.Interface().(client.ObjectList)
+
+	opts := make([]client.ListOption, 0)
+	if workspace != "" {
+		opt := client.MatchingLabels(map[string]string{tenantv1alpha1.WorkspaceLabel: workspace})
+		opts = append(opts, opt)
+	}
+	if namespace != "" {
+		opt := client.InNamespace(namespace)
+		opts = append(opts, opt)
 	}
 
-	return metric, nil
+	err := r.client.List(context.Background(), objList, opts...,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return newMetric(metricName, prefix, meta.LenList(objList)), nil
 }
 
 type MetricResults struct {
@@ -124,83 +144,99 @@ type MetricValue struct {
 	Value []interface{} `json:"value"`
 }
 
+func (r *MetricResults) AddMetric(metric *Metric) {
+	r.Results = append(r.Results, *metric)
+}
+
 func NewDefaultRegisterOptions() []RegisterOption {
 	options := []RegisterOption{
 		{
 			MetricsName: NamespaceCount,
-			Type:        []client.ObjectList{&v12.NamespaceList{}},
+			Type:        &v12.NamespaceList{},
+		},
+		{
+			MetricsName: WorkspaceCount,
+			Type:        &v1alpha2.WorkspaceTemplateList{},
+		},
+		{
+			MetricsName: ClusterCount,
+			Type:        &clusterv1alpha1.ClusterList{},
 		},
 		{
 			MetricsName: PodCount,
-			Type:        []client.ObjectList{&v12.PodList{}},
+			Type:        &v12.PodList{},
 		},
 		{
 			MetricsName: DeploymentCount,
-			Type:        []client.ObjectList{&appsv1.DeploymentList{}},
+			Type:        &appsv1.DeploymentList{},
 		},
 		{
 			MetricsName: StatefulSetCount,
-			Type:        []client.ObjectList{&appsv1.StatefulSetList{}},
+			Type:        &appsv1.StatefulSetList{},
 		},
 		{
 			MetricsName: DaemonSetCount,
-			Type:        []client.ObjectList{&appsv1.DaemonSetList{}},
+			Type:        &appsv1.DaemonSetList{},
 		},
 		{
 			MetricsName: JobCount,
-			Type:        []client.ObjectList{&batchv1.JobList{}},
+			Type:        &batchv1.JobList{},
 		},
 		{
 			MetricsName: CronJobCount,
-			Type:        []client.ObjectList{&batchv1.CronJobList{}},
+			Type:        &batchv1.CronJobList{},
 		},
 		{
 			MetricsName: ServiceCount,
-			Type:        []client.ObjectList{&v12.ServiceList{}},
+			Type:        &v12.ServiceList{},
 		},
 		{
 			MetricsName: IngressCount,
-			Type:        []client.ObjectList{&v1.IngressList{}},
+			Type:        &v1.IngressList{},
 		},
 		{
 			MetricsName: PersistentVolumeCount,
-			Type:        []client.ObjectList{&v12.PersistentVolumeList{}},
+			Type:        &v12.PersistentVolumeList{},
 		},
 		{
 			MetricsName: GlobalRoleCount,
-			Type:        []client.ObjectList{&iamv1beta1.GlobalRoleList{}},
+			Type:        &iamv1beta1.GlobalRoleList{},
 		},
 		{
 			MetricsName: WorkspaceRoleCount,
-			Type:        []client.ObjectList{&iamv1beta1.WorkspaceRoleList{}},
+			Type:        &iamv1beta1.WorkspaceRoleList{},
 		},
 		{
 			MetricsName: RoleCount,
-			Type:        []client.ObjectList{&iamv1beta1.RoleList{}},
+			Type:        &iamv1beta1.RoleList{},
 		},
 		{
 			MetricsName: ClusterRoleCount,
-			Type:        []client.ObjectList{&iamv1beta1.ClusterRoleList{}},
+			Type:        &iamv1beta1.ClusterRoleList{},
 		},
 		{
 			MetricsName: UserCount,
-			Type:        []client.ObjectList{&iamv1beta1.UserList{}},
+			Type:        &iamv1beta1.UserList{},
 		},
 		{
 			MetricsName: GlobalRoleBindingCount,
-			Type:        []client.ObjectList{&iamv1beta1.GlobalRoleBindingList{}},
+			Type:        &iamv1beta1.GlobalRoleBindingList{},
 		},
 		{
 			MetricsName: ClusterRoleBindingCount,
-			Type:        []client.ObjectList{&iamv1beta1.ClusterRoleBindingList{}},
+			Type:        &iamv1beta1.ClusterRoleBindingList{},
 		},
 		{
 			MetricsName: RoleBindingCount,
-			Type:        []client.ObjectList{&iamv1beta1.RoleBindingList{}},
+			Type:        &iamv1beta1.RoleBindingList{},
 		},
 		{
 			MetricsName: WorkspaceRoleBindingCount,
-			Type:        []client.ObjectList{&iamv1beta1.WorkspaceRoleBindingList{}},
+			Type:        &iamv1beta1.WorkspaceRoleBindingList{},
+		},
+		{
+			MetricsName: ExtensionCount,
+			Type:        &corev1alpha1.ExtensionList{},
 		},
 	}
 	return options

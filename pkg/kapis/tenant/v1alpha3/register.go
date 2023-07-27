@@ -19,14 +19,11 @@ package v1alpha3
 import (
 	"net/http"
 
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
@@ -39,6 +36,8 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/server/errors"
+	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 const (
@@ -57,7 +56,7 @@ func AddToContainer(c *restful.Container, cacheClient runtimeclient.Client, audi
 	mimePatch := []string{restful.MIME_JSON, runtime.MimeMergePatchJson, runtime.MimeJsonPatchJson}
 
 	ws := runtime.NewWebService(GroupVersion)
-	v1alpha2Handler := v1alpha2.NewTenantHandler(cacheClient, auditingClient, clusterClient, am, im, authorizer)
+	v1alpha2Handler := v1alpha2.NewTenantHandler(cacheClient, auditingClient, clusterClient, am, im, authorizer, nil)
 	handler := newTenantHandler(cacheClient, auditingClient, clusterClient, am, im, authorizer)
 
 	ws.Route(ws.POST("/workspacetemplates").

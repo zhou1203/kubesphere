@@ -31,19 +31,38 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/components"
 	v2 "kubesphere.io/kubesphere/pkg/models/registries/v2"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
+	"kubesphere.io/kubesphere/pkg/simple/client/overview"
+)
+
+var (
+	ClusterMetricNames = []string{
+		overview.NamespaceCount, overview.PodCount, overview.DeploymentCount,
+		overview.StatefulSetCount, overview.DaemonSetCount, overview.JobCount,
+		overview.CronJobCount, overview.PersistentVolumeCount, overview.ServiceCount,
+		overview.IngressCount, overview.ClusterRoleBindingCount, overview.ClusterRoleCount,
+	}
+
+	NamespaceMetricNames = []string{
+		overview.PodCount, overview.DeploymentCount, overview.StatefulSetCount,
+		overview.DaemonSetCount, overview.JobCount, overview.ServiceCount,
+		overview.IngressCount, overview.RoleCount, overview.RoleBindingCount,
+	}
 )
 
 type Handler struct {
 	resourceGetterV1alpha3 *resourcev1alpha3.ResourceGetter
 	componentsGetter       components.Getter
 	registryHelper         v2.RegistryHelper
+	counter                overview.Counter
 }
 
-func New(resourceGetterV1alpha3 *resourcev1alpha3.ResourceGetter, componentsGetter components.Getter) *Handler {
+func New(resourceGetterV1alpha3 *resourcev1alpha3.ResourceGetter, componentsGetter components.Getter,
+	counter overview.Counter) *Handler {
 	return &Handler{
 		resourceGetterV1alpha3: resourceGetterV1alpha3,
 		componentsGetter:       componentsGetter,
 		registryHelper:         v2.NewRegistryHelper(),
+		counter:                counter,
 	}
 }
 
@@ -192,6 +211,25 @@ func (h *Handler) handleGetRepositoryTags(request *restful.Request, response *re
 	}
 
 	response.WriteHeaderAndJson(http.StatusOK, tags, restful.MIME_JSON)
+}
+
+func (h *Handler) GetClusterOverview(request *restful.Request, response *restful.Response) {
+	metrics, err := h.counter.GetMetrics(ClusterMetricNames, "", "", "cluster")
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+	_ = response.WriteEntity(metrics)
+}
+
+func (h *Handler) GetNamespaceOverview(request *restful.Request, response *restful.Response) {
+	namespace := request.PathParameter("namespace")
+	metrics, err := h.counter.GetMetrics(NamespaceMetricNames, namespace, "", "namespace")
+	if err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+	_ = response.WriteEntity(metrics)
 }
 
 func canonicalizeRegistryError(request *restful.Request, response *restful.Response, err error) {
