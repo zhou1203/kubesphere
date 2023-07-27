@@ -21,22 +21,19 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/golang-jwt/jwt/v4"
-	"k8s.io/client-go/util/retry"
-
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
-	marketplacev1alpha1 "kubesphere.io/api/marketplace/v1alpha1"
-
-	"kubesphere.io/kubesphere/pkg/models/marketplace"
-
 	"github.com/emicklei/go-restful/v3"
+	"github.com/golang-jwt/jwt/v4"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/client-go/util/retry"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	marketplacev1alpha1 "kubesphere.io/api/marketplace/v1alpha1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/models/marketplace"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 )
 
@@ -57,6 +54,11 @@ func (h *handler) bind(request *restful.Request, response *restful.Response) {
 	options, err := marketplace.LoadOptions(request.Request.Context(), h.client)
 	if err != nil {
 		api.HandleError(response, request, err)
+		return
+	}
+
+	if options.Account != nil {
+		api.HandleBadRequest(response, request, fmt.Errorf("cluster is already authorized"))
 		return
 	}
 
@@ -92,6 +94,11 @@ func (h *handler) callback(request *restful.Request, response *restful.Response)
 	options, err := marketplace.LoadOptions(request.Request.Context(), h.client)
 	if err != nil {
 		api.HandleError(response, request, err)
+		return
+	}
+
+	if options.Account != nil {
+		api.HandleBadRequest(response, request, fmt.Errorf("cluster is already authorized"))
 		return
 	}
 
@@ -146,6 +153,23 @@ func (h *handler) unbind(request *restful.Request, response *restful.Response) {
 		api.HandleError(response, request, err)
 		return
 	}
+
+	if options.Account == nil {
+		api.HandleBadRequest(response, request, fmt.Errorf("cluster is not authorized"))
+		return
+	}
+
+	systemNamespace := &corev1.Namespace{}
+	if err := h.client.Get(request.Request.Context(), types.NamespacedName{Name: constants.KubeSphereNamespace}, systemNamespace); err != nil {
+		api.HandleInternalError(response, request, err)
+		return
+	}
+
+	if err := marketplace.NewClient(options).Revoke(string(systemNamespace.UID)); err != nil {
+		api.HandleError(response, request, err)
+		return
+	}
+
 	options.Account = nil
 	if err := marketplace.SaveOptions(request.Request.Context(), h.client, options); err != nil {
 		api.HandleError(response, request, err)
@@ -167,13 +191,6 @@ func (h *handler) sync(request *restful.Request, response *restful.Response) {
 	}
 	subscriptions, err := client.ListSubscriptions("")
 	if err != nil {
-		if marketplace.IsForbiddenError(err) {
-			options.Account = nil
-			if err := marketplace.SaveOptions(request.Request.Context(), h.client, options); err != nil {
-				api.HandleError(response, request, fmt.Errorf("failed to update marketplace options: %s", err))
-				return
-			}
-		}
 		api.HandleError(response, request, fmt.Errorf("failed to list subscriptions: %s", err))
 		return
 	}
