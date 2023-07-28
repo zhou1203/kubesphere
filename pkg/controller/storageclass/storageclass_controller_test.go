@@ -16,7 +16,7 @@
 
 */
 
-package capability
+package storageclass
 
 import (
 	"context"

@@ -45,7 +45,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/roletemplate"
 	"kubesphere.io/kubesphere/pkg/controller/secret"
 	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
-	"kubesphere.io/kubesphere/pkg/controller/storage/capability"
+	"kubesphere.io/kubesphere/pkg/controller/storageclass"
 	"kubesphere.io/kubesphere/pkg/controller/telemetry"
 	"kubesphere.io/kubesphere/pkg/controller/user"
 	"kubesphere.io/kubesphere/pkg/controller/workspace"
@@ -69,7 +69,7 @@ var allControllers = []string{
 	"serviceaccount",
 	"resourcequota",
 	"job",
-	"storagecapability",
+	"storageclass",
 	"loginrecord",
 	"cluster",
 	"nsnp",
@@ -133,9 +133,8 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "job", &job.Reconciler{})
 	}
 
-	// "storagecapability" controller
-	if cmOptions.IsControllerEnabled("storagecapability") {
-		addControllerWithSetup(mgr, "storagecapability", &capability.Reconciler{})
+	if cmOptions.IsControllerEnabled("storageclass") {
+		addControllerWithSetup(mgr, "storageclass", &storageclass.Reconciler{})
 	}
 
 	// "loginrecord" controller
