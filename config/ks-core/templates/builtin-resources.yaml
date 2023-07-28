@@ -504,6 +504,8 @@ items:
         annotations:
           iam.kubesphere.io/aggregation-roles: '["workspace-manage-workspace-settings","workspace-view-workspace-settings","workspace-manage-projects","workspace-view-projects","workspace-create-projects","workspace-manage-app-templates","workspace-view-app-templates","workspace-manage-app-repos","workspace-view-app-repos","workspace-view-members","workspace-manage-members","workspace-manage-roles","workspace-view-roles","workspace-manage-groups","workspace-view-groups"]'
           kubesphere.io/creator: system
+        labels:
+          iam.kubesphere.io/auto-aggregate: "true"
         name: admin
       rules:
         - apiGroups:
@@ -530,6 +532,8 @@ items:
       metadata:
         annotations:
           kubesphere.io/creator: system
+        labels:
+          iam.kubesphere.io/auto-aggregate: "true"
         name: regular
       rules:
         - apiGroups:
@@ -563,6 +567,8 @@ items:
         annotations:
           iam.kubesphere.io/aggregation-roles: '["workspace-create-projects","workspace-view-app-templates","workspace-manage-app-templates","workspace-view-workspace-settings"]'
           kubesphere.io/creator: system
+        labels:
+          iam.kubesphere.io/auto-aggregate: "true"
         name: self-provisioner
       rules:
         - apiGroups:
@@ -610,6 +616,8 @@ items:
         annotations:
           iam.kubesphere.io/aggregation-roles: '["workspace-view-projects","workspace-view-app-templates","workspace-view-app-repos","workspace-view-members","workspace-view-roles","workspace-view-groups","workspace-view-workspace-settings"]'
           kubesphere.io/creator: system
+        labels:
+          iam.kubesphere.io/auto-aggregate: "true"
         name: viewer
       rules:
         - apiGroups:
