@@ -199,6 +199,10 @@ func NewDefaultRegisterOptions() []RegisterOption {
 			Type:        &v12.PersistentVolumeList{},
 		},
 		{
+			MetricsName: PersistentVolumeClaimCount,
+			Type:        &v12.PersistentVolumeClaimList{},
+		},
+		{
 			MetricsName: GlobalRoleCount,
 			Type:        &iamv1beta1.GlobalRoleList{},
 		},

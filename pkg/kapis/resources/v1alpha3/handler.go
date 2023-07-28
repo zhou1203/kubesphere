@@ -44,7 +44,8 @@ var (
 
 	NamespaceMetricNames = []string{
 		overview.PodCount, overview.DeploymentCount, overview.StatefulSetCount,
-		overview.DaemonSetCount, overview.JobCount, overview.ServiceCount,
+		overview.DaemonSetCount, overview.JobCount, overview.CronJobCount,
+		overview.PersistentVolumeClaimCount, overview.ServiceCount,
 		overview.IngressCount, overview.RoleCount, overview.RoleBindingCount,
 	}
 )
