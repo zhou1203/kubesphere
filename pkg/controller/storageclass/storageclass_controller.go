@@ -16,13 +16,15 @@
 
 */
 
-package capability
+package storageclass
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strconv"
 
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
@@ -30,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -40,6 +43,7 @@ const (
 	annotationAllowSnapshot = "storageclass.kubesphere.io/allow-snapshot"
 	annotationAllowClone    = "storageclass.kubesphere.io/allow-clone"
 	controllerName          = "capability-controller"
+	pvcCountAnnotation      = "kubesphere.io/pvc-count"
 )
 
 // This controller is responsible to watch StorageClass and CSIDriver.
@@ -58,7 +62,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := r.Get(ctx, req.NamespacedName, storageClass); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-
 	// Cloning and volumeSnapshot support only available for CSI drivers.
 	isCSIStorage := r.hasCSIDriver(ctx, storageClass)
 	// Annotate storageClass
@@ -69,6 +72,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	} else {
 		r.removeAnnotations(storageClassUpdated)
 	}
+
+	pvcCount, err := r.countPersistentVolumeClaims(ctx, storageClass)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if storageClassUpdated.Annotations == nil {
+		storageClassUpdated.Annotations = make(map[string]string)
+	}
+	storageClassUpdated.Annotations[pvcCountAnnotation] = strconv.Itoa(pvcCount)
 	if !reflect.DeepEqual(storageClass, storageClassUpdated) {
 		return ctrl.Result{}, r.Update(ctx, storageClassUpdated)
 	}
@@ -115,42 +127,93 @@ func (r *Reconciler) InjectClient(c client.Client) error {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return builder.
+	ctr, err := builder.
 		ControllerManagedBy(mgr).
-		For(
-			&storagev1.StorageClass{},
+		For(&storagev1.StorageClass{},
 			builder.WithPredicates(
 				predicate.ResourceVersionChangedPredicate{},
 			),
 		).
-		Watches(
-			&source.Kind{Type: &storagev1.CSIDriver{}},
-			handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
-				storageClassList := &storagev1.StorageClassList{}
-				if err := r.List(context.Background(), storageClassList); err != nil {
-					klog.Errorf("list StorageClass failed: %v", err)
-					return nil
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
+		Named(controllerName).Build(r)
+	if err != nil {
+		return fmt.Errorf("failed to setup %s: %s", controllerName, err)
+	}
+
+	err = ctr.Watch(
+		&source.Kind{Type: &storagev1.CSIDriver{}},
+		handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
+			pvc := obj.(*corev1.PersistentVolumeClaim)
+			var storageClassName string
+			if pvc.Spec.StorageClassName != nil {
+				storageClassName = *pvc.Spec.StorageClassName
+			} else if pvc.Annotations[corev1.BetaStorageClassAnnotation] != "" {
+				storageClassName = pvc.Annotations[corev1.BetaStorageClassAnnotation]
+			}
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: storageClassName}}}
+		}),
+		predicate.Funcs{
+			GenericFunc: func(genericEvent event.GenericEvent) bool {
+				return false
+			},
+			CreateFunc: func(event event.CreateEvent) bool {
+				return true
+			},
+			UpdateFunc: func(updateEvent event.UpdateEvent) bool {
+				return false
+			},
+			DeleteFunc: func(deleteEvent event.DeleteEvent) bool {
+				return true
+			},
+		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to setup %s: %s", controllerName, err)
+	}
+
+	err = ctr.Watch(
+		&source.Kind{Type: &corev1.PersistentVolumeClaim{}},
+		handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
+			storageClassList := &storagev1.StorageClassList{}
+			if err := r.List(context.Background(), storageClassList); err != nil {
+				klog.Errorf("list StorageClass failed: %v", err)
+				return nil
+			}
+			csiDriver := obj.(*storagev1.CSIDriver)
+			requests := make([]reconcile.Request, 0)
+			for _, storageClass := range storageClassList.Items {
+				if storageClass.Provisioner == csiDriver.Name {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: storageClass.Name,
+						},
+					})
 				}
-				csiDriver := obj.(*storagev1.CSIDriver)
-				requests := make([]reconcile.Request, 0)
-				for _, storageClass := range storageClassList.Items {
-					if storageClass.Provisioner == csiDriver.Name {
-						requests = append(requests, reconcile.Request{
-							NamespacedName: types.NamespacedName{
-								Name: storageClass.Name,
-							},
-						})
-					}
-				}
-				return requests
-			}),
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
-		Named(controllerName).
-		Complete(r)
+			}
+			return requests
+		}),
+		predicate.ResourceVersionChangedPredicate{},
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to setup %s: %s", controllerName, err)
+	}
+
+	return nil
+}
+
+func (r *Reconciler) countPersistentVolumeClaims(ctx context.Context, storageClass *storagev1.StorageClass) (int, error) {
+	pvcs := &corev1.PersistentVolumeClaimList{}
+	if err := r.List(ctx, pvcs); err != nil {
+		return 0, err
+	}
+	var count int
+	for _, pvc := range pvcs.Items {
+		if (pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName == storageClass.Name) ||
+			(pvc.Annotations != nil && pvc.Annotations[corev1.BetaStorageClassAnnotation] == storageClass.Name) {
+			count++
+		}
+	}
+	return count, nil
 }

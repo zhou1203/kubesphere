@@ -109,6 +109,5 @@ func (s *storageClassesGetter) countPersistentVolumeClaims(name string) int {
 			count++
 		}
 	}
-
 	return count
 }
