@@ -18,10 +18,6 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-const (
-	SyncAnnotation = "telemetry.kubesphere.io/synced"
-)
-
 // +genclient
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
@@ -34,8 +30,10 @@ type ClusterInfo struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ClusterInfoSpec   `json:"spec,omitempty"`
-	Status ClusterInfoStatus `json:"status,omitempty"`
+	Spec ClusterInfoSpec `json:"spec,omitempty"`
+
+	// +optional
+	Status *ClusterInfoStatus `json:"status,omitempty"`
 }
 
 // ClusterInfoSpec nothing in Spec. only use collect cluster telemetry data
@@ -44,14 +42,21 @@ type ClusterInfoSpec struct {
 
 // ClusterInfoStatus. store cluster telemetry data
 type ClusterInfoStatus struct {
+	// when to sync data to ksCloud
+	SyncTime *metav1.Time `json:"syncTime,omitempty"`
+
 	// extension which cluster has installed. refer to subscriptions.kubesphere.io
 	Extension []Extension `json:"extension,omitempty"`
+
 	// cluster info which kubesphere use. refer to clusters.cluster.kubesphere.io
 	Clusters []Cluster `json:"clusters,omitempty"`
+
 	// the platform resources total.
 	Platform Platform `json:"platform,omitempty"`
+
 	// kubesphere cloud id
 	CloudId string `json:"cloudId,omitempty"`
+
 	// collection time
 	TotalTime *metav1.Time `json:"ts,omitempty"`
 }

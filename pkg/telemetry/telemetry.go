@@ -166,7 +166,7 @@ func (t *telemetry) save(ctx context.Context, data map[string]interface{}) error
 
 	// update clusterInfo status
 	newClusterInfo := clusterInfo.DeepCopy()
-	newClusterInfo.Status = *status
+	newClusterInfo.Status = status
 	if err := t.client.Status().Patch(ctx, newClusterInfo, runtimeclient.MergeFrom(clusterInfo.DeepCopy())); err != nil {
 		return err
 	}

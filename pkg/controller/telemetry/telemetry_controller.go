@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	telemetryv1alpha1 "kubesphere.io/api/telemetry/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -63,7 +64,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 		}
 	}
 
-	if _, ok := clusterInfo.Annotations[telemetryv1alpha1.SyncAnnotation]; !ok {
+	// sync data to ksCloud.
+	if clusterInfo.Status != nil && clusterInfo.Status.SyncTime == nil {
 		if err := r.syncToKSCloud(ctx, clusterInfo); err != nil {
 			return reconcile.Result{}, err
 		}
@@ -113,11 +115,9 @@ func (r *Reconciler) syncToKSCloud(ctx context.Context, clusterInfo *telemetryv1
 	// add annotation to clusterInfo
 	newClusterInfo := clusterInfo.DeepCopy()
 	// sync to ksCloud
-	if newClusterInfo.Annotations == nil {
-		newClusterInfo.Annotations = make(map[string]string)
-	}
-	newClusterInfo.Annotations[telemetryv1alpha1.SyncAnnotation] = time.Now().Format(time.RFC3339)
-	if err := r.Client.Patch(ctx, newClusterInfo, runtimeclient.MergeFrom(clusterInfo.DeepCopy())); err != nil {
+	now := metav1.Now()
+	newClusterInfo.Status.SyncTime = &now
+	if err := r.Client.Status().Patch(ctx, newClusterInfo, runtimeclient.MergeFrom(clusterInfo.DeepCopy())); err != nil {
 		return err
 	}
 	return nil
