@@ -209,7 +209,7 @@ func (h *resourceManager) List(ctx context.Context, namespace string, query *que
 		return err
 	}
 
-	filtered, remainingItemCount := DefaultList(extractList, query, compare, filter)
+	filtered, remainingItemCount := DefaultList(extractList, query, DefaultCompare, DefaultFilter)
 	list.SetRemainingItemCount(remainingItemCount)
 	if err := meta.SetList(list, filtered); err != nil {
 		return err
@@ -235,7 +235,7 @@ func (h *resourceManager) Patch(ctx context.Context, old, new client.Object) err
 	return h.client.Patch(ctx, new, client.MergeFrom(old))
 }
 
-func compare(left, right runtime.Object, field query.Field) bool {
+func DefaultCompare(left, right runtime.Object, field query.Field) bool {
 	l, err := meta.Accessor(left)
 	if err != nil {
 		return false
@@ -247,7 +247,7 @@ func compare(left, right runtime.Object, field query.Field) bool {
 	return DefaultObjectMetaCompare(l, r, field)
 }
 
-func filter(object runtime.Object, filter query.Filter) bool {
+func DefaultFilter(object runtime.Object, filter query.Filter) bool {
 	o, err := meta.Accessor(object)
 	if err != nil {
 		return false

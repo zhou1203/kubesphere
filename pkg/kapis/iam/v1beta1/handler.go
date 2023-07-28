@@ -23,6 +23,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
+	resv1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 )
 
 type Member struct {
@@ -340,13 +341,14 @@ func (h *iamHandler) ListUserLoginRecords(request *restful.Request, response *re
 
 func (h *iamHandler) ListClusterMembers(request *restful.Request, response *restful.Response) {
 	roleName := request.QueryParameter("clusterrole")
-	bindings, err := h.am.ListClusterRoleBindings("", roleName)
 	result := &api.ListResult{Items: make([]runtime.Object, 0)}
+	bindings, err := h.am.ListClusterRoleBindings("", roleName)
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
 	}
 
+	users := make([]runtime.Object, 0)
 	for _, binding := range bindings {
 		for _, subject := range binding.Subjects {
 			if subject.Kind == rbacv1.UserKind {
@@ -362,6 +364,10 @@ func (h *iamHandler) ListClusterMembers(request *restful.Request, response *rest
 		}
 	}
 
+	list, _ := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+	result.Items = list
+	result.TotalItems = len(list)
+
 	_ = response.WriteEntity(result)
 }
 
@@ -375,6 +381,7 @@ func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *re
 		return
 	}
 
+	users := make([]runtime.Object, 0)
 	for _, binding := range bindings {
 		for _, subject := range binding.Subjects {
 			if subject.Kind == rbacv1.UserKind {
@@ -384,11 +391,13 @@ func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *re
 					return
 				}
 				user.Annotations[iamv1beta1.WorkspaceRoleAnnotation] = binding.RoleRef.Name
-				result.Items = append(result.Items, user)
-				result.TotalItems += 1
+				users = append(users, user)
 			}
 		}
 	}
+	list, _ := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+	result.Items = list
+	result.TotalItems = len(list)
 
 	_ = response.WriteEntity(result)
 }
@@ -403,6 +412,8 @@ func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *re
 	}
 
 	result := &api.ListResult{Items: make([]runtime.Object, 0)}
+	users := make([]runtime.Object, 0)
+
 	for _, binding := range bindings {
 		for _, subject := range binding.Subjects {
 			if subject.Kind == rbacv1.UserKind {
@@ -412,11 +423,14 @@ func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *re
 					return
 				}
 				user.Annotations[iamv1beta1.RoleAnnotation] = binding.RoleRef.Name
-				result.Items = append(result.Items, user)
-				result.TotalItems += 1
+				users = append(users, user)
 			}
 		}
 	}
+
+	list, _ := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+	result.Items = list
+	result.TotalItems = len(list)
 
 	_ = response.WriteEntity(result)
 }
