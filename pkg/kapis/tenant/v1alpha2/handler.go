@@ -50,12 +50,14 @@ type tenantHandler struct {
 	tenant  tenant.Interface
 	auth    authorizer.Authorizer
 	counter overview.Counter
+	client  runtimeclient.Client
 }
 
 func NewTenantHandler(client runtimeclient.Client, auditingClient auditingclient.Client, clusterClient clusterclient.Interface,
 	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer, counter overview.Counter) *tenantHandler {
 	return &tenantHandler{
 		tenant:  tenant.New(client, auditingClient, clusterClient, am, im, authorizer),
+		client:  client,
 		auth:    authorizer,
 		counter: counter,
 	}
@@ -594,6 +596,13 @@ func (h *tenantHandler) GetPlatformMetrics(req *restful.Request, resp *restful.R
 	prefix := "platform"
 
 	metricNames := []string{overview.UserCount}
+	metrics, err := h.counter.GetMetrics(metricNames, "", "", prefix)
+	if err != nil {
+		api.HandleInternalError(resp, req, err)
+		return
+	}
+
+	// check if the user has permission to visit extensions
 	attr := authorizer.AttributesRecord{
 		User:            user,
 		Verb:            "list",
@@ -611,16 +620,18 @@ func (h *tenantHandler) GetPlatformMetrics(req *restful.Request, resp *restful.R
 	}
 
 	if decision == authorizer.DecisionAllow {
-		metricNames = append(metricNames, overview.ExtensionCount)
+		// get extensions that has been subscribed
+		extensionList := &corev1alpha1.ExtensionList{}
+		err = h.client.List(req.Request.Context(), extensionList,
+			runtimeclient.MatchingLabels{"marketplace.kubesphere.io/subscribed": "true"})
+		if err != nil {
+			api.HandleInternalError(resp, req, err)
+			return
+		}
+		metrics.AddMetric(overview.CustomMetric(overview.ExtensionCount, prefix, len(extensionList.Items)))
 	}
 
-	metrics, err := h.counter.GetMetrics(metricNames, "", "", prefix)
-	if err != nil {
-		api.HandleInternalError(resp, req, err)
-		return
-	}
-
-	// get workspace count
+	// get count of workspaces a tenant can access
 	workspaces, err := h.tenant.ListWorkspaces(user, parameter)
 	if err != nil {
 		api.HandleInternalError(resp, req, err)
@@ -630,7 +641,7 @@ func (h *tenantHandler) GetPlatformMetrics(req *restful.Request, resp *restful.R
 		metrics.AddMetric(overview.CustomMetric(overview.WorkspaceCount, prefix, workspaces.TotalItems))
 	}
 
-	// get cluster count
+	// get count of clusters a tenant can access
 	clusters, err := h.tenant.ListClusters(user, parameter)
 	if err != nil {
 		api.HandleInternalError(resp, req, err)
