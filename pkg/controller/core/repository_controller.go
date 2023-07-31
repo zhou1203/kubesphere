@@ -98,7 +98,6 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 
 		extension.Labels[corev1alpha1.RepositoryReferenceLabel] = repo.Name
 		extension.Spec.ExtensionInfo = extensionVersion.Spec.ExtensionInfo
-
 		if err := controllerutil.SetOwnerReference(repo, extension, r.Scheme()); err != nil {
 			return err
 		}
@@ -113,7 +112,7 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 	return extension, nil
 }
 
-func (r *RepositoryReconciler) createOrUpdateExtensionVersion(ctx context.Context, repo *corev1alpha1.Repository, extension *corev1alpha1.Extension, extensionVersion *corev1alpha1.ExtensionVersion) error {
+func (r *RepositoryReconciler) createOrUpdateExtensionVersion(ctx context.Context, extension *corev1alpha1.Extension, extensionVersion *corev1alpha1.ExtensionVersion) error {
 	logger := klog.FromContext(ctx)
 	version := &corev1alpha1.ExtensionVersion{ObjectMeta: metav1.ObjectMeta{Name: extensionVersion.Name}}
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, version, func() error {
@@ -219,7 +218,7 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 		}
 
 		for _, extensionVersion := range extensionVersions {
-			if err := r.createOrUpdateExtensionVersion(ctx, repo, extension, &extensionVersion); err != nil {
+			if err := r.createOrUpdateExtensionVersion(ctx, extension, &extensionVersion); err != nil {
 				return fmt.Errorf("failed to create or update extension version: %s", err)
 			}
 		}

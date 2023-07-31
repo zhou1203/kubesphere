@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -57,19 +58,37 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{}, nil
 	}
 
-	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] == options.RepositorySyncOptions.RepoName {
-		if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
-			if err := r.syncExtensionID(ctx, options, extension); err != nil {
-				return reconcile.Result{}, err
-			}
-		} else if options.Account != nil && options.Account.AccessToken != "" {
-			if err := r.syncSubscription(ctx, options, extension); err != nil {
-				return reconcile.Result{}, err
-			}
-		} else {
-			if err := marketplace.RemoveSubscription(ctx, r.Client, extension); err != nil {
-				return reconcile.Result{}, err
-			}
+	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] != options.RepositorySyncOptions.RepoName {
+		return ctrl.Result{}, nil
+	}
+
+	if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
+		if err := r.syncExtensionID(ctx, options, extension); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
+	hasCategoryLabels := false
+	for k := range extension.Labels {
+		if strings.HasPrefix(k, corev1alpha1.CategoryLabelPrefix+"/") {
+			hasCategoryLabels = true
+			break
+		}
+	}
+
+	if !hasCategoryLabels && extension.Annotations[marketplacev1alpha1.CategoryID] != "" {
+		if err := r.syncExtensionCategory(ctx, options, extension); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
+	if options.Account != nil && options.Account.AccessToken != "" {
+		if err := r.syncSubscription(ctx, options, extension); err != nil {
+			return reconcile.Result{}, err
+		}
+	} else {
+		if err := marketplace.RemoveSubscription(ctx, r.Client, extension); err != nil {
+			return reconcile.Result{}, err
 		}
 	}
 	return reconcile.Result{}, nil
@@ -84,6 +103,7 @@ func (r *Controller) Start(ctx context.Context) error {
 		return err
 	}
 	go wait.Until(r.syncSubscriptions, max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
+	go wait.Until(r.syncCategories, max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
 	return nil
 }
 
@@ -99,6 +119,34 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		For(&corev1alpha1.Extension{}).
 		Build(r)
 
+	if err != nil {
+		return fmt.Errorf("failed to setup %s: %s", marketplaceController, err)
+	}
+	err = ctr.Watch(&source.Kind{Type: &corev1alpha1.Category{}},
+		handler.EnqueueRequestsFromMapFunc(func(object client.Object) []reconcile.Request {
+			var requests []reconcile.Request
+			category := object.(*corev1alpha1.Category)
+			if category.Annotations[marketplacev1alpha1.CategoryID] == "" {
+				return requests
+			}
+			extensions := &corev1alpha1.ExtensionList{}
+			if err := r.List(context.Background(), extensions); err != nil {
+				r.logger.Error(err, "failed to list extensions")
+				return requests
+			}
+			for _, extension := range extensions.Items {
+				if extension.Annotations[marketplacev1alpha1.CategoryID] == category.Annotations[marketplacev1alpha1.CategoryID] {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: extension.Name,
+						},
+					})
+				}
+			}
+			return requests
+		}),
+		predicate.ResourceVersionChangedPredicate{},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to setup %s: %s", marketplaceController, err)
 	}
@@ -181,9 +229,10 @@ func (r *Controller) syncSubscriptions() {
 	defer cancel()
 	options, err := marketplace.LoadOptions(ctx, r.Client)
 	if err != nil {
-		r.logger.Error(err, "failed to sync subscriptions")
+		r.logger.Error(err, "failed to load marketplace configuration")
 		return
 	}
+
 	if options.Account == nil || options.Account.AccessToken == "" {
 		r.logger.V(4).Info("marketplace account not bound, skip synchronization")
 		extensions := &corev1alpha1.ExtensionList{}
@@ -213,10 +262,10 @@ func (r *Controller) syncSubscriptions() {
 				return err
 			}
 			if len(extensions.Items) > 0 {
-				extension = &extensions.Items[0]
-				if extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
-					extension.Labels[marketplacev1alpha1.Subscribed] = "true"
-					if err := r.Update(ctx, extension); err != nil {
+				expected := &extensions.Items[0]
+				if expected.Labels[marketplacev1alpha1.Subscribed] != "true" {
+					expected.Labels[marketplacev1alpha1.Subscribed] = "true"
+					if err := r.Update(ctx, expected); err != nil {
 						return err
 					}
 				}
@@ -231,7 +280,6 @@ func (r *Controller) syncSubscriptions() {
 			r.logger.Error(err, "subscription related extension not found", "subscription ID", subscription.SubscriptionID, "extension ID", subscription.ExtensionID)
 			continue
 		}
-
 		if err = marketplace.CreateOrUpdateSubscription(ctx, r.Client, extension, subscription); err != nil {
 			r.logger.Error(err, "failed to update subscription")
 		}
@@ -262,16 +310,31 @@ func (r *Controller) initMarketplaceRepository(ctx context.Context, options *mar
 }
 
 func (r *Controller) syncExtensionID(ctx context.Context, options *marketplace.Options, extension *corev1alpha1.Extension) error {
-	id, err := marketplace.NewClient(options).ExtensionID(extension.Name)
+	extensionInfo, err := marketplace.NewClient(options).ExtensionInfo(extension.Name)
 	if err != nil {
 		return err
 	}
-	if id != "" {
-		extension = extension.DeepCopy()
-		extension.Labels[marketplacev1alpha1.ExtensionID] = id
-		return r.Update(ctx, extension, &client.UpdateOptions{})
+	if extensionInfo.ExtensionID == "" {
+		return nil
 	}
-	return nil
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
+			return err
+		}
+		expected := extension.DeepCopy()
+		if expected.Labels == nil {
+			extension.Labels = make(map[string]string, 0)
+		}
+		expected.Labels[marketplacev1alpha1.ExtensionID] = extensionInfo.ExtensionID
+		if expected.Annotations == nil {
+			expected.Annotations = make(map[string]string, 0)
+		}
+		expected.Annotations[marketplacev1alpha1.CategoryID] = extensionInfo.CategoryID
+		if !reflect.DeepEqual(expected.Labels, extension.Labels) || !reflect.DeepEqual(expected.Annotations, extension.Annotations) {
+			return r.Update(ctx, expected, &client.UpdateOptions{})
+		}
+		return nil
+	})
 }
 
 func (r *Controller) syncSubscription(ctx context.Context, options *marketplace.Options, extension *corev1alpha1.Extension) error {
@@ -285,18 +348,22 @@ func (r *Controller) syncSubscription(ctx context.Context, options *marketplace.
 		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
 			return err
 		}
-		extension = extension.DeepCopy()
+		expected := extension.DeepCopy()
 		if subscribed {
-			extension.Labels[marketplacev1alpha1.Subscribed] = "true"
-		} else if extension.Status.State == "" {
-			delete(extension.Labels, marketplacev1alpha1.Subscribed)
+			expected.Labels[marketplacev1alpha1.Subscribed] = "true"
+		} else if expected.Status.State == "" {
+			delete(expected.Labels, marketplacev1alpha1.Subscribed)
 		} else {
-			extension.Labels[marketplacev1alpha1.Subscribed] = "false"
+			expected.Labels[marketplacev1alpha1.Subscribed] = "false"
 		}
-		return r.Update(ctx, extension)
+		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
+			return r.Update(ctx, expected)
+		}
+		return nil
 	})
+
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to update extension: %s", err)
 	}
 
 	if subscribed {
@@ -307,4 +374,78 @@ func (r *Controller) syncSubscription(ctx context.Context, options *marketplace.
 		}
 	}
 	return nil
+}
+
+func (r *Controller) syncCategories() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	defer cancel()
+	options, err := marketplace.LoadOptions(context.Background(), r.Client)
+	if err != nil {
+		r.logger.Error(err, "failed to sync categories")
+		return
+	}
+	categories, err := marketplace.NewClient(options).ListCategories()
+	if err != nil {
+		r.logger.Error(err, "failed to list categories")
+	}
+
+	for _, category := range categories {
+		r.createOrUpdateCategory(ctx, &category)
+	}
+}
+
+func (r *Controller) createOrUpdateCategory(ctx context.Context, origin *marketplace.Category) error {
+	category := &corev1alpha1.Category{
+		ObjectMeta: metav1.ObjectMeta{Name: origin.NormalizedName},
+	}
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, category, func() error {
+		if category.Labels == nil {
+			category.Labels = make(map[string]string)
+		}
+		category.Labels[marketplacev1alpha1.CategoryID] = origin.CategoryID
+		category.Spec = corev1alpha1.CategorySpec{
+			DisplayName: origin.Name,
+			Icon:        "",
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	klog.V(4).Infof("Update category %s successfully: %s", origin.NormalizedName, op)
+	return nil
+}
+
+func (r *Controller) syncExtensionCategory(ctx context.Context, options *marketplace.Options, extension *corev1alpha1.Extension) error {
+	categoryID := extension.Annotations[marketplacev1alpha1.CategoryID]
+	categories := &corev1alpha1.CategoryList{}
+	if err := r.List(ctx, categories, client.MatchingLabels{marketplacev1alpha1.CategoryID: categoryID}); err != nil {
+		return fmt.Errorf("failed to list categories: %s", err)
+	}
+
+	category := &corev1alpha1.Category{}
+	if len(categories.Items) > 0 {
+		category = &categories.Items[0]
+	} else {
+		categoryInfo, err := marketplace.NewClient(options).CategoryInfo(categoryID)
+		if err != nil {
+			return fmt.Errorf("failed to describe category %s: %s", categoryID, err)
+		}
+		if err := r.createOrUpdateCategory(ctx, categoryInfo); err != nil {
+			return fmt.Errorf("failed to update category: %s", err)
+		}
+		if err := r.Get(ctx, types.NamespacedName{Name: categoryInfo.NormalizedName}, category); err != nil {
+			return fmt.Errorf("failed to describe category %s: %s", categoryInfo.NormalizedName, err)
+		}
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
+			return err
+		}
+		expected := extension.DeepCopy()
+		expected.Labels[fmt.Sprintf(corev1alpha1.CategoryLabelFormat, category.Name)] = ""
+		return r.Update(ctx, expected)
+	})
 }

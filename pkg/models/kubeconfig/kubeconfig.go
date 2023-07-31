@@ -313,7 +313,7 @@ func applyCert(secret *corev1.Secret, csr *certificatesv1.CertificateSigningRequ
 		return secret
 	}
 
-	secret.StringData[kubeconfigFileName] = string(data)
+	secret.StringData = map[string]string{kubeconfigFileName: string(data)}
 	return secret
 }
 
