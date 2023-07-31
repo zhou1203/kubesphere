@@ -244,13 +244,14 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 
 		extensionVersionReconciler := &core.ExtensionVersionReconciler{K8sVersion: k8sVersion}
 		addControllerWithSetup(mgr, "extensionversion", extensionVersionReconciler)
+		addControllerWithSetup(mgr, "category", &core.CategoryReconciler{})
 	}
 
 	// extension webhook
 	if cmOptions.IsControllerEnabled("extension-webhook") {
-		addControllerWithSetup(mgr, "extension-webhook", &extension.JSBundleWebhook{})
-		addControllerWithSetup(mgr, "extension-webhook", &extension.APIServiceWebhook{})
-		addControllerWithSetup(mgr, "extension-webhook", &extension.ReverseProxyWebhook{})
+		addControllerWithSetup(mgr, "jsbundle-webhook", &extension.JSBundleWebhook{})
+		addControllerWithSetup(mgr, "apiservice-webhook", &extension.APIServiceWebhook{})
+		addControllerWithSetup(mgr, "reverseproxy-webhook", &extension.ReverseProxyWebhook{})
 	}
 
 	if cmOptions.IsControllerEnabled("repository") {
