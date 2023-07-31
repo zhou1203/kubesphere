@@ -45,7 +45,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/constants"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
-	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
@@ -58,7 +57,6 @@ const (
 // Reconciler reconciles a User object
 type Reconciler struct {
 	client.Client
-	KubeconfigOperator    kubeconfig.Interface
 	AuthenticationOptions *authentication.Options
 	logger                logr.Logger
 	recorder              record.EventRecorder
@@ -69,7 +67,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-
+	if r.ClusterClientSet == nil {
+		return fmt.Errorf("failed to setup %s: ClusterClientSet must not be nil", controllerName)
+	}
 	ctr, err := ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
@@ -80,15 +80,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	// host cluster
-	if r.ClusterClientSet != nil {
-		return ctr.Watch(
-			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
-			handler.EnqueueRequestsFromMapFunc(r.mapper),
-			clusterutils.ClusterStatusChangedPredicate{})
-	}
-
-	return nil
+	return ctr.Watch(
+		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+		handler.EnqueueRequestsFromMapFunc(r.mapper),
+		clusterutils.ClusterStatusChangedPredicate{})
 }
 
 func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
@@ -154,27 +149,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{}, nil
 	}
 
-	// host cluster
-	if r.ClusterClientSet != nil {
-		if err := r.encryptPassword(ctx, user); err != nil {
-			r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileUserStatus(ctx, user); err != nil {
-			r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
-			return ctrl.Result{}, err
-		}
-		if err := r.sync(ctx, user); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err := r.encryptPassword(ctx, user); err != nil {
+		r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+		return ctrl.Result{}, err
 	}
-
-	if r.KubeconfigOperator != nil {
-		// ensure user KubeconfigOperator configmap is created
-		if err := r.KubeconfigOperator.CreateKubeConfig(user); err != nil {
-			r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
-			return ctrl.Result{}, err
-		}
+	if err := r.reconcileUserStatus(ctx, user); err != nil {
+		r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
+		return ctrl.Result{}, err
+	}
+	if err := r.sync(ctx, user); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	r.recorder.Event(user, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)

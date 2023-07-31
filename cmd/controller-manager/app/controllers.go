@@ -37,6 +37,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/groupbinding"
 	"kubesphere.io/kubesphere/pkg/controller/job"
 	"kubesphere.io/kubesphere/pkg/controller/ksserviceaccount"
+	kubeconfigctr "kubesphere.io/kubesphere/pkg/controller/kubeconfig"
 	"kubesphere.io/kubesphere/pkg/controller/loginrecord"
 	"kubesphere.io/kubesphere/pkg/controller/marketplace"
 	"kubesphere.io/kubesphere/pkg/controller/namespace"
@@ -60,6 +61,7 @@ import (
 
 var allControllers = []string{
 	"user",
+	"kubeconfig",
 	"workspacetemplate",
 	"workspace",
 	"workspacerole",
@@ -100,6 +102,10 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	// init controllers for host cluster
 	if err := addHostControllers(mgr, client, cmOptions); err != nil {
 		return err
+	}
+
+	if cmOptions.IsControllerEnabled("kubeconfig") {
+		addControllerWithSetup(mgr, "kubeconfig", &kubeconfigctr.Reconciler{KubeConfigOperator: kubeconfig.NewOperator(mgr.GetClient(), client.Config())})
 	}
 
 	// "workspace" controller
@@ -221,7 +227,6 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 		userController := &user.Reconciler{
 			AuthenticationOptions: cmOptions.AuthenticationOptions,
 			ClusterClientSet:      clusterClientSet,
-			KubeconfigOperator:    kubeconfig.NewOperator(mgr.GetClient(), client.Config()),
 		}
 		addControllerWithSetup(mgr, "user", userController)
 	}
