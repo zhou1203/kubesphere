@@ -90,9 +90,7 @@ func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *c
 
 		if expected.Status.RecommendedVersion != extension.Status.RecommendedVersion ||
 			!reflect.DeepEqual(expected.Status.Versions, extension.Status.Versions) {
-			if err := c.Update(ctx, expected); err != nil {
-				return err
-			}
+			return c.Update(ctx, expected)
 		}
 		return nil
 	})

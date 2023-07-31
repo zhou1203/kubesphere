@@ -85,7 +85,7 @@ func (r *Reconciler) syncToKSCloud(ctx context.Context, clusterInfo *telemetryv1
 		}
 	}
 	if clusterId == "" { // When the data has not been collected yet
-		return fmt.Errorf("clusterInfo %s clusterId is empty, cannot sync to KSCloud", clusterInfo.Name)
+		return nil
 	}
 
 	// convert req data
