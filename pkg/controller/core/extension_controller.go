@@ -18,10 +18,14 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
 
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -72,19 +76,31 @@ func reconcileExtensionStatus(ctx context.Context, c client.Client, extension *c
 		return versions[i].Version < versions[j].Version
 	})
 
-	extensionCopy := extension.DeepCopy()
-	if recommended, err := getRecommendedExtensionVersion(versionList.Items, k8sVersion); err == nil {
-		extensionCopy.Status.RecommendedVersion = recommended
-	} else {
-		klog.V(2).Info(err)
-	}
-	extensionCopy.Status.Versions = versions
-
-	if !reflect.DeepEqual(extensionCopy.Status, extension.Status) {
-		if err := c.Update(ctx, extensionCopy); err != nil {
-			return ctrl.Result{}, err
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := c.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
+			return err
 		}
+		expected := extension.DeepCopy()
+		if recommended, err := getRecommendedExtensionVersion(versionList.Items, k8sVersion); err == nil {
+			expected.Status.RecommendedVersion = recommended
+		} else {
+			klog.V(2).Info(err)
+		}
+		expected.Status.Versions = versions
+
+		if expected.Status.RecommendedVersion != extension.Status.RecommendedVersion ||
+			!reflect.DeepEqual(expected.Status.Versions, extension.Status.Versions) {
+			if err := c.Update(ctx, expected); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update extension status: %s", err)
 	}
+
 	return ctrl.Result{}, nil
 }
 
