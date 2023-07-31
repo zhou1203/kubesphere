@@ -141,7 +141,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	err = ctr.Watch(
-		&source.Kind{Type: &storagev1.CSIDriver{}},
+		&source.Kind{Type: &corev1.PersistentVolumeClaim{}},
 		handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
 			pvc := obj.(*corev1.PersistentVolumeClaim)
 			var storageClassName string
@@ -173,7 +173,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	err = ctr.Watch(
-		&source.Kind{Type: &corev1.PersistentVolumeClaim{}},
+		&source.Kind{Type: &storagev1.CSIDriver{}},
 		handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
 			storageClassList := &storagev1.StorageClassList{}
 			if err := r.List(context.Background(), storageClassList); err != nil {
