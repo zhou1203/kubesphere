@@ -273,7 +273,7 @@ func (r *Controller) syncSubscriptions() {
 			return nil
 		})
 		if err != nil {
-			r.logger.Error(err, "failed to sync subscriptions")
+			r.logger.Error(err, "failed to update extension status")
 			continue
 		}
 		if extension == nil {
@@ -390,7 +390,10 @@ func (r *Controller) syncCategories() {
 	}
 
 	for _, category := range categories {
-		r.createOrUpdateCategory(ctx, &category)
+		if err := r.createOrUpdateCategory(ctx, &category); err != nil {
+			klog.Errorf("failed to update category: %s", err)
+			continue
+		}
 	}
 }
 
@@ -440,12 +443,22 @@ func (r *Controller) syncExtensionCategory(ctx context.Context, options *marketp
 			return fmt.Errorf("failed to describe category %s: %s", categoryInfo.NormalizedName, err)
 		}
 	}
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
 			return err
 		}
 		expected := extension.DeepCopy()
 		expected.Labels[fmt.Sprintf(corev1alpha1.CategoryLabelFormat, category.Name)] = ""
-		return r.Update(ctx, expected)
+		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
+			klog.Infof("update extension %v", expected)
+			return r.Update(ctx, expected)
+		}
+		return nil
 	})
+
+	if err != nil {
+		return fmt.Errorf("failed to update extension category: %s", err)
+	}
+
+	return nil
 }

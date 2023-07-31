@@ -231,19 +231,12 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 		addControllerWithSetup(mgr, "user", userController)
 	}
 
-	var k8sVersion string
 	if cmOptions.IsControllerEnabled("extension") {
 		info, err := client.Kubernetes().Discovery().ServerVersion()
-		if err == nil {
-			k8sVersion = info.GitVersion
-		} else {
-			return err
+		if err != nil {
+			return fmt.Errorf("failed to get K8s version: %s", err)
 		}
-		extensionReconciler := &core.ExtensionReconciler{K8sVersion: k8sVersion}
-		addControllerWithSetup(mgr, "extension", extensionReconciler)
-
-		extensionVersionReconciler := &core.ExtensionVersionReconciler{K8sVersion: k8sVersion}
-		addControllerWithSetup(mgr, "extensionversion", extensionVersionReconciler)
+		addControllerWithSetup(mgr, "extension", &core.ExtensionReconciler{K8sVersion: info.GitVersion})
 		addControllerWithSetup(mgr, "category", &core.CategoryReconciler{})
 	}
 
