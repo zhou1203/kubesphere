@@ -751,10 +751,10 @@ func (r *InstallPlanReconciler) updateExtensionStatus(ctx context.Context, exten
 		expected.Status.PlannedInstallVersion = status.PlannedInstallVersion
 		expected.Status.ClusterSchedulingStatuses = status.ClusterSchedulingStatuses
 
-		if !reflect.DeepEqual(extension.Status, expected.Status) {
-			if err := r.Update(ctx, expected); err != nil {
-				return err
-			}
+		if expected.Status.State != extension.Status.State ||
+			expected.Status.PlannedInstallVersion != status.PlannedInstallVersion ||
+			!reflect.DeepEqual(expected.Status.ClusterSchedulingStatuses, extension.Status.ClusterSchedulingStatuses) {
+			return r.Update(ctx, expected)
 		}
 		return nil
 	})
