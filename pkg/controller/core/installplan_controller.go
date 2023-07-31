@@ -739,18 +739,15 @@ func syncReverseProxyStatus(ctx context.Context, clusterClient client.Client, pl
 }
 
 func (r *InstallPlanReconciler) updateExtensionStatus(ctx context.Context, extensionName string, status corev1alpha1.ExtensionStatus) error {
-	logger := klog.FromContext(ctx)
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		extension := &corev1alpha1.Extension{}
 		if err := r.Get(ctx, types.NamespacedName{Name: extensionName}, extension); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-
 		expected := extension.DeepCopy()
 		expected.Status.State = status.State
 		expected.Status.PlannedInstallVersion = status.PlannedInstallVersion
 		expected.Status.ClusterSchedulingStatuses = status.ClusterSchedulingStatuses
-
 		if expected.Status.State != extension.Status.State ||
 			expected.Status.PlannedInstallVersion != status.PlannedInstallVersion ||
 			!reflect.DeepEqual(expected.Status.ClusterSchedulingStatuses, extension.Status.ClusterSchedulingStatuses) {
@@ -758,8 +755,9 @@ func (r *InstallPlanReconciler) updateExtensionStatus(ctx context.Context, exten
 		}
 		return nil
 	})
+
 	if err != nil {
-		logger.Error(err, "failed to update installplan")
+		return fmt.Errorf("failed to update extension status: %s", err)
 	}
 	return nil
 }
