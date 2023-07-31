@@ -20,13 +20,12 @@ import (
 	"context"
 	"time"
 
-	"k8s.io/utils/pointer"
-
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,7 +66,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		// certificate data is not empty
 		if len(csr.Status.Certificate) > 0 {
-			if err := r.kubeconfigOperator.UpdateKubeconfig(username, csr); err != nil {
+			if err := r.kubeconfigOperator.UpdateKubeConfig(username, csr); err != nil {
 				// kubeconfig not generated
 				return ctrl.Result{}, err
 			}

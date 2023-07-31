@@ -62,7 +62,7 @@ const (
 type Interface interface {
 	GetKubeConfig(username string) (string, error)
 	CreateKubeConfig(user *iamv1beta1.User) error
-	UpdateKubeconfig(username string, csr *certificatesv1.CertificateSigningRequest) error
+	UpdateKubeConfig(username string, csr *certificatesv1.CertificateSigningRequest) error
 }
 
 type operator struct {
@@ -273,7 +273,7 @@ func (o *operator) createCSR(username string) error {
 }
 
 // UpdateKubeconfig Update writer key and writer certificate after CertificateSigningRequest has been approved
-func (o *operator) UpdateKubeconfig(username string, csr *certificatesv1.CertificateSigningRequest) error {
+func (o *operator) UpdateKubeConfig(username string, csr *certificatesv1.CertificateSigningRequest) error {
 	secretName := fmt.Sprintf(kubeconfigNameFormat, username)
 	secret := &corev1.Secret{}
 	if err := o.reader.Get(context.Background(),
