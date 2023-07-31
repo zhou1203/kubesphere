@@ -246,7 +246,6 @@ items:
     kind: GlobalRole
     metadata:
       annotations:
-        iam.kubesphere.io/aggregation-roles: '["role-template-view-app-templates"]'
         kubesphere.io/creator: admin
       name: platform-regular
     rules: []
@@ -289,33 +288,7 @@ items:
       roleSelector:
         matchLabels:
           scope.iam.kubesphere.io/cluster: ""
-      templateNames:
-        - cluster-manage-project-resources
-        - cluster-view-volumes
-        - cluster-manage-volume-snapshots
-        - cluster-view-storageclasses
-        - cluster-manage-volume-snapshot-classes
-        - cluster-manage-roles
-        - cluster-view-project-resources
-        - cluster-manage-members
-        - cluster-manage-nodes
-        - cluster-view-nodes
-        - cluster-manage-network-resources
-        - role-template-view-roles
-        - cluster-view-cluster-settings
-        - cluster-view-projects
-        - cluster-view-volume-snapshots
-        - cluster-view-volume-snapshot-classes
-        - cluster-view-crds
-        - cluster-view-members
-        - cluster-manage-volumes
-        - cluster-manage-storageclasses
-        - cluster-view-network-resources
-        - cluster-view-components
-        - cluster-manage-cluster-settings
-        - cluster-view-roles
-        - cluster-manage-crds
-        - cluster-manage-projects
+      templateNames: []
     apiVersion: iam.kubesphere.io/v1beta1
     kind: ClusterRole
     metadata:
@@ -341,7 +314,7 @@ items:
         - cluster-view-components
         - cluster-view-volume-snapshot-classes
         - cluster-view-volumes
-        - role-template-view-roles
+        - cluster-view-roles
     apiVersion: iam.kubesphere.io/v1beta1
     kind: ClusterRole
     metadata:
@@ -407,11 +380,6 @@ items:
       kind: Role
       metadata:
         annotations:
-          iam.kubesphere.io/aggregation-roles: '["role-template-view-members","role-template-view-roles",
-          "role-template-view-app-workloads","role-template-manage-app-workloads",
-          "role-template-view-volumes","role-template-manage-volumes", "role-template-view-snapshots","role-template-manage-snapshots",
-          "role-template-view-secrets","role-template-manage-secrets", "role-template-view-serviceaccount","role-template-manage-serviceaccount",
-          "role-template-view-configmaps","role-template-manage-configmaps"]'
           kubesphere.io/creator: system
         name: operator
       rules:
@@ -457,9 +425,6 @@ items:
       kind: Role
       metadata:
         annotations:
-          iam.kubesphere.io/aggregation-roles: '["role-template-view-members","role-template-view-roles",
-          "role-template-view-app-workloads","role-template-view-volumes","role-template-view-snapshots",
-          "role-template-view-secrets","role-template-view-configmaps","role-template-view-serviceaccount"]'
           kubesphere.io/creator: system
         name: viewer
       rules:
@@ -488,10 +453,6 @@ items:
           - workspace-manage-projects
           - workspace-view-projects
           - workspace-create-projects
-          - workspace-manage-app-templates
-          - workspace-view-app-templates
-          - workspace-manage-app-repos
-          - workspace-view-app-repos
           - workspace-view-members
           - workspace-manage-members
           - workspace-manage-roles
@@ -502,7 +463,6 @@ items:
       kind: WorkspaceRole
       metadata:
         annotations:
-          iam.kubesphere.io/aggregation-roles: '["workspace-manage-workspace-settings","workspace-view-workspace-settings","workspace-manage-projects","workspace-view-projects","workspace-create-projects","workspace-manage-app-templates","workspace-view-app-templates","workspace-manage-app-repos","workspace-view-app-repos","workspace-view-members","workspace-manage-members","workspace-manage-roles","workspace-view-roles","workspace-manage-groups","workspace-view-groups"]'
           kubesphere.io/creator: system
         labels:
           iam.kubesphere.io/auto-aggregate: "true"
@@ -558,38 +518,16 @@ items:
             iam.kubesphere.io/aggregate-to-self-provisioner: ""
         templateNames:
           - workspace-create-projects
-          - workspace-view-app-templates
-          - workspace-manage-app-templates
           - workspace-view-workspace-settings
       apiVersion: iam.kubesphere.io/v1beta1
       kind: WorkspaceRole
       metadata:
         annotations:
-          iam.kubesphere.io/aggregation-roles: '["workspace-create-projects","workspace-view-app-templates","workspace-manage-app-templates","workspace-view-workspace-settings"]'
           kubesphere.io/creator: system
         labels:
           iam.kubesphere.io/auto-aggregate: "true"
         name: self-provisioner
-      rules:
-        - apiGroups:
-            - '*'
-          resources:
-            - workspaces
-            - workspacemembers
-            - quotas
-            - abnormalworkloads
-            - pods
-          verbs:
-            - get
-            - list
-            - watch
-        - apiGroups:
-            - '*'
-          resources:
-            - namespaces
-          verbs:
-            - create
-            - watch
+      rules: []
 
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: RoleBase
@@ -604,8 +542,6 @@ items:
             iam.kubesphere.io/aggregate-to-viewer: ""
         templateNames:
           - workspace-view-projects
-          - workspace-view-app-templates
-          - workspace-view-app-repos
           - workspace-view-members
           - workspace-view-roles
           - workspace-view-groups
@@ -614,7 +550,6 @@ items:
       kind: WorkspaceRole
       metadata:
         annotations:
-          iam.kubesphere.io/aggregation-roles: '["workspace-view-projects","workspace-view-app-templates","workspace-view-app-repos","workspace-view-members","workspace-view-roles","workspace-view-groups","workspace-view-workspace-settings"]'
           kubesphere.io/creator: system
         labels:
           iam.kubesphere.io/auto-aggregate: "true"
@@ -645,16 +580,6 @@ items:
     spec:
       displayName:
         en: Access Control
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: Category
-    metadata:
-      labels:
-        scope.iam.kubesphere.io/global: ""
-        scope.iam.kubesphere.io/workspace: ""
-      name: apps-management
-    spec:
-      displayName:
-        en: Apps Management
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: Category
     metadata:
