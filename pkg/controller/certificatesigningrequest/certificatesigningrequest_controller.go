@@ -123,7 +123,7 @@ func (r *Reconciler) Approve(csr *certificatesv1.CertificateSigningRequest) erro
 	}
 
 	// approve csr
-	if err := r.Status().Update(context.Background(), csr); err != nil {
+	if err := r.SubResource("approval").Update(context.Background(), csr, &client.SubResourceUpdateOptions{SubResourceBody: csr}); err != nil {
 		return err
 	}
 	return nil

@@ -10,6 +10,7 @@ import (
 
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
 const (
@@ -17,11 +18,13 @@ const (
 )
 
 type Interface interface {
-	ExtensionID(extensionName string) (string, error)
+	ExtensionInfo(extensionName string) (*Extension, error)
 	ListSubscriptions(extensionID string) ([]Subscription, error)
 	CreateToken(clusterID, code, codeVerifier string) (*Token, error)
 	UserInfo(token string) (*UserInfo, error)
 	Revoke(clusterID string) error
+	ListCategories() ([]Category, error)
+	CategoryInfo(categoryID string) (*Category, error)
 }
 
 type client struct {
@@ -46,6 +49,7 @@ type ExtensionList struct {
 type Extension struct {
 	ExtensionID string `json:"extension_id"`
 	Name        string `json:"name"`
+	CategoryID  string `json:"category_id"`
 }
 
 type SubscriptionList struct {
@@ -81,8 +85,14 @@ type Subscription struct {
 	UserSubscriptionID string `json:"user_subscription_id"`
 }
 
-func (c *client) ExtensionID(extensionName string) (string, error) {
-	var extensionID string
+type Category struct {
+	CategoryID     string               `json:"category_id"`
+	Name           corev1alpha1.Locales `json:"name"`
+	NormalizedName string               `json:"normalized_name"`
+}
+
+func (c *client) ExtensionInfo(extensionName string) (*Extension, error) {
+	var extension *Extension
 	err := retry.OnError(retry.DefaultRetry, func(err error) bool {
 		return true
 	}, func() error {
@@ -104,13 +114,13 @@ func (c *client) ExtensionID(extensionName string) (string, error) {
 			return err
 		}
 		if len(result.Extensions) == 1 && result.Extensions[0].Name == extensionName {
-			extensionID = result.Extensions[0].ExtensionID
+			extension = &result.Extensions[0]
 		} else {
 			klog.V(4).Infof("extensionID for %s not exists: %v", extensionName, result.Extensions)
 		}
 		return nil
 	})
-	return extensionID, err
+	return extension, err
 }
 
 func (c *client) UserInfo(token string) (*UserInfo, error) {
@@ -244,6 +254,56 @@ func (c *client) Revoke(clusterID string) error {
 		}
 		return fmt.Errorf("failed to revoke cluster authorization %s: %s", clusterID, message)
 	}
+}
+
+func (c *client) ListCategories() ([]Category, error) {
+	categories := make([]Category, 0)
+	err := retry.OnError(retry.DefaultRetry, func(err error) bool {
+		return true
+	}, func() error {
+		resp, err := c.httpClient.Get(fmt.Sprintf("%s/apis/extension/v1/categories", c.options.URL))
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode > http.StatusOK {
+			message, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("failed to list categories: %s", message)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&categories); err != nil {
+			return fmt.Errorf("failed to decode categories: %s", err)
+		}
+		return nil
+	})
+	return categories, err
+}
+
+func (c *client) CategoryInfo(categoryID string) (*Category, error) {
+	category := &Category{}
+	err := retry.OnError(retry.DefaultRetry, func(err error) bool {
+		return true
+	}, func() error {
+		resp, err := c.httpClient.Get(fmt.Sprintf("%s/apis/extension/v1/categories/%s", c.options.URL, categoryID))
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode > http.StatusOK {
+			message, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("failed to describe category %s: %s", categoryID, message)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&category); err != nil {
+			return fmt.Errorf("failed to decode category: %s", err)
+		}
+		return nil
+	})
+	return category, err
 }
 
 func NewClient(options *Options) Interface {

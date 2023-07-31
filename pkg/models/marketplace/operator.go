@@ -3,6 +3,7 @@ package marketplace
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -66,16 +67,19 @@ func RemoveSubscription(ctx context.Context, client runtimeclient.Client, extens
 		if err := client.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
 			return err
 		}
-		extension = extension.DeepCopy()
-		if extension.Status.State == "" {
-			delete(extension.Labels, marketplacev1alpha1.Subscribed)
-		} else if extension.Labels[marketplacev1alpha1.Subscribed] == "true" {
-			extension.Labels[marketplacev1alpha1.Subscribed] = "false"
+		expected := extension.DeepCopy()
+		if expected.Status.State == "" {
+			delete(expected.Labels, marketplacev1alpha1.Subscribed)
+		} else if expected.Labels[marketplacev1alpha1.Subscribed] == "true" {
+			expected.Labels[marketplacev1alpha1.Subscribed] = "false"
 		}
-		return client.Update(ctx, extension)
+		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
+			return client.Update(ctx, expected)
+		}
+		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to update extension: %s", err)
 	}
 	return client.DeleteAllOf(ctx, &marketplacev1alpha1.Subscription{}, runtimeclient.MatchingLabels{corev1alpha1.ExtensionReferenceLabel: extension.Name})
 }
