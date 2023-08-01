@@ -52,13 +52,12 @@ func (t *tenantOperator) UpdateWorkspaceResourceQuota(workspace string, quota *q
 	}
 	quota.Labels[tenantv1alpha1.WorkspaceLabel] = workspace
 	quota.Spec.LabelSelector = labels.Set{tenantv1alpha1.WorkspaceLabel: workspace}
-
 	return quota, t.client.Update(context.Background(), quota)
 }
 
 func (t *tenantOperator) DeleteWorkspaceResourceQuota(workspace string, resourceQuotaName string) error {
 	resourceQuota := &quotav1alpha2.ResourceQuota{}
-	if err := t.client.Get(context.Background(), types.NamespacedName{Name: resourceQuota.Name}, resourceQuota); err != nil {
+	if err := t.client.Get(context.Background(), types.NamespacedName{Name: resourceQuotaName}, resourceQuota); err != nil {
 		return err
 	}
 	if resourceQuota.Labels[tenantv1alpha1.WorkspaceLabel] != workspace {
@@ -69,7 +68,7 @@ func (t *tenantOperator) DeleteWorkspaceResourceQuota(workspace string, resource
 
 func (t *tenantOperator) DescribeWorkspaceResourceQuota(workspace string, resourceQuotaName string) (*quotav1alpha2.ResourceQuota, error) {
 	resourceQuota := &quotav1alpha2.ResourceQuota{}
-	if err := t.client.Get(context.Background(), types.NamespacedName{Name: resourceQuota.Name}, resourceQuota); err != nil {
+	if err := t.client.Get(context.Background(), types.NamespacedName{Name: resourceQuotaName}, resourceQuota); err != nil {
 		return nil, err
 	}
 	if resourceQuota.Labels[tenantv1alpha1.WorkspaceLabel] != workspace {
