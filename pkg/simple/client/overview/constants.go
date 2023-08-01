@@ -5,6 +5,7 @@ const (
 	ClusterCount               = "cluster_count"
 	NamespaceCount             = "namespace_count"
 	ExtensionCount             = "extension_count"
+	InstallPlanCount           = "installplan_count"
 	PodCount                   = "pod_count"
 	DeploymentCount            = "deployment_count"
 	StatefulSetCount           = "statefulset_count"

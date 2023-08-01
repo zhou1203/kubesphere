@@ -608,7 +608,7 @@ func (h *tenantHandler) GetPlatformMetrics(req *restful.Request, resp *restful.R
 		Verb:            "list",
 		APIGroup:        corev1alpha1.GroupName,
 		APIVersion:      corev1alpha1.SchemeGroupVersion.Version,
-		Resource:        "extensions",
+		Resource:        "installplans",
 		ResourceRequest: true,
 		ResourceScope:   request.GlobalScope,
 	}
@@ -620,15 +620,14 @@ func (h *tenantHandler) GetPlatformMetrics(req *restful.Request, resp *restful.R
 	}
 
 	if decision == authorizer.DecisionAllow {
-		// get extensions that has been subscribed
-		extensionList := &corev1alpha1.ExtensionList{}
-		err = h.client.List(req.Request.Context(), extensionList,
-			runtimeclient.MatchingLabels{"marketplace.kubesphere.io/subscribed": "true"})
+		// get installed extension count
+		installPlanList := &corev1alpha1.InstallPlanList{}
+		err = h.client.List(req.Request.Context(), installPlanList)
 		if err != nil {
 			api.HandleInternalError(resp, req, err)
 			return
 		}
-		metrics.AddMetric(overview.CustomMetric(overview.ExtensionCount, prefix, len(extensionList.Items)))
+		metrics.AddMetric(overview.CustomMetric(overview.InstallPlanCount, prefix, len(installPlanList.Items)))
 	}
 
 	// get count of workspaces a tenant can access
