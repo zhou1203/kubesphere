@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
@@ -59,7 +58,7 @@ func (r *CategoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	extensions := &corev1alpha1.ExtensionList{}
-	if err := r.List(ctx, extensions, client.MatchingLabels{fmt.Sprintf(corev1alpha1.CategoryLabelFormat, category.Name): ""}); err != nil {
+	if err := r.List(ctx, extensions, client.MatchingLabels{corev1alpha1.CategoryLabel: category.Name}); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -94,14 +93,7 @@ func (r *CategoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		handler.EnqueueRequestsFromMapFunc(func(object client.Object) []reconcile.Request {
 			var requests []reconcile.Request
 			extension := object.(*corev1alpha1.Extension)
-			for k := range extension.Labels {
-				if !strings.HasPrefix(k, corev1alpha1.CategoryLabelPrefix) {
-					continue
-				}
-				category := strings.TrimPrefix(k, corev1alpha1.CategoryLabelPrefix+"/")
-				if category == "" {
-					continue
-				}
+			if category := extension.Labels[corev1alpha1.CategoryLabel]; category != "" {
 				requests = append(requests, reconcile.Request{
 					NamespacedName: types.NamespacedName{
 						Name: category,

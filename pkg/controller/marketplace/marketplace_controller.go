@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -68,15 +67,8 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 	}
 
-	hasCategoryLabels := false
-	for k := range extension.Labels {
-		if strings.HasPrefix(k, corev1alpha1.CategoryLabelPrefix+"/") {
-			hasCategoryLabels = true
-			break
-		}
-	}
-
-	if !hasCategoryLabels && extension.Annotations[marketplacev1alpha1.CategoryID] != "" {
+	_, hasCategoryLabel := extension.Labels[corev1alpha1.CategoryLabel]
+	if !hasCategoryLabel && extension.Annotations[marketplacev1alpha1.CategoryID] != "" {
 		if err := r.syncExtensionCategory(ctx, options, extension); err != nil {
 			return reconcile.Result{}, err
 		}
@@ -448,7 +440,10 @@ func (r *Controller) syncExtensionCategory(ctx context.Context, options *marketp
 			return err
 		}
 		expected := extension.DeepCopy()
-		expected.Labels[fmt.Sprintf(corev1alpha1.CategoryLabelFormat, category.Name)] = ""
+		if expected.Labels == nil {
+			expected.Labels = make(map[string]string)
+		}
+		expected.Labels[corev1alpha1.CategoryLabel] = category.Name
 		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
 			klog.Infof("update extension %v", expected)
 			return r.Update(ctx, expected)
