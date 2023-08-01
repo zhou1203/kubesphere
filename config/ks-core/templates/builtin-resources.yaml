@@ -318,7 +318,7 @@ items:
   - aggregationRoleTemplates:
       roleSelector:
         matchLabels:
-          iam.kubesphere.io/operation: view
+          iam.kubesphere.io/aggregate-to-cluster-viewer: ""
       templateNames:
         - cluster-view-components
         - cluster-view-volume-snapshot-classes
@@ -464,7 +464,7 @@ items:
       aggregationRoleTemplates:
         roleSelectors:
           - matchLabels:
-              iam.kubesphere.io/aggregate-to-admin: ""
+              scope.iam.kubesphere.io/namespace: ""
         templateNames:
           - workspace-manage-workspace-settings
           - workspace-view-workspace-settings
