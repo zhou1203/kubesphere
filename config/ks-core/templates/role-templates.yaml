@@ -1423,19 +1423,6 @@ items:
     kind: RoleTemplate
     metadata:
       annotations:
-        iam.kubesphere.io/dependencies: '["cluster-view-members"]'
-      labels:
-        iam.kubesphere.io/category: access-control
-        scope.iam.kubesphere.io/cluster: ""
-      name: cluster-view-roles
-    spec:
-      displayName:
-        en: Cluster Roles View
-      rules: []
-  - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      annotations:
         iam.kubesphere.io/role-template-rules: '{"projects": "create"}'
       labels:
         iam.kubesphere.io/category: projects-management
