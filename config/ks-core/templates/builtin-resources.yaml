@@ -6,6 +6,7 @@ metadata:
   annotations:
     iam.kubesphere.io/uninitialized: "true"
     helm.sh/resource-policy: keep
+    iam.kubesphere.io/globalrole: "platform-admin"
 spec:
   email: admin@kubesphere.io
   password: {{ include "getOrDefaultPass" . | quote }}

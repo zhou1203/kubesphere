@@ -67,16 +67,6 @@ func (h *iamHandler) DescribeUser(request *restful.Request, response *restful.Re
 		return
 	}
 
-	globalRole, err := h.am.GetGlobalRoleOfUser(username)
-	// ignore not found error
-	if err != nil && !errors.IsNotFound(err) {
-		api.HandleInternalError(response, request, err)
-		return
-	}
-	if globalRole != nil {
-		user = appendGlobalRoleAnnotation(user, globalRole.Name)
-	}
-
 	response.WriteEntity(user)
 }
 
@@ -97,20 +87,7 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 		api.HandleInternalError(response, request, err)
 		return
 	}
-	for i, item := range result.Items {
-		user := item.(*iamv1beta1.User)
-		user = user.DeepCopy()
-		globalRole, err := h.am.GetGlobalRoleOfUser(user.Name)
-		// ignore not found error
-		if err != nil && !errors.IsNotFound(err) {
-			api.HandleInternalError(response, request, err)
-			return
-		}
-		if globalRole != nil {
-			user = appendGlobalRoleAnnotation(user, globalRole.Name)
-		}
-		result.Items[i] = user
-	}
+
 	response.WriteEntity(result)
 }
 
@@ -127,7 +104,6 @@ func (h *iamHandler) listUserByGlobalRole(roleName string) (*api.ListResult, err
 				if err != nil {
 					return nil, err
 				}
-				user.Annotations[iamv1beta1.GlobalRoleAnnotation] = binding.RoleRef.Name
 				result.Items = append(result.Items, user)
 				result.TotalItems += 1
 			}
@@ -157,12 +133,9 @@ func (h *iamHandler) CreateUser(req *restful.Request, resp *restful.Response) {
 		}
 		user.Labels[iamv1beta1.IdentifyProviderLabel] = extra[iamv1beta1.ExtraIdentityProvider][0]
 		user.Labels[iamv1beta1.OriginUIDLabel] = extra[iamv1beta1.ExtraUID][0]
-		// default role
-		delete(user.Annotations, iamv1beta1.GlobalRoleAnnotation)
 	}
 
 	globalRole := user.Annotations[iamv1beta1.GlobalRoleAnnotation]
-	delete(user.Annotations, iamv1beta1.GlobalRoleAnnotation)
 	if globalRole != "" {
 		if _, err = h.am.GetGlobalRole(globalRole); err != nil {
 			api.HandleError(resp, req, err)
@@ -191,9 +164,7 @@ func (h *iamHandler) CreateUser(req *restful.Request, resp *restful.Response) {
 
 func (h *iamHandler) UpdateUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("user")
-
 	var user iamv1beta1.User
-
 	err := request.ReadEntity(&user)
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
@@ -207,7 +178,6 @@ func (h *iamHandler) UpdateUser(request *restful.Request, response *restful.Resp
 	}
 
 	globalRole := user.Annotations[iamv1beta1.GlobalRoleAnnotation]
-	delete(user.Annotations, iamv1beta1.GlobalRoleAnnotation)
 
 	updated, err := h.im.UpdateUser(&user)
 	if err != nil {
@@ -221,18 +191,9 @@ func (h *iamHandler) UpdateUser(request *restful.Request, response *restful.Resp
 			api.HandleError(response, request, err)
 			return
 		}
-		updated = appendGlobalRoleAnnotation(updated, globalRole)
 	}
 
 	response.WriteEntity(updated)
-}
-
-func appendGlobalRoleAnnotation(user *iamv1beta1.User, globalRole string) *iamv1beta1.User {
-	if user.Annotations == nil {
-		user.Annotations = make(map[string]string, 0)
-	}
-	user.Annotations[iamv1beta1.GlobalRoleAnnotation] = globalRole
-	return user
 }
 
 func (h *iamHandler) updateGlobalRoleBinding(operator authuser.Info, user *iamv1beta1.User, globalRole string) error {
