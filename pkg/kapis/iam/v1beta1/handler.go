@@ -358,8 +358,7 @@ func (h *iamHandler) ListClusterMembers(request *restful.Request, response *rest
 					return
 				}
 				user.Annotations[iamv1beta1.ClusterRoleAnnotation] = binding.RoleRef.Name
-				result.Items = append(result.Items, user)
-				result.TotalItems += 1
+				users = append(users, user)
 			}
 		}
 	}
