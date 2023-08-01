@@ -104,6 +104,13 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		return err
 	}
 
+	// extension webhook
+	if cmOptions.IsControllerEnabled("extension-webhook") {
+		addControllerWithSetup(mgr, "jsbundle-webhook", &extension.JSBundleWebhook{})
+		addControllerWithSetup(mgr, "apiservice-webhook", &extension.APIServiceWebhook{})
+		addControllerWithSetup(mgr, "reverseproxy-webhook", &extension.ReverseProxyWebhook{})
+	}
+
 	if cmOptions.IsControllerEnabled("kubeconfig") {
 		addControllerWithSetup(mgr, "kubeconfig", &kubeconfigctr.Reconciler{KubeConfigOperator: kubeconfig.NewOperator(mgr.GetClient(), client.Config())})
 	}
@@ -238,13 +245,6 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 		}
 		addControllerWithSetup(mgr, "extension", &core.ExtensionReconciler{K8sVersion: info.GitVersion})
 		addControllerWithSetup(mgr, "category", &core.CategoryReconciler{})
-	}
-
-	// extension webhook
-	if cmOptions.IsControllerEnabled("extension-webhook") {
-		addControllerWithSetup(mgr, "jsbundle-webhook", &extension.JSBundleWebhook{})
-		addControllerWithSetup(mgr, "apiservice-webhook", &extension.APIServiceWebhook{})
-		addControllerWithSetup(mgr, "reverseproxy-webhook", &extension.ReverseProxyWebhook{})
 	}
 
 	if cmOptions.IsControllerEnabled("repository") {
