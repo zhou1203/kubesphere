@@ -26,6 +26,7 @@ import (
 
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
+	"kubesphere.io/kubesphere/pkg/controller/applicationclass"
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/clusterrole"
@@ -93,6 +94,7 @@ var allControllers = []string{
 	"extension-webhook",
 	"ks-serviceaccount",
 	"secret",
+	"applicationclass",
 	"marketplace",
 }
 
@@ -201,6 +203,23 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	}
 	if cmOptions.IsControllerEnabled("secret") {
 		addControllerWithSetup(mgr, "secret", &secret.Reconciler{TokenIssuer: issuer})
+	}
+
+	// "applicationclass" controller
+	if cmOptions.IsControllerEnabled("applicationclass") {
+		applicationReconciler, err := applicationclass.NewApplicationReconciler(cmOptions.KubernetesOptions.KubeConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create application controller: %v", err)
+		}
+		// init provisioner plugins
+		allPlugins := []applicationclass.ApplicationPlugin{}
+		//allPlugins = append(allPlugins, helm.ProbeApplicationPlugins()...)
+		//allPlugins = append(allPlugins, yaml.ProbeApplicationPlugins()...)
+		//allPlugins = append(allPlugins, cue.ProbeApplicationPlugins()...)
+		if err := applicationReconciler.ApplicationPluginMgr.InitPlugins(allPlugins); err != nil {
+			return fmt.Errorf("could not initialize plugins for applicationclass: %v", err)
+		}
+		addControllerWithSetup(mgr, "applicationclass", applicationReconciler)
 	}
 
 	// log all controllers process result

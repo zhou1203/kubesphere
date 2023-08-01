@@ -24,6 +24,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 
+	appclassv1alpha1 "kubesphere.io/api/applicationclass/v1alpha1"
 	auditingv1alpha1 "kubesphere.io/api/auditing/v1alpha1"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
@@ -43,6 +44,7 @@ var Scheme = runtime.NewScheme()
 var Codecs = serializer.NewCodecFactory(Scheme)
 var ParameterCodec = runtime.NewParameterCodec(Scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
+	appclassv1alpha1.AddToScheme,
 	auditingv1alpha1.AddToScheme,
 	clusterv1alpha1.AddToScheme,
 	corev1alpha1.AddToScheme,
