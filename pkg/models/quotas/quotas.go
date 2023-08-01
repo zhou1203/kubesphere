@@ -18,13 +18,15 @@ package quotas
 
 import (
 	"context"
-
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"fmt"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 )
@@ -42,15 +44,15 @@ const (
 )
 
 var supportedResources = map[string]schema.GroupVersionKind{
-	deploymentsKey:            {Group: "apps", Version: "v1", Kind: "Deployment"},
-	daemonsetsKey:             {Group: "apps", Version: "v1", Kind: "DaemonSet"},
-	statefulsetsKey:           {Group: "apps", Version: "v1", Kind: "StatefulSet"},
-	podsKey:                   {Group: "", Version: "v1", Kind: "Pod"},
-	servicesKey:               {Group: "", Version: "v1", Kind: "Service"},
-	persistentvolumeclaimsKey: {Group: "", Version: "v1", Kind: "PersistentVolumeClaim"},
-	ingressKey:                {Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"},
-	jobsKey:                   {Group: "batch", Version: "v1", Kind: "Job"},
-	cronJobsKey:               {Group: "batch", Version: "v1beta1", Kind: "CronJob"},
+	deploymentsKey:            {Group: "apps", Version: "v1", Kind: "DeploymentList"},
+	daemonsetsKey:             {Group: "apps", Version: "v1", Kind: "DaemonSetList"},
+	statefulsetsKey:           {Group: "apps", Version: "v1", Kind: "StatefulSetList"},
+	podsKey:                   {Group: "", Version: "v1", Kind: "PodList"},
+	servicesKey:               {Group: "", Version: "v1", Kind: "ServiceList"},
+	persistentvolumeclaimsKey: {Group: "", Version: "v1", Kind: "PersistentVolumeClaimList"},
+	ingressKey:                {Group: "networking.k8s.io", Version: "v1", Kind: "IngressList"},
+	jobsKey:                   {Group: "batch", Version: "v1", Kind: "JobList"},
+	cronJobsKey:               {Group: "batch", Version: "v1", Kind: "CronJobList"},
 }
 
 type ResourceQuotaGetter interface {
@@ -59,19 +61,44 @@ type ResourceQuotaGetter interface {
 }
 
 type resourceQuotaGetter struct {
-	cache runtimeclient.Reader
+	client runtimeclient.Client
 }
 
-func NewResourceQuotaGetter(cacheReader runtimeclient.Reader) ResourceQuotaGetter {
-	return &resourceQuotaGetter{cache: cacheReader}
+func NewResourceQuotaGetter(client runtimeclient.Client) ResourceQuotaGetter {
+	return &resourceQuotaGetter{client: client}
 }
 
 func (c *resourceQuotaGetter) getUsage(namespace, resource string) (int, error) {
-	// TODO refactor
-	return 0, nil
+	var obj runtimeclient.ObjectList
+	gvk, ok := supportedResources[resource]
+	if !ok {
+		return 0, fmt.Errorf("resource %s is not supported", resource)
+	}
+
+	if c.client.Scheme().Recognizes(gvk) {
+		gvkObject, err := c.client.Scheme().New(gvk)
+		if err != nil {
+			return 0, nil
+		}
+		obj = gvkObject.(runtimeclient.ObjectList)
+	} else {
+		u := &unstructured.UnstructuredList{}
+		u.SetGroupVersionKind(gvk)
+		obj = u
+	}
+
+	if err := c.client.List(context.Background(), obj, runtimeclient.InNamespace(namespace)); err != nil {
+		return 0, err
+	}
+
+	items, err := meta.ExtractList(obj)
+	if err != nil {
+		return 0, err
+	}
+	return len(items), nil
 }
 
-// no one use this api anymore， marked as deprecated
+// GetClusterQuota no one use this api anymore， marked as deprecated
 func (c *resourceQuotaGetter) GetClusterQuota() (*api.ResourceQuota, error) {
 
 	quota := v1.ResourceQuotaStatus{Hard: make(v1.ResourceList), Used: make(v1.ResourceList)}
@@ -156,7 +183,7 @@ func updateNamespaceQuota(tmpResourceList, resourceList v1.ResourceList) {
 
 func (c *resourceQuotaGetter) getNamespaceResourceQuota(namespace string) (*v1.ResourceQuotaStatus, error) {
 	resourceQuotaList := &v1.ResourceQuotaList{}
-	if err := c.cache.List(context.Background(), resourceQuotaList, runtimeclient.InNamespace(namespace)); err != nil {
+	if err := c.client.List(context.Background(), resourceQuotaList, runtimeclient.InNamespace(namespace)); err != nil {
 		klog.Error(err)
 		return nil, err
 	} else if len(resourceQuotaList.Items) == 0 {
