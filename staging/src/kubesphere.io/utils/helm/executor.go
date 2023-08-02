@@ -597,7 +597,6 @@ func (e *executor) Release(options ...HelmOption) (*helmrelease.Release, error) 
 	for _, f := range options {
 		f(helmOptions)
 	}
-
 	helmConf, err := InitHelmConf(helmOptions.kubeConfig, e.namespace)
 	if err != nil {
 		return nil, err
