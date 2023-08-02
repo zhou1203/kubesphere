@@ -1426,5 +1426,8 @@ func newClusterClient(cluster clusterv1alpha1.Cluster) (client.Client, error) {
 }
 
 func versionChanged(plan *corev1alpha1.InstallPlan, cluster string) bool {
+	if cluster == "" {
+		return plan.Spec.Extension.Version != plan.Status.Version
+	}
 	return plan.Spec.Extension.Version != plan.Status.ClusterSchedulingStatuses[cluster].Version
 }
