@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 )
 
@@ -77,7 +78,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	r.recorder.Event(csr, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
+	r.recorder.Event(csr, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 

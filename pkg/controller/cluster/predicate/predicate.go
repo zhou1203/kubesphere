@@ -1,9 +1,11 @@
-package utils
+package predicate
 
 import (
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	"kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 )
 
 type ClusterStatusChangedPredicate struct {
@@ -11,10 +13,13 @@ type ClusterStatusChangedPredicate struct {
 }
 
 func (ClusterStatusChangedPredicate) Update(e event.UpdateEvent) bool {
-	oldCluster := e.ObjectOld.(*clusterv1alpha1.Cluster)
+	oldCluster, ok := e.ObjectOld.(*clusterv1alpha1.Cluster)
+	if !ok {
+		return false
+	}
 	newCluster := e.ObjectNew.(*clusterv1alpha1.Cluster)
 	// cluster is ready
-	if !IsClusterReady(oldCluster) && IsClusterReady(newCluster) {
+	if !utils.IsClusterReady(oldCluster) && utils.IsClusterReady(newCluster) {
 		return true
 	}
 	return false

@@ -19,14 +19,13 @@ package user
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -43,7 +42,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
@@ -53,6 +53,9 @@ const (
 	finalizer       = "finalizers.kubesphere.io/users"
 	syncFailMessage = "Failed to sync: %s"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 // Reconciler reconciles a User object
 type Reconciler struct {
@@ -64,12 +67,12 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	if r.ClusterClientSet == nil {
-		return fmt.Errorf("failed to setup %s: ClusterClientSet must not be nil", controllerName)
+		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
 	}
+	r.Client = mgr.GetClient()
+	r.logger = mgr.GetLogger().WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	ctr, err := ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
@@ -77,30 +80,35 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Build(r)
 
 	if err != nil {
-		return err
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
 
-	return ctr.Watch(
+	err = ctr.Watch(
 		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
 		handler.EnqueueRequestsFromMapFunc(r.mapper),
-		clusterutils.ClusterStatusChangedPredicate{})
+		predicate.ClusterStatusChangedPredicate{})
+
+	if err != nil {
+		return kscontroller.FailedToSetup(controllerName, err)
+	}
+	return nil
 }
 
 func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
 	cluster := o.(*clusterv1alpha1.Cluster)
+	var requests []reconcile.Request
 	if !clusterutils.IsClusterReady(cluster) {
-		return []reconcile.Request{}
+		return requests
 	}
 	users := &iamv1beta1.UserList{}
 	if err := r.List(context.Background(), users); err != nil {
 		r.logger.Error(err, "failed to list users")
-		return []reconcile.Request{}
+		return requests
 	}
-	var result []reconcile.Request
 	for _, user := range users.Items {
-		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: user.Name}})
+		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: user.Name}})
 	}
-	return result
+	return requests
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
@@ -124,24 +132,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// The object is being deleted
 		if controllerutil.ContainsFinalizer(user, finalizer) {
 			if err := r.deleteRoleBindings(ctx, user); err != nil {
-				r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
 			if err := r.deleteGroupBindings(ctx, user); err != nil {
-				r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
 			if err := r.deleteLoginRecords(ctx, user); err != nil {
-				r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(user, finalizer)
 			if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
-				r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 				return ctrl.Result{}, err
 			}
 		}
@@ -150,19 +154,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	if err := r.encryptPassword(ctx, user); err != nil {
-		r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 		return ctrl.Result{}, err
 	}
 	if err := r.reconcileUserStatus(ctx, user); err != nil {
-		r.recorder.Event(user, corev1.EventTypeWarning, constants.FailedSynced, fmt.Sprintf(syncFailMessage, err))
 		return ctrl.Result{}, err
 	}
-	if err := r.sync(ctx, user); err != nil {
+	if err := r.multiClusterSync(ctx, user); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	r.recorder.Event(user, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
-
+	r.recorder.Event(user, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	// block user for AuthenticateRateLimiterDuration duration, after that put it back to the queue to unblock
 	if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
 		return ctrl.Result{Requeue: true, RequeueAfter: r.AuthenticationOptions.AuthenticateRateLimiterDuration}, nil
@@ -171,57 +172,54 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) sync(ctx context.Context, user *iamv1beta1.User) error {
-	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+func (r *Reconciler) multiClusterSync(ctx context.Context, user *iamv1beta1.User) error {
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list clusters: %s", err)
 	}
+	var notReadyClusters []string
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
 		if !clusterutils.IsClusterReady(&cluster) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+		if clusterutils.IsHostCluster(&cluster) {
 			continue
 		}
 		if err := r.syncUser(ctx, cluster, user); err != nil {
-			return err
+			return fmt.Errorf("failed to sync user %s to cluster %s: %s", user.Name, cluster.Name, err)
 		}
+	}
+	if len(notReadyClusters) > 0 {
+		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
+		r.recorder.Event(user, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
 	}
 	return nil
 }
 
-func (r *Reconciler) syncUser(ctx context.Context, cluster clusterv1alpha1.Cluster, template *iamv1beta1.User) error {
+func (r *Reconciler) syncUser(ctx context.Context, cluster clusterv1alpha1.Cluster, user *iamv1beta1.User) error {
 	if r.ClusterClientSet.IsHostCluster(&cluster) {
 		return nil
 	}
 	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
-	user := &iamv1beta1.User{}
-	if err := clusterClient.Get(ctx, types.NamespacedName{Name: template.Name}, user); err != nil {
-		if errors.IsNotFound(err) {
-			user = &iamv1beta1.User{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        template.Name,
-					Labels:      template.Labels,
-					Annotations: template.Annotations,
-				},
-				Spec:   template.Spec,
-				Status: template.Status,
-			}
-			return clusterClient.Create(ctx, user)
-		}
-		return err
+	target := &iamv1beta1.User{ObjectMeta: metav1.ObjectMeta{Name: user.Name}}
+	op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, target, func() error {
+		target.Labels = user.Labels
+		target.Annotations = user.Annotations
+		target.Spec = user.Spec
+		target.Status = user.Status
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to update user: %s", err)
 	}
-	if !reflect.DeepEqual(user.Spec, template.Spec) ||
-		!reflect.DeepEqual(user.Status, template.Status) ||
-		!reflect.DeepEqual(user.Labels, template.Labels) ||
-		!reflect.DeepEqual(user.Annotations, template.Annotations) {
-		user.Labels = template.Labels
-		user.Annotations = template.Annotations
-		user.Spec = template.Spec
-		user.Status = template.Status
-		return clusterClient.Update(ctx, user)
-	}
+
+	r.logger.V(4).Info("user successfully synced", "cluster", cluster.Name, "operation", op, "name", user.Name)
 	return err
 }
 

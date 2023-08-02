@@ -18,6 +18,8 @@ package workspacerolebinding
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -38,6 +40,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
@@ -57,6 +61,9 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClusterClientSet == nil {
+		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
+	}
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
@@ -68,17 +75,18 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Build(r)
 
 	if err != nil {
-		return err
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
 
-	// host cluster
-	if r.ClusterClientSet != nil {
-		return ctr.Watch(
-			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
-			handler.EnqueueRequestsFromMapFunc(r.mapper),
-			clusterutils.ClusterStatusChangedPredicate{})
-	}
+	err = ctr.Watch(
+		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+		handler.EnqueueRequestsFromMapFunc(r.mapper),
+		predicate.ClusterStatusChangedPredicate{},
+	)
 
+	if err != nil {
+		return kscontroller.FailedToSetup(controllerName, err)
+	}
 	return nil
 }
 
@@ -112,40 +120,45 @@ func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
 // +kubebuilder:rbac:groups=tenant.kubesphere.io,resources=workspaces,verbs=get;list;watch;
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.logger.WithValues("workspacerolebinding", req.NamespacedName)
-	rootCtx := context.Background()
 	workspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{}
-	if err := r.Get(rootCtx, req.NamespacedName, workspaceRoleBinding); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, workspaceRoleBinding); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if err := r.bindWorkspace(rootCtx, logger, workspaceRoleBinding); err != nil {
+	if err := r.bindWorkspace(ctx, workspaceRoleBinding); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if r.ClusterClientSet != nil {
-		if err := r.sync(ctx, workspaceRoleBinding); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err := r.multiClusterSync(ctx, workspaceRoleBinding); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	r.recorder.Event(workspaceRoleBinding, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
+	r.recorder.Event(workspaceRoleBinding, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) sync(ctx context.Context, workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding) error {
-	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding) error {
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list clusters: %s", err)
 	}
+	var notReadyClusters []string
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
-		if !clusterutils.IsClusterReady(&cluster) || clusterutils.IsHostCluster(&cluster) {
+		if !clusterutils.IsClusterReady(&cluster) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+		if clusterutils.IsHostCluster(&cluster) {
 			continue
 		}
 		if err := r.syncWorkspaceRoleBinding(ctx, cluster, workspaceRoleBinding); err != nil {
-			return err
+			return fmt.Errorf("failed to sync workspace role binding %s to cluster %s: %s", workspaceRoleBinding.Name, cluster.Name, err)
 		}
+	}
+	if len(notReadyClusters) > 0 {
+		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
+		r.recorder.Event(workspaceRoleBinding, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
 	}
 	return nil
 }
@@ -162,27 +175,25 @@ func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clust
 	}
 
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
-		existWorkspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: workspaceRoleBinding.Name}}
-		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existWorkspaceRoleBinding, func() error {
-			existWorkspaceRoleBinding.Labels = workspaceRoleBinding.Labels
-			existWorkspaceRoleBinding.Annotations = workspaceRoleBinding.Annotations
-			existWorkspaceRoleBinding.RoleRef = workspaceRoleBinding.RoleRef
-			existWorkspaceRoleBinding.Subjects = workspaceRoleBinding.Subjects
+		target := &iamv1beta1.WorkspaceRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: workspaceRoleBinding.Name}}
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, target, func() error {
+			target.Labels = workspaceRoleBinding.Labels
+			target.Annotations = workspaceRoleBinding.Annotations
+			target.RoleRef = workspaceRoleBinding.RoleRef
+			target.Subjects = workspaceRoleBinding.Subjects
 			return nil
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to update workspace role binding: %s", err)
 		}
-		klog.FromContext(ctx).V(4).Info("workspace role binding successfully synced", "operation", op)
+		klog.FromContext(ctx).V(4).Info("workspace role binding successfully synced", "cluster", cluster.Name, "operation", op, "name", workspaceRoleBinding.Name)
 	} else {
-		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
-		return client.IgnoreNotFound(err)
+		return client.IgnoreNotFound(clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name}))
 	}
-
 	return nil
 }
 
-func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding) error {
+func (r *Reconciler) bindWorkspace(ctx context.Context, workspaceRoleBinding *iamv1beta1.WorkspaceRoleBinding) error {
 	workspaceName := workspaceRoleBinding.Labels[constants.WorkspaceLabelKey]
 	if workspaceName == "" {
 		return nil

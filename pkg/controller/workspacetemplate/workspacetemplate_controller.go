@@ -43,7 +43,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
@@ -53,7 +54,6 @@ const (
 	controllerName             = "workspacetemplate-controller"
 	workspaceTemplateFinalizer = "finalizers.workspacetemplate.kubesphere.io"
 	orphanFinalizer            = "orphan.finalizers.kubesphere.io"
-	syncFailed                 = "SyncFailed"
 )
 
 // Reconciler reconciles a WorkspaceRoleBinding object
@@ -66,13 +66,11 @@ type Reconciler struct {
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.ClusterClientSet == nil {
-		return fmt.Errorf("workspace template controller is limited to running in the host cluster")
+		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
 	}
-
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-
 	ctr, err := ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
@@ -80,14 +78,17 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Build(r)
 
 	if err != nil {
-		return err
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
 
-	if r.ClusterClientSet != nil {
-		return ctr.Watch(
-			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
-			handler.EnqueueRequestsFromMapFunc(r.mapper),
-			clusterutils.ClusterStatusChangedPredicate{})
+	err = ctr.Watch(
+		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+		handler.EnqueueRequestsFromMapFunc(r.mapper),
+		predicate.ClusterStatusChangedPredicate{},
+	)
+
+	if err != nil {
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
 
 	return nil
@@ -155,21 +156,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := r.initManagerRoleBinding(ctx, workspaceTemplate); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	if r.ClusterClientSet != nil {
-		if err := r.sync(ctx, workspaceTemplate); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err := r.multiClusterSync(ctx, workspaceTemplate); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	r.recorder.Event(workspaceTemplate, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
+	r.recorder.Event(workspaceTemplate, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) sync(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
-	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list clusters: %s", err)
 	}
 	var notReadyClusters []string
 	for _, cluster := range clusters {
@@ -179,12 +177,12 @@ func (r *Reconciler) sync(ctx context.Context, workspaceTemplate *tenantv1alpha2
 			continue
 		}
 		if err := r.syncWorkspaceTemplate(ctx, cluster, workspaceTemplate); err != nil {
-			return err
+			return fmt.Errorf("failed to sync workspace template %s to cluster %s: %s", workspaceTemplate.Name, cluster.Name, err)
 		}
 	}
 	if len(notReadyClusters) > 0 {
 		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
-		r.recorder.Event(workspaceTemplate, corev1.EventTypeWarning, syncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
+		r.recorder.Event(workspaceTemplate, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
 	}
 	return nil
 }
@@ -223,29 +221,29 @@ func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspaceTemplate *
 		return err
 	}
 	for _, template := range templates.Items {
-		var builtinWorkspaceRoleTemplate iamv1beta1.WorkspaceRole
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&builtinWorkspaceRoleTemplate); err == nil &&
-			builtinWorkspaceRoleTemplate.Kind == iamv1beta1.ResourceKindWorkspaceRole {
-			existingWorkspaceRole := &iamv1beta1.WorkspaceRole{
+		var builtinWorkspaceRole iamv1beta1.WorkspaceRole
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&builtinWorkspaceRole); err == nil &&
+			builtinWorkspaceRole.Kind == iamv1beta1.ResourceKindWorkspaceRole {
+			target := &iamv1beta1.WorkspaceRole{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: fmt.Sprintf("%s-%s", workspaceTemplate.Name, builtinWorkspaceRoleTemplate.Name),
+					Name: fmt.Sprintf("%s-%s", workspaceTemplate.Name, builtinWorkspaceRole.Name),
 				},
 			}
-			op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingWorkspaceRole, func() error {
-				existingWorkspaceRole.Labels = builtinWorkspaceRoleTemplate.Labels
-				if existingWorkspaceRole.Labels == nil {
-					existingWorkspaceRole.Labels = make(map[string]string)
+			op, err := controllerutil.CreateOrUpdate(ctx, r.Client, target, func() error {
+				target.Labels = builtinWorkspaceRole.Labels
+				if target.Labels == nil {
+					target.Labels = make(map[string]string)
 				}
-				existingWorkspaceRole.Labels[tenantv1alpha1.WorkspaceLabel] = workspaceTemplate.Name
-				existingWorkspaceRole.Annotations = builtinWorkspaceRoleTemplate.Annotations
-				existingWorkspaceRole.AggregationRoleTemplates = builtinWorkspaceRoleTemplate.AggregationRoleTemplates
-				existingWorkspaceRole.Rules = builtinWorkspaceRoleTemplate.Rules
+				target.Labels[tenantv1alpha1.WorkspaceLabel] = workspaceTemplate.Name
+				target.Annotations = builtinWorkspaceRole.Annotations
+				target.AggregationRoleTemplates = builtinWorkspaceRole.AggregationRoleTemplates
+				target.Rules = builtinWorkspaceRole.Rules
 				return nil
 			})
 			if err != nil {
 				return err
 			}
-			logger.V(4).Info("builtin workspace role successfully initialized", "operation", op)
+			logger.V(4).Info("builtin workspace role successfully updated", "operation", op, "name", target.Name)
 		} else if err != nil {
 			logger.Error(err, "invalid builtin workspace role found", "name", template.Name)
 		}
@@ -287,7 +285,7 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTempla
 }
 
 func (r *Reconciler) reconcileDelete(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
-	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
 	if err != nil {
 		return err
 	}
@@ -318,7 +316,7 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workspaceTemplate *ten
 	}
 	if len(notReadyClusters) > 0 {
 		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
-		r.recorder.Event(workspaceTemplate, corev1.EventTypeWarning, syncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
+		r.recorder.Event(workspaceTemplate, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
 		return err
 	}
 	return nil

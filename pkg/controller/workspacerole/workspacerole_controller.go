@@ -18,8 +18,11 @@ package workspacerole
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -38,6 +41,8 @@ import (
 
 	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
 	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
@@ -58,6 +63,9 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClusterClientSet == nil {
+		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
+	}
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
@@ -67,19 +75,17 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		For(&iamv1beta1.WorkspaceRole{}).
 		Build(r)
-
 	if err != nil {
-		return err
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
-
-	// host cluster
-	if r.ClusterClientSet != nil {
-		return ctr.Watch(
-			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
-			handler.EnqueueRequestsFromMapFunc(r.mapper),
-			clusterutils.ClusterStatusChangedPredicate{})
+	err = ctr.Watch(
+		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+		handler.EnqueueRequestsFromMapFunc(r.mapper),
+		predicate.ClusterStatusChangedPredicate{},
+	)
+	if err != nil {
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
-
 	return nil
 }
 
@@ -125,13 +131,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, err
 		}
 	}
-
-	if r.ClusterClientSet != nil {
-		if err := r.sync(ctx, workspaceRole); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err := r.multiClusterSync(ctx, workspaceRole); err != nil {
+		return ctrl.Result{}, err
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -158,28 +160,36 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 	return nil
 }
 
-func (r *Reconciler) sync(ctx context.Context, workspaceRole *iamv1beta1.WorkspaceRole) error {
-	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceRole *iamv1beta1.WorkspaceRole) error {
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list clusters: %s", err)
 	}
+	var notReadyClusters []string
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
-		if !clusterutils.IsClusterReady(&cluster) || clusterutils.IsHostCluster(&cluster) {
+		if !clusterutils.IsClusterReady(&cluster) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+		if clusterutils.IsHostCluster(&cluster) {
 			continue
 		}
 		if err := r.syncWorkspaceRole(ctx, cluster, workspaceRole); err != nil {
-			return err
+			return fmt.Errorf("failed to sync workspace role %s to cluster %s: %s", workspaceRole.Name, cluster.Name, err)
 		}
+	}
+	if len(notReadyClusters) > 0 {
+		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
+		r.recorder.Event(workspaceRole, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
 	}
 	return nil
 }
 
 func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceRole *iamv1beta1.WorkspaceRole) error {
-
 	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
 	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
 	if err := r.Get(ctx, types.NamespacedName{Name: workspaceRole.Labels[tenantv1alpha1.WorkspaceLabel]}, workspaceTemplate); err != nil {
@@ -197,10 +207,9 @@ func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alp
 		if err != nil {
 			return err
 		}
-		klog.FromContext(ctx).V(4).Info("workspace role successfully synced", "operation", op)
+		klog.FromContext(ctx).V(4).Info("workspace role successfully synced", "cluster", cluster.Name, "operation", op, "name", workspaceRole.Name)
 	} else {
-		err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name})
-		return client.IgnoreNotFound(err)
+		return client.IgnoreNotFound(clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name}))
 	}
 	return nil
 }

@@ -32,6 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"kubesphere.io/kubesphere/pkg/scheme"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -74,7 +75,10 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&Reconciler{}).SetupWithManager(k8sManager)
+	clusterClient, err := clusterclient.NewClusterClientSet(k8sManager.GetCache())
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&Reconciler{ClusterClientSet: clusterClient}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.Background())

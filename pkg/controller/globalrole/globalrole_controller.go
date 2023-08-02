@@ -18,30 +18,37 @@ package globalrole
 
 import (
 	"context"
-	"reflect"
-
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
+	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
+	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 const controllerName = "globalrole-controller"
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
@@ -54,45 +61,46 @@ type Reconciler struct {
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	r.helper = rbachelper.NewHelper(r.Client)
-	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.logger = mgr.GetLogger().WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	if r.ClusterClientSet == nil {
+		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
+	}
 	ctr, err := builder.
 		ControllerManagedBy(mgr).
 		For(&iamv1beta1.GlobalRole{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		Named(controllerName).
 		Build(r)
+	if err != nil {
+		return kscontroller.FailedToSetup(controllerName, err)
+	}
+	err = ctr.Watch(
+		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+		handler.EnqueueRequestsFromMapFunc(r.mapper),
+		predicate.ClusterStatusChangedPredicate{})
 
 	if err != nil {
-		return err
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
-
-	// host cluster
-	if r.ClusterClientSet != nil {
-		return ctr.Watch(
-			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
-			handler.EnqueueRequestsFromMapFunc(r.mapper),
-			clusterutils.ClusterStatusChangedPredicate{})
-	}
-
 	return nil
 }
 
 func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
 	cluster := o.(*clusterv1alpha1.Cluster)
+	var requests []reconcile.Request
 	if !clusterutils.IsClusterReady(cluster) {
-		return []reconcile.Request{}
+		return requests
 	}
 	globalRoles := &iamv1beta1.GlobalRoleList{}
 	if err := r.List(context.Background(), globalRoles); err != nil {
 		r.logger.Error(err, "failed to list global roles")
-		return []reconcile.Request{}
+		return requests
 	}
-	var result []reconcile.Request
 	for _, globalRole := range globalRoles.Items {
-		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Name: globalRole.Name}})
+		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: globalRole.Name}})
 	}
-	return result
+	return requests
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -107,28 +115,34 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	if r.ClusterClientSet != nil {
-		if err := r.sync(ctx, globalRole); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err := r.multiClusterSync(ctx, globalRole); err != nil {
+		return ctrl.Result{}, err
 	}
-
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) sync(ctx context.Context, globalRole *iamv1beta1.GlobalRole) error {
-	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+func (r *Reconciler) multiClusterSync(ctx context.Context, globalRole *iamv1beta1.GlobalRole) error {
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list clusters: %s", err)
 	}
+	var notReadyClusters []string
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
 		if !clusterutils.IsClusterReady(&cluster) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+		if clusterutils.IsHostCluster(&cluster) {
 			continue
 		}
 		if err := r.syncGlobalRole(ctx, cluster, globalRole); err != nil {
-			return err
+			return fmt.Errorf("failed to sync global role %s to cluster %s: %s", globalRole.Name, cluster.Name, err)
 		}
+	}
+	if len(notReadyClusters) > 0 {
+		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
+		r.recorder.Event(globalRole, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
 	}
 	return nil
 }
@@ -139,25 +153,20 @@ func (r *Reconciler) syncGlobalRole(ctx context.Context, cluster clusterv1alpha1
 	}
 	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
-	target := &iamv1beta1.GlobalRole{}
-	if err := clusterClient.Get(ctx, types.NamespacedName{Name: globalRole.Name}, target); err != nil {
-		if errors.IsNotFound(err) {
-			target = globalRole.DeepCopy()
-			return clusterClient.Create(ctx, target)
-		}
-		return err
-	}
-	if !reflect.DeepEqual(target.Rules, globalRole.Rules) ||
-		!reflect.DeepEqual(target.AggregationRoleTemplates, globalRole.AggregationRoleTemplates) ||
-		!reflect.DeepEqual(target.Labels, globalRole.Labels) ||
-		!reflect.DeepEqual(target.Annotations, globalRole.Annotations) {
+	target := &iamv1beta1.GlobalRole{ObjectMeta: metav1.ObjectMeta{Name: globalRole.Name}}
+	op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, target, func() error {
 		target.Labels = globalRole.Labels
 		target.Annotations = globalRole.Annotations
 		target.Rules = globalRole.Rules
 		target.AggregationRoleTemplates = globalRole.AggregationRoleTemplates
-		return clusterClient.Update(ctx, target)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update global role: %s", err)
 	}
+
+	r.logger.V(4).Info("global role successfully synced", "cluster", cluster.Name, "operation", op, "name", globalRole.Name)
 	return nil
 }

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -32,6 +33,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
+	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -39,23 +43,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 
+	quotav1 "kubesphere.io/kubesphere/kube/pkg/quota/v1"
 	evaluatorcore "kubesphere.io/kubesphere/kube/pkg/quota/v1/evaluator/core"
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/generic"
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/install"
 	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	corev1 "k8s.io/api/core/v1"
-
-	quotav1 "kubesphere.io/kubesphere/kube/pkg/quota/v1"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
 const (
@@ -206,7 +203,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	r.recorder.Event(resourceQuota, corev1.EventTypeNormal, "Synced", "Synced successfully")
+	r.recorder.Event(resourceQuota, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return ctrl.Result{RequeueAfter: r.ResyncPeriod}, nil
 }
 

@@ -21,11 +21,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
+	"kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/controller/applicationclass"
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
@@ -240,6 +240,10 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 
 func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *options.KubeSphereControllerManagerOptions) error {
 	if cmOptions.MultiClusterOptions.ClusterRole != multicluster.ClusterRoleHost {
+		// "globalrolebinding" controller
+		if cmOptions.IsControllerEnabled("globalrolebinding") {
+			addControllerWithSetup(mgr, "globalrolebinding", &globalrolebinding.Reconciler{})
+		}
 		return nil
 	}
 
@@ -267,16 +271,11 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 	}
 
 	if cmOptions.IsControllerEnabled("repository") {
-		repoReconciler := &core.RepositoryReconciler{}
-		addControllerWithSetup(mgr, "repository", repoReconciler)
+		addControllerWithSetup(mgr, "repository", &core.RepositoryReconciler{})
 	}
 
 	if cmOptions.IsControllerEnabled("installplan") {
-		installPlanReconciler, err := core.NewInstallPlanReconciler(cmOptions.KubernetesOptions.KubeConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create installplan controller: %v", err)
-		}
-		addControllerWithSetup(mgr, "installplan", installPlanReconciler)
+		addControllerWithSetup(mgr, "installplan", &core.InstallPlanReconciler{KubeConfigPath: cmOptions.KubernetesOptions.KubeConfig})
 	}
 
 	// marketplace controller
@@ -315,10 +314,7 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 		if err != nil {
 			klog.Fatalf("Unable to create Cluster controller: %v", err)
 		}
-		// Register reconciler
 		addControllerWithSetup(mgr, "cluster", clusterReconciler)
-		// Register timed tasker
-		addController(mgr, "cluster", clusterReconciler)
 	}
 
 	if cmOptions.TelemetryOptions != nil && cmOptions.TelemetryOptions.Enabled != nil && *cmOptions.TelemetryOptions.Enabled {
@@ -329,19 +325,8 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 
 var addSuccessfullyControllers = sets.New[string]()
 
-type setupableController interface {
-	SetupWithManager(mgr ctrl.Manager) error
-}
-
-func addControllerWithSetup(mgr manager.Manager, name string, controller setupableController) {
+func addControllerWithSetup(mgr manager.Manager, name string, controller controller.Controller) {
 	if err := controller.SetupWithManager(mgr); err != nil {
-		klog.Fatalf("Unable to create %v controller: %v", name, err)
-	}
-	addSuccessfullyControllers.Insert(name)
-}
-
-func addController(mgr manager.Manager, name string, controller manager.Runnable) {
-	if err := mgr.Add(controller); err != nil {
 		klog.Fatalf("Unable to create %v controller: %v", name, err)
 	}
 	addSuccessfullyControllers.Insert(name)
