@@ -187,6 +187,7 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 		if err := r.postRemove(ctx, plan); err != nil {
 			return ctrl.Result{}, err
 		}
+		return ctrl.Result{}, nil
 	}
 
 	if len(plan.Status.ClusterSchedulingStatuses) > 0 {
@@ -448,7 +449,6 @@ func updateClusterSchedulingCondition(
 }
 
 func (r *InstallPlanReconciler) postRemove(ctx context.Context, plan *corev1alpha1.InstallPlan) error {
-	logger := klog.FromContext(ctx)
 	deletePolicy := metav1.DeletePropagationBackground
 	if err := r.DeleteAllOf(ctx, &batchv1.Job{}, &client.DeleteAllOfOptions{
 		ListOptions: client.ListOptions{
@@ -457,8 +457,7 @@ func (r *InstallPlanReconciler) postRemove(ctx context.Context, plan *corev1alph
 		},
 		DeleteOptions: client.DeleteOptions{PropagationPolicy: &deletePolicy},
 	}); err != nil {
-		logger.Error(err, "failed to delete related jobs")
-		return err
+		return fmt.Errorf("failed to delete related helm executor jobs: %s", err)
 	}
 	// Remove the finalizer from the installplan and update it.
 	controllerutil.RemoveFinalizer(plan, installPlanProtection)
@@ -468,27 +467,25 @@ func (r *InstallPlanReconciler) postRemove(ctx context.Context, plan *corev1alph
 }
 
 func (r *InstallPlanReconciler) updateInstallPlan(ctx context.Context, plan *corev1alpha1.InstallPlan) error {
-	logger := klog.FromContext(ctx)
-
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		newPlan := &corev1alpha1.InstallPlan{}
-		if err := r.Client.Get(ctx, client.ObjectKey{Name: plan.Name}, newPlan); err != nil {
+		target := &corev1alpha1.InstallPlan{}
+		if err := r.Client.Get(ctx, client.ObjectKey{Name: plan.Name}, target); err != nil {
 			return err
 		}
-
-		newPlan.Finalizers = plan.Finalizers
-		newPlan.Annotations = plan.Annotations
-		newPlan.Status = plan.Status
-		return r.Update(ctx, newPlan)
+		if !reflect.DeepEqual(target.Finalizers, plan.Finalizers) ||
+			!reflect.DeepEqual(target.Annotations, plan.Annotations) ||
+			!reflect.DeepEqual(target.Status, plan.Status) {
+			target.Finalizers = plan.Finalizers
+			target.Annotations = plan.Annotations
+			target.Status = plan.Status
+			return r.Update(ctx, target)
+		}
+		return nil
 	}); err != nil {
-		logger.Error(err, "failed to update installplan")
-		return err
+		return fmt.Errorf("failed to update install plan %s: %s", plan.Name, err)
 	}
-
-	// sync extension status
 	if err := r.syncExtensionStatus(ctx, plan); err != nil {
-		logger.Error(err, "failed sync extension status")
-		return err
+		return fmt.Errorf("failed to sync extension %s status: %s", plan.Spec.Extension.Name, err)
 	}
 	return nil
 }
@@ -763,6 +760,11 @@ func (r *InstallPlanReconciler) updateExtensionStatus(ctx context.Context, exten
 
 func (r *InstallPlanReconciler) syncExtensionStatus(ctx context.Context, plan *corev1alpha1.InstallPlan) error {
 	expected := corev1alpha1.ExtensionStatus{}
+	if expected.State != plan.Status.State {
+		if err := r.updateExtensionStatus(ctx, plan.Spec.Extension.Name, expected); err != nil {
+			return err
+		}
+	}
 	if plan.Status.State == corev1alpha1.StateUninstalled {
 		expected.State = ""
 		expected.PlannedInstallVersion = ""
@@ -845,42 +847,79 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(ctx context.Context, plan 
 		return err
 	}
 
-	switch plan.Status.State {
-	case "": // Install the InstallPlan
-		// Check if the target helm release exists.
-		// If it does, there is no need to execute the installation process again.
-		release, err := executor.Release()
-		if err == nil {
-			// Has been installed successfully or failed
-			switch release.Info.Status {
-			case helmrelease.StatusFailed:
-				updateState(plan, corev1alpha1.StateInstallFailed)
-				updateCondition(plan, corev1alpha1.ConditionTypeInstalled, release.Info.Description, metav1.ConditionFalse)
-				return r.updateInstallPlan(ctx, plan)
-			case helmrelease.StatusDeployed:
-				updateState(plan, corev1alpha1.StateInstalled)
-				updateCondition(plan, corev1alpha1.ConditionTypeInstalled, "", metav1.ConditionTrue)
-				return r.updateInstallPlan(ctx, plan)
-			default:
-				return nil
-			}
-		}
-
-		if !isReleaseNotFoundError(err) {
+	// Check if the target helm release exists.
+	// If it does, there is no need to execute the installation process again.
+	release, err := executor.Release()
+	realStatus := ""
+	if err != nil {
+		if isReleaseNotFoundError(err) {
+			// preparing,installing,uninstalling
+			realStatus = plan.Status.State
+		} else {
 			logger.Error(err, "failed to get helm release status")
 			return err
 		}
+	} else {
+		switch release.Info.Status {
+		case helmrelease.StatusFailed:
+			switch plan.Status.State {
+			case corev1alpha1.StateUninstallFailed:
+				fallthrough
+			case corev1alpha1.StateInstallFailed:
+				fallthrough
+			case corev1alpha1.StateUpgradeFailed:
+				realStatus = plan.Status.State
+			case corev1alpha1.StateInstalling:
+				realStatus = corev1alpha1.StateInstallFailed
+			case corev1alpha1.StateUpgrading:
+				realStatus = corev1alpha1.StateUpgradeFailed
+			case corev1alpha1.StateUninstalling:
+				realStatus = corev1alpha1.StateUninstallFailed
+			}
+		case helmrelease.StatusDeployed:
+			realStatus = corev1alpha1.StateInstalled
+		case helmrelease.StatusPendingInstall:
+			realStatus = corev1alpha1.StateInstalling
+		case helmrelease.StatusPendingRollback:
+			fallthrough
+		case helmrelease.StatusPendingUpgrade:
+			realStatus = corev1alpha1.StateUpgrading
+		case helmrelease.StatusUninstalling:
+			realStatus = corev1alpha1.StateUninstalling
+		case helmrelease.StatusUninstalled:
+			realStatus = corev1alpha1.StateUninstalled
+		default:
+			realStatus = plan.Status.State
+		}
+	}
+
+	if plan.Status.State != realStatus {
+		updateState(plan, realStatus)
+		if realStatus == corev1alpha1.StateInstalled {
+			if plan.Status.State == corev1alpha1.StateUpgrading {
+				updateCondition(plan, corev1alpha1.ConditionTypeUpgraded, "", metav1.ConditionTrue)
+			} else {
+				updateCondition(plan, corev1alpha1.ConditionTypeInstalled, "", metav1.ConditionTrue)
+			}
+		}
+		return r.updateInstallPlan(ctx, plan)
+	}
+
+	switch realStatus {
+	case "":
 		return r.installOrUpgradeExtension(ctx, plan, executor, false)
+	case corev1alpha1.StatePreparing:
+		return nil
 	case corev1alpha1.StateInstalling:
 		return r.syncExtensionInstallationStatus(ctx, plan, false)
 	case corev1alpha1.StateUpgrading:
 		return r.syncExtensionInstallationStatus(ctx, plan, true)
+
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
-		if configChanged(plan, "") || r.versionChanged(ctx, plan) {
+		if configChanged(plan, "") || versionChanged(plan, "") {
 			return r.installOrUpgradeExtension(ctx, plan, executor, true)
 		}
-
 		if err = syncExtendedAPIStatus(ctx, r.Client, plan); err != nil {
 			return err
 		}
@@ -888,7 +927,7 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(ctx context.Context, plan 
 			return err
 		}
 		return r.updateReadyCondition(ctx, plan, executor)
-	default: // InstallFailed
+	default:
 		return nil
 	}
 }
@@ -908,11 +947,9 @@ func needUpdateReadyCondition(conditions []metav1.Condition, ready bool) bool {
 
 func (r *InstallPlanReconciler) updateReadyCondition(ctx context.Context, plan *corev1alpha1.InstallPlan, executor helm.Executor) error {
 	ready, err := executor.IsReleaseReady(time.Second * 30)
-
 	if !needUpdateReadyCondition(plan.Status.Conditions, ready) {
 		return nil
 	}
-
 	if ready {
 		updateCondition(plan, corev1alpha1.ConditionTypeReady, "", metav1.ConditionTrue)
 	} else {
@@ -936,7 +973,8 @@ func (r *InstallPlanReconciler) syncClusterStatus(ctx context.Context, plan *cor
 	targetNamespace := fmt.Sprintf(targetNamespaceFormat, plan.Spec.Extension.Name)
 	releaseName := fmt.Sprintf(agentReleaseFormat, plan.Spec.Extension.Name)
 
-	options := []helm.ExecutorOption{helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name})}
+	options := []helm.ExecutorOption{
+		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name})}
 
 	executor, err := helm.NewExecutor(r.kubeConfig, targetNamespace, releaseName, options...)
 	if err != nil {
@@ -944,45 +982,86 @@ func (r *InstallPlanReconciler) syncClusterStatus(ctx context.Context, plan *cor
 		return err
 	}
 
-	switch clusterSchedulingStatus.State {
-	case "":
-		release, err := executor.Release(helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)))
-		if err == nil {
-			// Has been installed successfully or failed
-			switch release.Info.Status {
-			case helmrelease.StatusFailed:
-				updateClusterSchedulingState(plan, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstallFailed)
-				updateClusterSchedulingCondition(plan, cluster.Name, &clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled, release.Info.Description, metav1.ConditionFalse)
-				return r.updateInstallPlan(ctx, plan)
-			case helmrelease.StatusDeployed:
-				updateClusterSchedulingState(plan, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateInstalled)
-				updateClusterSchedulingCondition(plan, cluster.Name, &clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled, "", metav1.ConditionTrue)
-				return r.updateInstallPlan(ctx, plan)
-			default:
-				return nil
-			}
-		}
+	// ==============
 
-		if !isReleaseNotFoundError(err) {
+	// Check if the target helm release exists.
+	// If it does, there is no need to execute the installation process again.
+	release, err := executor.Release(helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)))
+	realStatus := ""
+	if err != nil {
+		if isReleaseNotFoundError(err) {
+			// preparing,installing,uninstalling
+			realStatus = clusterSchedulingStatus.State
+		} else {
 			logger.Error(err, "failed to get helm release status")
 			return err
 		}
+	} else {
+		switch release.Info.Status {
+		case helmrelease.StatusFailed:
+			switch clusterSchedulingStatus.State {
+			case corev1alpha1.StateUninstallFailed:
+				fallthrough
+			case corev1alpha1.StateInstallFailed:
+				fallthrough
+			case corev1alpha1.StateUpgradeFailed:
+				realStatus = clusterSchedulingStatus.State
+			case corev1alpha1.StateInstalling:
+				realStatus = corev1alpha1.StateInstallFailed
+			case corev1alpha1.StateUpgrading:
+				realStatus = corev1alpha1.StateUpgradeFailed
+			case corev1alpha1.StateUninstalling:
+				realStatus = corev1alpha1.StateUninstallFailed
+			}
+		case helmrelease.StatusDeployed:
+			realStatus = corev1alpha1.StateInstalled
+		case helmrelease.StatusPendingInstall:
+			realStatus = corev1alpha1.StateInstalling
+		case helmrelease.StatusPendingRollback:
+			fallthrough
+		case helmrelease.StatusPendingUpgrade:
+			realStatus = corev1alpha1.StateUpgrading
+		case helmrelease.StatusUninstalling:
+			realStatus = corev1alpha1.StateUninstalling
+		case helmrelease.StatusUninstalled:
+			realStatus = corev1alpha1.StateUninstalled
+		default:
+			realStatus = clusterSchedulingStatus.State
+		}
+	}
+
+	if clusterSchedulingStatus.State != realStatus {
+		updateClusterSchedulingState(plan, cluster.Name, &clusterSchedulingStatus, realStatus)
+		if realStatus == corev1alpha1.StateInstalled {
+			if clusterSchedulingStatus.State == corev1alpha1.StateUpgrading {
+				updateClusterSchedulingCondition(plan, cluster.Name, &clusterSchedulingStatus, corev1alpha1.ConditionTypeUpgraded, release.Info.Description, metav1.ConditionFalse)
+			} else {
+				updateClusterSchedulingCondition(plan, cluster.Name, &clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled, release.Info.Description, metav1.ConditionFalse)
+			}
+		}
+		return r.updateInstallPlan(ctx, plan)
+	}
+
+	switch realStatus {
+	case "":
 		return r.installOrUpgradeClusterAgent(ctx, plan, cluster, clusterClient, &clusterSchedulingStatus, executor, false)
+	case corev1alpha1.StatePreparing:
+		return nil
 	case corev1alpha1.StateInstalling:
 		return r.syncClusterAgentInstallationStatus(ctx, plan, cluster, &clusterSchedulingStatus, false)
 	case corev1alpha1.StateUpgrading:
 		return r.syncClusterAgentInstallationStatus(ctx, plan, cluster, &clusterSchedulingStatus, true)
+
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
-		if configChanged(plan, cluster.Name) || r.versionChanged(ctx, plan) {
+		if configChanged(plan, cluster.Name) || versionChanged(plan, cluster.Name) {
 			return r.installOrUpgradeClusterAgent(ctx, plan, cluster, clusterClient, &clusterSchedulingStatus, executor, true)
 		}
-
 		if err = syncExtendedAPIStatus(ctx, clusterClient, plan); err != nil {
 			return err
 		}
 		return r.updateClusterReadyCondition(ctx, plan, executor, cluster.Name, &clusterSchedulingStatus)
-	default: // InstallFailed
+	default:
 		return nil
 	}
 }
@@ -1029,15 +1108,11 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, p
 
 	if !upgrade {
 		clusterRole, role := usesPermissions(charData)
-
 		if err = initTargetNamespace(ctx, r.Client, targetNamespace, clusterRole, role); err != nil {
 			logger.Error(err, "failed to init target namespace", "namespace", targetNamespace)
-			if !isServerSideError(err) {
-				updateState(plan, corev1alpha1.StateInstallFailed)
-				updateCondition(plan, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
-				return r.updateInstallPlan(ctx, plan)
-			}
-			return err
+			updateState(plan, corev1alpha1.StateInstallFailed)
+			updateCondition(plan, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
+			return r.updateInstallPlan(ctx, plan)
 		}
 	}
 
@@ -1052,22 +1127,20 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, p
 	jobName, err := executor.Upgrade(ctx, releaseName, charData, []byte(plan.Spec.Config), options...)
 	if err != nil {
 		logger.Error(err, "failed to create executor job", "namespace", targetNamespace)
-		if !isServerSideError(err) {
-			if upgrade {
-				updateState(plan, corev1alpha1.StateUpgradeFailed)
-				updateCondition(plan, corev1alpha1.ConditionTypeUpgraded, err.Error(), metav1.ConditionFalse)
-			} else {
-				updateState(plan, corev1alpha1.StateInstallFailed)
-				updateCondition(plan, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
-			}
-			return r.updateInstallPlan(ctx, plan)
+		if upgrade {
+			updateState(plan, corev1alpha1.StateUpgradeFailed)
+			updateCondition(plan, corev1alpha1.ConditionTypeUpgraded, err.Error(), metav1.ConditionFalse)
+		} else {
+			updateState(plan, corev1alpha1.StateInstallFailed)
+			updateCondition(plan, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
 		}
-		return err
+		return r.updateInstallPlan(ctx, plan)
 	}
 
 	setConfigHash(plan, "")
 	plan.Status.ReleaseName = releaseName
 	plan.Status.TargetNamespace = targetNamespace
+	plan.Status.Version = plan.Spec.Extension.Version
 	plan.Status.JobName = jobName
 	if upgrade {
 		updateState(plan, corev1alpha1.StateUpgrading)
@@ -1123,6 +1196,7 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(ctx context.Context
 	setConfigHash(plan, cluster.Name)
 	clusterSchedulingStatus.ReleaseName = releaseName
 	clusterSchedulingStatus.TargetNamespace = targetNamespace
+	clusterSchedulingStatus.Version = plan.Spec.Extension.Version
 	clusterSchedulingStatus.JobName = jobName
 	if upgrade {
 		updateClusterSchedulingState(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateUpgrading)
@@ -1350,11 +1424,6 @@ func newClusterClient(cluster clusterv1alpha1.Cluster) (client.Client, error) {
 	return client.New(config, client.Options{Scheme: scheme.Scheme})
 }
 
-func (r *InstallPlanReconciler) versionChanged(ctx context.Context, plan *corev1alpha1.InstallPlan) bool {
-	extension := &corev1alpha1.Extension{}
-	if err := r.Get(ctx, types.NamespacedName{Name: plan.Spec.Extension.Name}, extension); err != nil {
-		klog.Warningf("get extension %s failed: %v", plan.Spec.Extension.Name, err)
-		return false
-	}
-	return plan.Spec.Extension.Version != extension.Status.PlannedInstallVersion
+func versionChanged(plan *corev1alpha1.InstallPlan, cluster string) bool {
+	return plan.Spec.Extension.Version != plan.Status.ClusterSchedulingStatuses[cluster].Version
 }

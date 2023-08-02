@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"os"
 	"sort"
 	"strings"
 
@@ -31,7 +30,6 @@ import (
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/storage/driver"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
@@ -198,15 +196,6 @@ func hasCluster(clusters []clusterv1alpha1.Cluster, clusterName string) bool {
 		}
 	}
 	return false
-}
-
-func isServerSideError(err error) bool {
-	return errors.IsTimeout(err) ||
-		errors.IsServerTimeout(err) ||
-		errors.IsServiceUnavailable(err) ||
-		errors.IsInternalError(err) ||
-		errors.IsUnexpectedServerError(err) ||
-		os.IsTimeout(err)
 }
 
 func fnvString(text string) string {

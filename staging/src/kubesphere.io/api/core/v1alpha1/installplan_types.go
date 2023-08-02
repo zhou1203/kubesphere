@@ -45,6 +45,7 @@ type InstallPlanState struct {
 type InstallationStatus struct {
 	State           string             `json:"state,omitempty"`
 	ReleaseName     string             `json:"releaseName,omitempty"`
+	Version         string             `json:"version,omitempty"`
 	TargetNamespace string             `json:"targetNamespace,omitempty"`
 	JobName         string             `json:"jobName,omitempty"`
 	Conditions      []metav1.Condition `json:"conditions,omitempty"`
