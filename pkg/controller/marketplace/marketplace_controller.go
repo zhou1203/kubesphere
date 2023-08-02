@@ -445,7 +445,6 @@ func (r *Controller) syncExtensionCategory(ctx context.Context, options *marketp
 		}
 		expected.Labels[corev1alpha1.CategoryLabel] = category.Name
 		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
-			klog.Infof("update extension %v", expected)
 			return r.Update(ctx, expected)
 		}
 		return nil

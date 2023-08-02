@@ -760,10 +760,11 @@ func (r *InstallPlanReconciler) updateExtensionStatus(ctx context.Context, exten
 
 func (r *InstallPlanReconciler) syncExtensionStatus(ctx context.Context, plan *corev1alpha1.InstallPlan) error {
 	expected := corev1alpha1.ExtensionStatus{}
-	if expected.State != plan.Status.State {
-		if err := r.updateExtensionStatus(ctx, plan.Spec.Extension.Name, expected); err != nil {
-			return err
-		}
+	expected.State = plan.Status.State
+	expected.PlannedInstallVersion = plan.Spec.Extension.Version
+	expected.ClusterSchedulingStatuses = plan.Status.ClusterSchedulingStatuses
+	if err := r.updateExtensionStatus(ctx, plan.Spec.Extension.Name, expected); err != nil {
+		return err
 	}
 	if plan.Status.State == corev1alpha1.StateUninstalled {
 		expected.State = ""
