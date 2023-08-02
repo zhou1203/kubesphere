@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	"github.com/go-logr/logr"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	appsv1 "k8s.io/api/apps/v1"
@@ -275,10 +277,10 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 	outOfSync := repo.Status.LastSyncTime == nil || time.Now().After(repo.Status.LastSyncTime.Add(registryPollInterval))
 	if repoURL != "" && outOfSync {
 		if err := r.syncExtensionsFromURL(ctx, repo, repoURL); err != nil {
-			r.recorder.Eventf(repo, corev1.EventTypeWarning, "ExtensionsSyncFailed", err.Error())
+			r.recorder.Eventf(repo, corev1.EventTypeWarning, kscontroller.SyncFailed, "failed to sync extensions from %s: %s", repoURL, err)
 			return ctrl.Result{}, fmt.Errorf("failed to sync extensions: %s", err)
 		}
-		r.recorder.Eventf(repo, corev1.EventTypeNormal, "RepositorySynced", "")
+		r.recorder.Eventf(repo, corev1.EventTypeNormal, kscontroller.Synced, "sync extensions from %s successfully", repoURL)
 		repo = repo.DeepCopy()
 		repo.Status.LastSyncTime = &metav1.Time{Time: time.Now()}
 		if err := r.Update(ctx, repo); err != nil {

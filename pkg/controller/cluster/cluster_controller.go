@@ -116,6 +116,7 @@ func (r *Reconciler) InjectClient(c client.Client) error {
 
 // SetupWithManager setups the Reconciler with manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	mgr.Add(r)
 	return builder.
 		ControllerManagedBy(mgr).
 		For(

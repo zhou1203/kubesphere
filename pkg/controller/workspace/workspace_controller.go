@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
 const (
@@ -40,31 +40,24 @@ const (
 // Reconciler reconciles a Workspace object
 type Reconciler struct {
 	client.Client
-	Logger                  logr.Logger
-	Recorder                record.EventRecorder
-	MaxConcurrentReconciles int
+	logger   logr.Logger
+	recorder record.EventRecorder
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Client == nil {
-		r.Client = mgr.GetClient()
-	}
-	if r.Logger.GetSink() == nil {
-		r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	}
-	if r.Recorder == nil {
-		r.Recorder = mgr.GetEventRecorderFor(controllerName)
-	}
-	if r.MaxConcurrentReconciles <= 0 {
-		r.MaxConcurrentReconciles = 1
-	}
-	return ctrl.NewControllerManagedBy(mgr).
+	r.Client = mgr.GetClient()
+	r.logger = mgr.GetLogger().WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	err := ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
-		}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		For(&tenantv1alpha1.Workspace{}).
 		Complete(r)
+
+	if err != nil {
+		return kscontroller.FailedToSetup(controllerName, err)
+	}
+	return nil
 }
 
 // +kubebuilder:rbac:groups=tenant.kubesphere.io,resources=workspaces,verbs=get;list;watch;create;update;patch;delete
@@ -75,7 +68,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:groups=iam.kubesphere.io,resources=workspacerolebindings,verbs=get;list;watch;create;update;patch;delete
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.Logger.WithValues("workspace", req.NamespacedName)
+	logger := r.logger.WithValues("workspace", req.NamespacedName)
 	ctx = klog.NewContext(ctx, logger)
 	workspace := &tenantv1alpha1.Workspace{}
 	if err := r.Get(ctx, req.NamespacedName, workspace); err != nil {
@@ -107,6 +100,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	r.Recorder.Event(workspace, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
+	r.recorder.Event(workspace, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }

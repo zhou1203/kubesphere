@@ -58,12 +58,6 @@ const (
 	LogQueryTag      = "Log Query"
 	EventsQueryTag   = "Events Query"
 	AuditingQueryTag = "Auditing Query"
-
-	// SuccessSynced is used as part of the Event 'reason' when a resource is synced
-	SuccessSynced = "Synced"
-	// FailedSynced is used as part of the Event 'reason' when a resource is not synced
-	FailedSynced          = "FailedSync"
-	MessageResourceSynced = "Synced successfully"
 )
 
 var (

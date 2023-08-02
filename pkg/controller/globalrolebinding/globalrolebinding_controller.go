@@ -19,15 +19,15 @@ package globalrolebinding
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -39,13 +39,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
-	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 const controllerName = "globalrolebinding-controller"
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
@@ -56,9 +59,11 @@ type Reconciler struct {
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
-	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.logger = mgr.GetLogger().WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-
+	if r.ClusterClientSet == nil {
+		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
+	}
 	ctr, err := builder.
 		ControllerManagedBy(mgr).
 		For(&iamv1beta1.GlobalRoleBinding{}).
@@ -66,17 +71,15 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named(controllerName).
 		Build(r)
 	if err != nil {
-		return err
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
-
-	// host cluster
-	if r.ClusterClientSet != nil {
-		return ctr.Watch(
-			&source.Kind{Type: &clusterv1alpha1.Cluster{}},
-			handler.EnqueueRequestsFromMapFunc(r.mapper),
-			clusterutils.ClusterStatusChangedPredicate{})
+	err = ctr.Watch(
+		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
+		handler.EnqueueRequestsFromMapFunc(r.mapper),
+		predicate.ClusterStatusChangedPredicate{})
+	if err != nil {
+		return kscontroller.FailedToSetup(controllerName, err)
 	}
-
 	return nil
 }
 
@@ -103,6 +106,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// TODO map to rbacv1.ClusterRole
 	if globalRoleBinding.RoleRef.Name == iamv1beta1.PlatformAdmin {
 		if err := r.assignClusterAdminRole(ctx, globalRoleBinding); err != nil {
 			return ctrl.Result{}, err
@@ -110,17 +114,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if r.ClusterClientSet != nil {
-		if err := r.sync(ctx, globalRoleBinding); err != nil {
+		if err := r.multiClusterSync(ctx, globalRoleBinding); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	r.recorder.Event(globalRoleBinding, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
+	r.recorder.Event(globalRoleBinding, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 
 func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	username := findExpectedUsername(globalRoleBinding)
+	username := globalRoleBinding.Labels[iamv1beta1.UserReferenceLabel]
 	if username == "" {
 		return nil
 	}
@@ -131,87 +135,71 @@ func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBindi
 			Labels: map[string]string{iamv1beta1.RoleReferenceLabel: iamv1beta1.ClusterAdmin,
 				iamv1beta1.UserReferenceLabel: username},
 		},
-		Subjects: ensureSubjectAPIVersionIsValid(globalRoleBinding.Subjects),
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:     rbacv1.UserKind,
+				APIGroup: rbacv1.GroupName,
+				Name:     username,
+			},
+		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
 			Kind:     iamv1beta1.ResourceKindClusterRole,
 			Name:     iamv1beta1.ClusterAdmin,
 		},
 	}
-
-	err := controllerutil.SetControllerReference(globalRoleBinding, clusterRoleBinding, scheme.Scheme)
-	if err != nil {
-		return err
+	if err := controllerutil.SetControllerReference(globalRoleBinding, clusterRoleBinding, r.Scheme()); err != nil {
+		return fmt.Errorf("failed to set controller reference: %s", err)
 	}
 	return client.IgnoreAlreadyExists(r.Create(ctx, clusterRoleBinding))
 }
 
-func (r *Reconciler) sync(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	clusters, err := r.ClusterClientSet.ListCluster(ctx)
+func (r *Reconciler) multiClusterSync(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list clusters: %s", err)
 	}
+	var notReadyClusters []string
 	for _, cluster := range clusters {
 		// skip if cluster is not ready
 		if !clusterutils.IsClusterReady(&cluster) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue
 		}
-		if err := r.syncGlobalRoleBinding(ctx, cluster, globalRoleBinding); err != nil {
-			return err
+		if clusterutils.IsHostCluster(&cluster) {
+			continue
 		}
+		if err := r.syncGlobalRoleBinding(ctx, &cluster, globalRoleBinding); err != nil {
+			return fmt.Errorf("failed to sync global role binding %s to cluster %s: %s", globalRoleBinding.Name, cluster.Name, err)
+		}
+	}
+	if len(notReadyClusters) > 0 {
+		klog.FromContext(ctx).V(4).Info("cluster not ready", "clusters", strings.Join(notReadyClusters, ","))
+		r.recorder.Event(globalRoleBinding, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
 	}
 	return nil
 }
 
-func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster clusterv1alpha1.Cluster, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	if r.ClusterClientSet.IsHostCluster(&cluster) {
+func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster *clusterv1alpha1.Cluster, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
+	if r.ClusterClientSet.IsHostCluster(cluster) {
 		return nil
 	}
 	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
-	target := &iamv1beta1.GlobalRoleBinding{}
-	if err := clusterClient.Get(ctx, types.NamespacedName{Name: globalRoleBinding.Name}, target); err != nil {
-		if errors.IsNotFound(err) {
-			target = globalRoleBinding.DeepCopy()
-			return clusterClient.Create(ctx, target)
-		}
-		return err
-	}
-	if !reflect.DeepEqual(target.RoleRef, globalRoleBinding.RoleRef) ||
-		!reflect.DeepEqual(target.Subjects, globalRoleBinding.Subjects) ||
-		!reflect.DeepEqual(target.Labels, globalRoleBinding.Labels) ||
-		!reflect.DeepEqual(target.Annotations, globalRoleBinding.Annotations) {
+	target := &iamv1beta1.GlobalRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: globalRoleBinding.Name}}
+	op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, target, func() error {
 		target.Labels = globalRoleBinding.Labels
 		target.Annotations = globalRoleBinding.Annotations
 		target.RoleRef = globalRoleBinding.RoleRef
 		target.Subjects = globalRoleBinding.Subjects
-		return clusterClient.Update(ctx, target)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update global role binding: %s", err)
 	}
+
+	r.logger.V(4).Info("global role binding successfully synced", "cluster", cluster.Name, "operation", op, "name", globalRoleBinding.Name)
 	return nil
-}
-
-func findExpectedUsername(globalRoleBinding *iamv1beta1.GlobalRoleBinding) string {
-	for _, subject := range globalRoleBinding.Subjects {
-		if subject.Kind == iamv1beta1.ResourceKindUser {
-			return subject.Name
-		}
-	}
-	return ""
-}
-
-func ensureSubjectAPIVersionIsValid(subjects []rbacv1.Subject) []rbacv1.Subject {
-	validSubjects := make([]rbacv1.Subject, 0)
-	for _, subject := range subjects {
-		if subject.Kind == iamv1beta1.ResourceKindUser {
-			validSubject := rbacv1.Subject{
-				Kind:     iamv1beta1.ResourceKindUser,
-				APIGroup: rbacv1.GroupName,
-				Name:     subject.Name,
-			}
-			validSubjects = append(validSubjects, validSubject)
-		}
-	}
-	return validSubjects
 }

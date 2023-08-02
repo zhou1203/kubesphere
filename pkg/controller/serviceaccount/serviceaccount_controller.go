@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	"kubesphere.io/kubesphere/pkg/controller"
+
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -32,8 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-
-	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 const (
@@ -81,10 +81,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	if _, ok := sa.Annotations[iamv1beta1.RoleAnnotation]; ok && sa.ObjectMeta.DeletionTimestamp.IsZero() {
 		if err := r.CreateOrUpdateRoleBinding(ctx, logger, sa); err != nil {
-			r.recorder.Event(sa, corev1.EventTypeWarning, constants.FailedSynced, err.Error())
+			r.recorder.Event(sa, corev1.EventTypeWarning, controller.Synced, err.Error())
 			return ctrl.Result{}, err
 		}
-		r.recorder.Event(sa, corev1.EventTypeNormal, constants.SuccessSynced, constants.MessageResourceSynced)
+		r.recorder.Event(sa, corev1.EventTypeNormal, controller.Synced, controller.MessageResourceSynced)
 	}
 	return ctrl.Result{}, nil
 }

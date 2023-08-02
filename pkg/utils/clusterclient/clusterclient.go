@@ -41,12 +41,12 @@ import (
 type Interface interface {
 	IsHostCluster(cluster *clusterv1alpha1.Cluster) bool
 	IsClusterReady(cluster *clusterv1alpha1.Cluster) bool
-	GetClusterKubeconfig(string) (string, error)
+	GetClusterKubeConfig(string) (string, error)
 	Get(string) (*clusterv1alpha1.Cluster, error)
 	GetInnerCluster(string) *innerCluster
 	GetKubernetesClientSet(string) (*kubernetes.Clientset, error)
 	GetClusterClient(string) (runtimeclient.Client, error)
-	ListCluster(ctx context.Context) ([]clusterv1alpha1.Cluster, error)
+	ListClusters(ctx context.Context) ([]clusterv1alpha1.Cluster, error)
 }
 
 type innerCluster struct {
@@ -101,7 +101,7 @@ func NewClusterClientSet(runtimeCache runtimecache.Cache) (Interface, error) {
 	return c, nil
 }
 
-func (c *clusterClients) ListCluster(ctx context.Context) ([]clusterv1alpha1.Cluster, error) {
+func (c *clusterClients) ListClusters(ctx context.Context) ([]clusterv1alpha1.Cluster, error) {
 	clusterList := &clusterv1alpha1.ClusterList{}
 	if err := c.cache.List(ctx, clusterList); err != nil {
 		return nil, err
@@ -216,7 +216,7 @@ func (c *clusterClients) Get(clusterName string) (*clusterv1alpha1.Cluster, erro
 	return cluster, err
 }
 
-func (c *clusterClients) GetClusterKubeconfig(clusterName string) (string, error) {
+func (c *clusterClients) GetClusterKubeConfig(clusterName string) (string, error) {
 	cluster, err := c.Get(clusterName)
 	if err != nil {
 		return "", err
@@ -245,7 +245,7 @@ func (c *clusterClients) IsHostCluster(cluster *clusterv1alpha1.Cluster) bool {
 }
 
 func (c *clusterClients) GetKubernetesClientSet(name string) (*kubernetes.Clientset, error) {
-	kubeconfig, err := c.GetClusterKubeconfig(name)
+	kubeconfig, err := c.GetClusterKubeConfig(name)
 	if err != nil {
 		return nil, err
 	}

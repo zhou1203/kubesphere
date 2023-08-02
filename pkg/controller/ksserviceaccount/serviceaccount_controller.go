@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	controller2 "kubesphere.io/kubesphere/pkg/controller"
+
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -70,7 +72,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 					Namespace: secretCreated.Namespace,
 					Name:      secretCreated.Name,
 				})
-				r.EventRecorder.Event(deepCopy, corev1.EventTypeNormal, constants.SuccessSynced, messageCreateSecretSuccessfully)
+				r.EventRecorder.Event(deepCopy, corev1.EventTypeNormal, controller2.Synced, messageCreateSecretSuccessfully)
 			}
 
 			err = r.Update(ctx, deepCopy)
