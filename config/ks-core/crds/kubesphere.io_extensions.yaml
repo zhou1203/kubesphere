@@ -43,6 +43,9 @@ spec:
             description: ExtensionSpec only contains basic extension information copied
               from the latest ExtensionVersion.
             properties:
+              created:
+                format: date-time
+                type: string
               description:
                 additionalProperties:
                   type: string
