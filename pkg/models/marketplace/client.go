@@ -49,7 +49,6 @@ type ExtensionList struct {
 type Extension struct {
 	ExtensionID string `json:"extension_id"`
 	Name        string `json:"name"`
-	CategoryID  string `json:"category_id"`
 }
 
 type SubscriptionList struct {

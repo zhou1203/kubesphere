@@ -48,7 +48,7 @@ const (
 	ExtensionReferenceLabel   = "kubesphere.io/extension-ref"
 	RepositoryReferenceLabel  = "kubesphere.io/repository-ref"
 	InstallPlanReferenceLabel = "kubesphere.io/installplan-ref"
-	CategoryLabel             = "category.kubesphere.io"
+	CategoryLabel             = "kubesphere.io/category"
 
 	ForceDeleteAnnotation           = "kubesphere.io/force-delete"
 	InstallPlanConfigHashAnnotation = "kubesphere.io/config-hash"
