@@ -90,6 +90,28 @@ func TestGetRecommendedExtensionVersion(t *testing.T) {
 			ksVersion:  "4.0.0",
 			wanted:     "",
 		},
+		{
+			name: "match 1.3.0",
+			versions: []corev1alpha1.ExtensionVersion{
+				{
+					Spec: corev1alpha1.ExtensionVersionSpec{
+						Version:     "1.2.0",
+						KubeVersion: ">=1.19.0",
+						KSVersion:   ">=3.0.0",
+					},
+				},
+				{
+					Spec: corev1alpha1.ExtensionVersionSpec{
+						Version:     "1.3.0",
+						KubeVersion: ">=1.19.0",
+						KSVersion:   ">=4.0.0-alpha",
+					},
+				},
+			},
+			k8sVersion: "1.25.4",
+			ksVersion:  "4.0.0-beta.5+ae34",
+			wanted:     "1.3.0",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
