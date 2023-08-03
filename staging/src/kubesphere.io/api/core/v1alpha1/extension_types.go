@@ -64,6 +64,7 @@ type ExtensionVersionSpec struct {
 	Keywords      []string `json:"keywords,omitempty"`
 	Sources       []string `json:"sources,omitempty"`
 	Repository    string   `json:"repository,omitempty"`
+	Category      string   `json:"category,omitempty"`
 	// KubeVersion is a SemVer constraint specifying the version of Kubernetes required.
 	// eg: >= 1.2.0, see https://github.com/Masterminds/semver for more info.
 	KubeVersion string `json:"kubeVersion,omitempty"`

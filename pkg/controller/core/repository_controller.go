@@ -96,7 +96,9 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 		if extension.Labels == nil {
 			extension.Labels = make(map[string]string)
 		}
-
+		if extensionVersion.Spec.Category != "" {
+			extension.Labels[corev1alpha1.CategoryLabel] = extensionVersion.Spec.Category
+		}
 		extension.Labels[corev1alpha1.RepositoryReferenceLabel] = repo.Name
 		extension.Spec.ExtensionInfo = extensionVersion.Spec.ExtensionInfo
 		if err := controllerutil.SetOwnerReference(repo, extension, r.Scheme()); err != nil {
@@ -194,7 +196,8 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 			extensionVersionSpec.Repository = repo.Name
 			extensionVersionSpec.ChartDataRef = nil
 			extensionVersionSpec.ChartURL = chartURL
-			extensionVersions = append(extensionVersions, corev1alpha1.ExtensionVersion{
+
+			extensionVersion := corev1alpha1.ExtensionVersion{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: fmt.Sprintf("%s-%s", extensionName, extensionVersionSpec.Version),
 					Labels: map[string]string{
@@ -203,7 +206,11 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 					},
 				},
 				Spec: *extensionVersionSpec,
-			})
+			}
+			if extensionVersionSpec.Category != "" {
+				extensionVersion.Labels[corev1alpha1.CategoryLabel] = extensionVersionSpec.Category
+			}
+			extensionVersions = append(extensionVersions, extensionVersion)
 		}
 
 		latestExtensionVersion := getLatestExtensionVersion(extensionVersions)

@@ -67,13 +67,6 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 	}
 
-	_, hasCategoryLabel := extension.Labels[corev1alpha1.CategoryLabel]
-	if !hasCategoryLabel && extension.Annotations[marketplacev1alpha1.CategoryID] != "" {
-		if err := r.syncExtensionCategory(ctx, options, extension); err != nil {
-			return reconcile.Result{}, err
-		}
-	}
-
 	if options.Account != nil && options.Account.AccessToken != "" {
 		if err := r.syncSubscription(ctx, options, extension); err != nil {
 			return reconcile.Result{}, err
@@ -111,34 +104,6 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		For(&corev1alpha1.Extension{}).
 		Build(r)
 
-	if err != nil {
-		return fmt.Errorf("failed to setup %s: %s", marketplaceController, err)
-	}
-	err = ctr.Watch(&source.Kind{Type: &corev1alpha1.Category{}},
-		handler.EnqueueRequestsFromMapFunc(func(object client.Object) []reconcile.Request {
-			var requests []reconcile.Request
-			category := object.(*corev1alpha1.Category)
-			if category.Annotations[marketplacev1alpha1.CategoryID] == "" {
-				return requests
-			}
-			extensions := &corev1alpha1.ExtensionList{}
-			if err := r.List(context.Background(), extensions); err != nil {
-				r.logger.Error(err, "failed to list extensions")
-				return requests
-			}
-			for _, extension := range extensions.Items {
-				if extension.Annotations[marketplacev1alpha1.CategoryID] == category.Annotations[marketplacev1alpha1.CategoryID] {
-					requests = append(requests, reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Name: extension.Name,
-						},
-					})
-				}
-			}
-			return requests
-		}),
-		predicate.ResourceVersionChangedPredicate{},
-	)
 	if err != nil {
 		return fmt.Errorf("failed to setup %s: %s", marketplaceController, err)
 	}
@@ -321,7 +286,6 @@ func (r *Controller) syncExtensionID(ctx context.Context, options *marketplace.O
 		if expected.Annotations == nil {
 			expected.Annotations = make(map[string]string, 0)
 		}
-		expected.Annotations[marketplacev1alpha1.CategoryID] = extensionInfo.CategoryID
 		if !reflect.DeepEqual(expected.Labels, extension.Labels) || !reflect.DeepEqual(expected.Annotations, extension.Annotations) {
 			return r.Update(ctx, expected, &client.UpdateOptions{})
 		}
@@ -397,62 +361,15 @@ func (r *Controller) createOrUpdateCategory(ctx context.Context, origin *marketp
 		if category.Labels == nil {
 			category.Labels = make(map[string]string)
 		}
-		category.Labels[marketplacev1alpha1.CategoryID] = origin.CategoryID
 		category.Spec = corev1alpha1.CategorySpec{
 			DisplayName: origin.Name,
 			Icon:        "",
 		}
 		return nil
 	})
-
 	if err != nil {
 		return err
 	}
-
 	klog.V(4).Infof("Update category %s successfully: %s", origin.NormalizedName, op)
-	return nil
-}
-
-func (r *Controller) syncExtensionCategory(ctx context.Context, options *marketplace.Options, extension *corev1alpha1.Extension) error {
-	categoryID := extension.Annotations[marketplacev1alpha1.CategoryID]
-	categories := &corev1alpha1.CategoryList{}
-	if err := r.List(ctx, categories, client.MatchingLabels{marketplacev1alpha1.CategoryID: categoryID}); err != nil {
-		return fmt.Errorf("failed to list categories: %s", err)
-	}
-
-	category := &corev1alpha1.Category{}
-	if len(categories.Items) > 0 {
-		category = &categories.Items[0]
-	} else {
-		categoryInfo, err := marketplace.NewClient(options).CategoryInfo(categoryID)
-		if err != nil {
-			return fmt.Errorf("failed to describe category %s: %s", categoryID, err)
-		}
-		if err := r.createOrUpdateCategory(ctx, categoryInfo); err != nil {
-			return fmt.Errorf("failed to update category: %s", err)
-		}
-		if err := r.Get(ctx, types.NamespacedName{Name: categoryInfo.NormalizedName}, category); err != nil {
-			return fmt.Errorf("failed to describe category %s: %s", categoryInfo.NormalizedName, err)
-		}
-	}
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
-			return err
-		}
-		expected := extension.DeepCopy()
-		if expected.Labels == nil {
-			expected.Labels = make(map[string]string)
-		}
-		expected.Labels[corev1alpha1.CategoryLabel] = category.Name
-		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
-			return r.Update(ctx, expected)
-		}
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to update extension category: %s", err)
-	}
-
 	return nil
 }
