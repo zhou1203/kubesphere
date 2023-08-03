@@ -243,6 +243,10 @@ func (r *Reconciler) syncQuotaForNamespaces(originalQuota *quotav1alpha2.Resourc
 		return err
 	}
 
+	if quota.Status.Namespaces == nil {
+		quota.Status.Namespaces = make([]quotav1alpha2.ResourceQuotaStatusByNamespace, 0)
+	}
+
 	matchingNamespaceNames := make([]string, 0)
 	for _, namespace := range matchingNamespaceList.Items {
 		matchingNamespaceNames = append(matchingNamespaceNames, namespace.Name)
