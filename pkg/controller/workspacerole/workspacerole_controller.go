@@ -196,12 +196,12 @@ func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alp
 		return client.IgnoreNotFound(err)
 	}
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
-		existWorkspaceRole := &iamv1beta1.WorkspaceRole{ObjectMeta: metav1.ObjectMeta{Name: workspaceRole.Name}}
-		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existWorkspaceRole, func() error {
-			existWorkspaceRole.Labels = workspaceRole.Labels
-			existWorkspaceRole.Annotations = workspaceRole.Annotations
-			existWorkspaceRole.Rules = workspaceRole.Rules
-			existWorkspaceRole.AggregationRoleTemplates = workspaceRole.AggregationRoleTemplates
+		target := &iamv1beta1.WorkspaceRole{ObjectMeta: metav1.ObjectMeta{Name: workspaceRole.Name}}
+		op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, target, func() error {
+			target.Labels = workspaceRole.Labels
+			target.Annotations = workspaceRole.Annotations
+			target.Rules = workspaceRole.Rules
+			target.AggregationRoleTemplates = workspaceRole.AggregationRoleTemplates
 			return nil
 		})
 		if err != nil {

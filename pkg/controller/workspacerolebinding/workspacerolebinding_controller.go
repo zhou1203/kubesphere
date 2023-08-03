@@ -176,7 +176,7 @@ func (r *Reconciler) syncWorkspaceRoleBinding(ctx context.Context, cluster clust
 
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
 		target := &iamv1beta1.WorkspaceRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: workspaceRoleBinding.Name}}
-		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, target, func() error {
+		op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, target, func() error {
 			target.Labels = workspaceRoleBinding.Labels
 			target.Annotations = workspaceRoleBinding.Annotations
 			target.RoleRef = workspaceRoleBinding.RoleRef
