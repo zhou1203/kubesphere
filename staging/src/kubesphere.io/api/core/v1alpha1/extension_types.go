@@ -69,9 +69,10 @@ type ExtensionVersionSpec struct {
 	KubeVersion string `json:"kubeVersion,omitempty"`
 	// KSVersion is a SemVer constraint specifying the version of KubeSphere required.
 	// eg: >= 1.2.0, see https://github.com/Masterminds/semver for more info.
-	KSVersion string `json:"ksVersion,omitempty"`
-	Home      string `json:"home,omitempty"`
-	Digest    string `json:"digest,omitempty"`
+	KSVersion   string   `json:"ksVersion,omitempty"`
+	Home        string   `json:"home,omitempty"`
+	Digest      string   `json:"digest,omitempty"`
+	Screenshots []string `json:"screenshots,omitempty"`
 	// ChartDataRef refers to a configMap which contains raw chart data.
 	ChartDataRef *ConfigMapKeyRef `json:"chartDataRef,omitempty"`
 	ChartURL     string           `json:"chartURL,omitempty"`

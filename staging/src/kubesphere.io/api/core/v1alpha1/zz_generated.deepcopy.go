@@ -431,6 +431,11 @@ func (in *ExtensionVersionSpec) DeepCopyInto(out *ExtensionVersionSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.Screenshots != nil {
+		in, out := &in.Screenshots, &out.Screenshots
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.ChartDataRef != nil {
 		in, out := &in.ChartDataRef, &out.ChartDataRef
 		*out = new(ConfigMapKeyRef)

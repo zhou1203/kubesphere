@@ -139,6 +139,10 @@ spec:
                 type: object
               repository:
                 type: string
+              screenshots:
+                items:
+                  type: string
+                type: array
               sources:
                 items:
                   type: string
