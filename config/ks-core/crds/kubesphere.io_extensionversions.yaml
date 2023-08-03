@@ -61,10 +61,15 @@ spec:
                 x-kubernetes-map-type: atomic
               chartURL:
                 type: string
+              created:
+                format: date-time
+                type: string
               description:
                 additionalProperties:
                   type: string
                 type: object
+              digest:
+                type: string
               displayName:
                 additionalProperties:
                   type: string

@@ -40,10 +40,16 @@ type Provider struct {
 
 // ExtensionInfo describes an extension's basic information.
 type ExtensionInfo struct {
-	DisplayName Locales                    `json:"displayName,omitempty"`
-	Description Locales                    `json:"description,omitempty"`
-	Icon        string                     `json:"icon,omitempty"`
-	Provider    map[LanguageCode]*Provider `json:"provider,omitempty"`
+	// +optional
+	DisplayName Locales `json:"displayName,omitempty"`
+	// +optional
+	Description Locales `json:"description,omitempty"`
+	// +optional
+	Icon string `json:"icon,omitempty"`
+	// +optional
+	Provider map[LanguageCode]*Provider `json:"provider,omitempty"`
+	// +optional
+	Created metav1.Time `json:"created,omitempty"`
 }
 
 // ExtensionSpec only contains basic extension information copied from the latest ExtensionVersion.
@@ -65,6 +71,7 @@ type ExtensionVersionSpec struct {
 	// eg: >= 1.2.0, see https://github.com/Masterminds/semver for more info.
 	KSVersion string `json:"ksVersion,omitempty"`
 	Home      string `json:"home,omitempty"`
+	Digest    string `json:"digest,omitempty"`
 	// ChartDataRef refers to a configMap which contains raw chart data.
 	ChartDataRef *ConfigMapKeyRef `json:"chartDataRef,omitempty"`
 	ChartURL     string           `json:"chartURL,omitempty"`

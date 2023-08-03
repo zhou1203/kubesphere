@@ -29,8 +29,6 @@ import (
 	"strings"
 	"time"
 
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
-
 	"github.com/go-logr/logr"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	appsv1 "k8s.io/api/apps/v1"
@@ -51,6 +49,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
 const (
@@ -190,7 +189,8 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 				logger.V(4).Info("extension version spec not found: %s", chartURL)
 				continue
 			}
-
+			extensionVersionSpec.Created = metav1.NewTime(version.Created)
+			extensionVersionSpec.Digest = version.Digest
 			extensionVersionSpec.Repository = repo.Name
 			extensionVersionSpec.ChartDataRef = nil
 			extensionVersionSpec.ChartURL = chartURL
