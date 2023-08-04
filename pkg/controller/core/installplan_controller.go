@@ -45,6 +45,7 @@ import (
 	"kubesphere.io/utils/helm"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -117,7 +118,7 @@ func (r *InstallPlanReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 func (r *InstallPlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
-	r.logger = ctrl.Log.WithName("controllers").WithName(installPlanController)
+	r.logger = mgr.GetLogger().WithName(installPlanController)
 	r.recorder = mgr.GetEventRecorderFor(installPlanController)
 
 	// TODO support more options (e.g. skipTLSVerify or basic auth etc.) for the specified repository
@@ -131,9 +132,11 @@ func (r *InstallPlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.kubeConfig = string(data)
 	}
 
-	controller, err := ctrl.NewControllerManagedBy(mgr).
+	ctr, err := ctrl.NewControllerManagedBy(mgr).
 		Named(installPlanController).
-		For(&corev1alpha1.InstallPlan{}).Build(r)
+		For(&corev1alpha1.InstallPlan{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
+		Build(r)
 	if err != nil {
 		return kscontroller.FailedToSetup(installPlanController, err)
 	}
@@ -147,7 +150,7 @@ func (r *InstallPlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return kscontroller.FailedToSetup(installPlanController, err)
 	}
 
-	err = controller.Watch(
+	err = ctr.Watch(
 		&source.Kind{Type: &batchv1.Job{}},
 		handler.EnqueueRequestsFromMapFunc(
 			func(h client.Object) []reconcile.Request {
@@ -936,7 +939,7 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(ctx context.Context, plan 
 		if err = r.syncExtensionStatus(ctx, plan); err != nil {
 			return err
 		}
-		return r.updateReadyCondition(ctx, plan, executor)
+		return nil
 	default:
 		return nil
 	}
