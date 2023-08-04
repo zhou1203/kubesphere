@@ -107,10 +107,10 @@ items:
     metadata:
       name: anonymous
     rules:
-    - nonResourceURLs:
-        - /dist/*
-      verbs:
-        - GET
+      - nonResourceURLs:
+          - /dist/*
+        verbs:
+          - GET
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: GlobalRole
     metadata:
@@ -211,7 +211,7 @@ items:
   - aggregationRoleTemplates:
       roleSelector:
         matchLabels:
-          scope.iam.kubesphere.io/global: ""
+          iam.kubesphere.io/scope: "global"
       templateNames:
         - global-manage-clusters
         - global-view-clusters
@@ -252,8 +252,6 @@ items:
       annotations:
         kubesphere.io/description: '{"zh": "被邀请加入企业空间之前无法访问任何资源。", "en": "Cannot access any resources before joining a workspace."}'
         kubesphere.io/creator: admin
-      labels:
-        iam.kubesphere.io/auto-aggregate: "true"
       name: platform-regular
     rules: []
   - apiVersion: iam.kubesphere.io/v1beta1
@@ -297,7 +295,7 @@ items:
   - aggregationRoleTemplates:
       roleSelector:
         matchLabels:
-          scope.iam.kubesphere.io/cluster: ""
+          iam.kubesphere.io/scope: "cluster"
       templateNames: []
     apiVersion: iam.kubesphere.io/v1beta1
     kind: ClusterRole
@@ -351,16 +349,73 @@ apiVersion: v1
 kind: List
 items:
   - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleBase
+    kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/namespace: ""
+        iam.kubesphere.io/scope: "namespace"
+      name: namespace-access-control
+    spec:
+      displayName:
+        en: Access Control
+  - apiVersion: iam.kubesphere.io/v1beta1
+    kind: Category
+    metadata:
+      labels:
+        iam.kubesphere.io/scope: "namespace"
+      name: namespace-configuration-management
+    spec:
+      displayName:
+        en: Configuration
+  - apiVersion: iam.kubesphere.io/v1beta1
+    kind: Category
+    metadata:
+      labels:
+        iam.kubesphere.io/scope: "namespace"
+      name: namespace-storage-management
+    spec:
+      displayName:
+        en: Storage
+  - apiVersion: iam.kubesphere.io/v1beta1
+    kind: Category
+    metadata:
+      labels:
+        iam.kubesphere.io/scope: "namespace"
+      name: namespace-application-workloads
+    spec:
+      displayName:
+        en: Application Workloads
+  - apiVersion: iam.kubesphere.io/v1beta1
+    kind: Category
+    metadata:
+      labels:
+        iam.kubesphere.io/scope: "namespace"
+      name: project-settings
+    spec:
+      displayName:
+        en: Project Settings
+  - apiVersion: iam.kubesphere.io/v1beta1
+    kind: Category
+    metadata:
+      labels:
+        iam.kubesphere.io/scope: "namespace"
+      name: namespace-configuration
+    spec:
+      displayName:
+        en: Configuration
+  - apiVersion: iam.kubesphere.io/v1beta1
+    kind: BuiltinRole
+    metadata:
+      labels:
+        iam.kubesphere.io/scope: "namespace"
       name: project-admin
+    targetSelector:
+      matchLabels:
+        kubesphere.io/managed: "true"
     role:
       aggregationRoleTemplates:
         roleSelector:
           matchLabels:
-            scope.iam.kubesphere.io/namespace: ""
+            iam.kubesphere.io/scope: "namespace"
       apiVersion: iam.kubesphere.io/v1beta1
       kind: Role
       metadata:
@@ -378,17 +433,20 @@ items:
           verbs:
             - '*'
   - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleBase
+    kind: BuiltinRole
     metadata:
       labels:
-        scope.iam.kubesphere.io/namespace: ""
+        iam.kubesphere.io/scope: "namespace"
       name: project-operator
+    targetSelector:
+      matchLabels:
+        kubesphere.io/managed: "true"
     role:
       aggregationRoleTemplates:
         roleSelector:
           matchLabels:
             iam.kubesphere.io/aggregate-to-operator: ""
-            scope.iam.kubesphere.io/namespace: ""
+            iam.kubesphere.io/scope: "namespace"
       apiVersion: iam.kubesphere.io/v1beta1
       kind: Role
       metadata:
@@ -426,17 +484,19 @@ items:
           verbs:
             - '*'
   - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleBase
+    kind: BuiltinRole
     metadata:
       labels:
-        scope.iam.kubesphere.io/namespace: ""
+        iam.kubesphere.io/scope: "namespace"
       name: project-viewer
+    targetSelector:
+      matchLabels:
+        kubesphere.io/managed: "true"
     role:
       aggregationRoleTemplates:
         roleSelector:
           matchLabels:
             iam.kubesphere.io/aggregate-to-viewer: ""
-            scope.iam.kubesphere.io/namespace: ""
       apiVersion: iam.kubesphere.io/v1beta1
       kind: Role
       metadata:
@@ -456,16 +516,25 @@ items:
             - list
             - watch
   - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleBase
+    kind: Category
+    metadata:
+      labels:
+        iam.kubesphere.io/scope: "workspace"
+      name: workspace-access-control
+    spec:
+      displayName:
+        en: Access Control
+  - apiVersion: iam.kubesphere.io/v1beta1
+    kind: BuiltinRole
     metadata:
       name: workspace-admin
       labels:
-        scope.iam.kubesphere.io/workspace: ""
+        iam.kubesphere.io/scope: "workspace"
     role:
       aggregationRoleTemplates:
         roleSelectors:
           - matchLabels:
-              scope.iam.kubesphere.io/namespace: ""
+              iam.kubesphere.io/scope: "workspace"
         templateNames:
           - workspace-manage-workspace-settings
           - workspace-view-workspace-settings
@@ -495,11 +564,11 @@ items:
           verbs:
             - '*'
   - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleBase
+    kind: BuiltinRole
     metadata:
       name: workspace-regular
       labels:
-        scope.iam.kubesphere.io/workspace: ""
+        iam.kubesphere.io/scope: "workspace"
     role:
       aggregationRoleTemplates:
         roleSelector:
@@ -527,11 +596,11 @@ items:
             - list
             - watch
   - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleBase
+    kind: BuiltinRole
     metadata:
       name: workspace-self-provisioner
       labels:
-        scope.iam.kubesphere.io/workspace: ""
+        iam.kubesphere.io/scope: "workspace"
     role:
       aggregationRoleTemplates:
         roleSelector:
@@ -552,11 +621,11 @@ items:
       rules: []
 
   - apiVersion: iam.kubesphere.io/v1beta1
-    kind: RoleBase
+    kind: BuiltinRole
     metadata:
       name: workspace-viewer
       labels:
-        scope.iam.kubesphere.io/workspace: ""
+        iam.kubesphere.io/scope: "workspace"
     role:
       aggregationRoleTemplates:
         roleSelector:
@@ -595,11 +664,8 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/cluster: ""
-        scope.iam.kubesphere.io/global: ""
-        scope.iam.kubesphere.io/namespace: ""
-        scope.iam.kubesphere.io/workspace: ""
-      name: access-control
+        iam.kubesphere.io/scope: "global"
+      name: global-access-control
     spec:
       displayName:
         en: Access Control
@@ -607,7 +673,7 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/global: ""
+        iam.kubesphere.io/scope: "global"
       name: cluster-management
     spec:
       displayName:
@@ -616,7 +682,16 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/cluster: ""
+        iam.kubesphere.io/scope: "cluster"
+      name: cluster-access-control
+    spec:
+      displayName:
+        en: Access Control
+  - apiVersion: iam.kubesphere.io/v1beta1
+    kind: Category
+    metadata:
+      labels:
+        iam.kubesphere.io/scope: "cluster"
       name: cluster-resources-management
     spec:
       displayName:
@@ -625,7 +700,7 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/cluster: ""
+        iam.kubesphere.io/scope: "cluster"
       name: cluster-settings
     spec:
       displayName:
@@ -634,7 +709,7 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/cluster: ""
+        iam.kubesphere.io/scope: "cluster"
       name: network-management
     spec:
       displayName:
@@ -643,7 +718,7 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/global: ""
+        iam.kubesphere.io/scope: "global"
       name: platform-settings
     spec:
       displayName:
@@ -652,7 +727,7 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/cluster: ""
+        iam.kubesphere.io/scope: "cluster"
       name: project-resources-management
     spec:
       displayName:
@@ -661,16 +736,16 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/workspace: ""
+        iam.kubesphere.io/scope: "workspace"
       name: projects-management
     spec:
       displayName:
-        en: Projects Management
+        en: Projects
   - apiVersion: iam.kubesphere.io/v1beta1
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/cluster: ""
+        iam.kubesphere.io/scope: "cluster"
       name: storage-management
     spec:
       displayName:
@@ -679,7 +754,7 @@ items:
     kind: Category
     metadata:
       labels:
-        scope.iam.kubesphere.io/workspace: ""
+        iam.kubesphere.io/scope: "workspace"
       name: workspace-settings
     spec:
       displayName:

@@ -10,8 +10,8 @@ type GlobalRoleRuleOwner struct {
 	GlobalRole *iamv1beta1.GlobalRole
 }
 
-func (g GlobalRoleRuleOwner) RuleOwnerScopeKey() string {
-	return LabelGlobalScope
+func (g GlobalRoleRuleOwner) GetRuleOwnerScope() string {
+	return iamv1beta1.ScopeGlobal
 }
 
 func (g GlobalRoleRuleOwner) GetObject() runtime.Object {

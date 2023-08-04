@@ -142,8 +142,8 @@ var _ = Describe("WorkspaceTemplate", func() {
 	})
 })
 
-func newWorkspaceAdmin() iamv1beta1.RoleBase {
-	return iamv1beta1.RoleBase{
+func newWorkspaceAdmin() iamv1beta1.BuiltinRole {
+	return iamv1beta1.BuiltinRole{
 		ObjectMeta: metav1.ObjectMeta{Name: "workspace-admin"},
 		Role: runtime.RawExtension{
 			Raw: []byte(`{

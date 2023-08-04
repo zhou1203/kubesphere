@@ -10,8 +10,8 @@ type WorkspaceRoleRuleOwner struct {
 	WorkspaceRole *iamv1beta1.WorkspaceRole
 }
 
-func (w WorkspaceRoleRuleOwner) RuleOwnerScopeKey() string {
-	return LabelWorkspaceScope
+func (w WorkspaceRoleRuleOwner) GetRuleOwnerScope() string {
+	return iamv1beta1.ScopeWorkspace
 }
 
 func (w WorkspaceRoleRuleOwner) GetObject() runtime.Object {

@@ -20,13 +20,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
@@ -162,20 +162,20 @@ func (r *Reconciler) initRoles(ctx context.Context, namespace *corev1.Namespace)
 	}
 
 	logger := klog.FromContext(ctx)
-
-	var templates iamv1beta1.RoleBaseList
-	// scope.iam.kubesphere.io/xxxxx: ""
-	matchingLabels := client.MatchingLabels{fmt.Sprintf(iamv1beta1.ScopeLabelFormat, iamv1beta1.ScopeNamespace): ""}
-	for annoK, annoV := range namespace.Annotations {
-		if strings.HasPrefix(annoK, iamv1beta1.ScopeLabelPrefix) && annoV == "" {
-			matchingLabels = client.MatchingLabels{annoK: annoV}
-			break
-		}
-	}
+	var templates iamv1beta1.BuiltinRoleList
+	matchingLabels := client.MatchingLabels{iamv1beta1.ScopeLabel: iamv1beta1.ScopeNamespace}
 	if err := r.List(ctx, &templates, matchingLabels); err != nil {
 		return err
 	}
 	for _, template := range templates.Items {
+		selector, err := metav1.LabelSelectorAsSelector(&template.TargetSelector)
+		if err != nil {
+			logger.V(4).Error(err, "failed to pares target selector", "template", template.Name)
+			continue
+		}
+		if !selector.Matches(labels.Set(namespace.Labels)) {
+			continue
+		}
 		var builtinRoleTemplate iamv1beta1.Role
 		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&builtinRoleTemplate); err == nil &&
 			builtinRoleTemplate.Kind == iamv1beta1.ResourceKindRole {

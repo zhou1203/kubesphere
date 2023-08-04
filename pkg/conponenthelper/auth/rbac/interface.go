@@ -19,5 +19,5 @@ type RuleOwner interface {
 	GetAggregationRule() *iamv1beta1.AggregationRoleTemplates
 	SetAggregationRule(*iamv1beta1.AggregationRoleTemplates)
 	DeepCopyRuleOwner() RuleOwner
-	RuleOwnerScopeKey() string
+	GetRuleOwnerScope() string
 }

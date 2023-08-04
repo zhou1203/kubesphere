@@ -6,12 +6,10 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
 )
@@ -57,19 +55,15 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
 	role := &iamv1beta1.Role{}
-	err := r.Get(ctx, req.NamespacedName, role)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, role); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if role.AggregationRoleTemplates != nil {
-		err = r.helper.AggregationRole(ctx, rbachelper.RoleRuleOwner{Role: role}, r.Recorder)
-		if err != nil {
+		if err := r.helper.AggregationRole(ctx, rbachelper.RoleRuleOwner{Role: role}, r.Recorder); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-
 	return ctrl.Result{}, nil
 }

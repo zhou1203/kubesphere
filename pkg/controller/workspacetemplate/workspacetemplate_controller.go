@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/labels"
+
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -215,12 +217,20 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 
 func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
 	logger := klog.FromContext(ctx)
-	var templates iamv1beta1.RoleBaseList
+	var templates iamv1beta1.BuiltinRoleList
 	// scope.iam.kubesphere.io/workspace: ""
-	if err := r.List(ctx, &templates, client.MatchingLabels{fmt.Sprintf(iamv1beta1.ScopeLabelFormat, iamv1beta1.ScopeWorkspace): ""}); err != nil {
+	if err := r.List(ctx, &templates, client.MatchingLabels{iamv1beta1.ScopeLabel: iamv1beta1.ScopeWorkspace}); err != nil {
 		return err
 	}
 	for _, template := range templates.Items {
+		selector, err := metav1.LabelSelectorAsSelector(&template.TargetSelector)
+		if err != nil {
+			logger.V(4).Error(err, "failed to pares target selector", "template", template.Name)
+			continue
+		}
+		if !selector.Matches(labels.Set(workspaceTemplate.Labels)) {
+			continue
+		}
 		var builtinWorkspaceRole iamv1beta1.WorkspaceRole
 		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(template.Role.Raw), 1024).Decode(&builtinWorkspaceRole); err == nil &&
 			builtinWorkspaceRole.Kind == iamv1beta1.ResourceKindWorkspaceRole {
