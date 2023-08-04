@@ -240,10 +240,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 
 func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *options.KubeSphereControllerManagerOptions) error {
 	if cmOptions.MultiClusterOptions.ClusterRole != multicluster.ClusterRoleHost {
-		// "globalrolebinding" controller
-		if cmOptions.IsControllerEnabled("globalrolebinding") {
-			addControllerWithSetup(mgr, "globalrolebinding", &globalrolebinding.Reconciler{})
-		}
 		return nil
 	}
 

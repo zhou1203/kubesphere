@@ -58,12 +58,12 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.logger = mgr.GetLogger().WithName(controllerName)
-	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	if r.ClusterClientSet == nil {
 		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
 	}
+	r.Client = mgr.GetClient()
+	r.logger = mgr.GetLogger().WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	ctr, err := builder.
 		ControllerManagedBy(mgr).
 		For(&iamv1beta1.GlobalRoleBinding{}).
@@ -106,52 +106,44 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// TODO map to rbacv1.ClusterRole
-	if globalRoleBinding.RoleRef.Name == iamv1beta1.PlatformAdmin {
-		if err := r.assignClusterAdminRole(ctx, globalRoleBinding); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	if r.ClusterClientSet != nil {
-		if err := r.multiClusterSync(ctx, globalRoleBinding); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err := r.multiClusterSync(ctx, globalRoleBinding); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	r.recorder.Event(globalRoleBinding, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) assignClusterAdminRole(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
+func (r *Reconciler) assignClusterAdminRole(ctx context.Context, clusterName string, clusterClient client.Client, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
 	username := globalRoleBinding.Labels[iamv1beta1.UserReferenceLabel]
 	if username == "" {
 		return nil
 	}
-	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
-		TypeMeta: metav1.TypeMeta{},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("%s-%s", username, iamv1beta1.ClusterAdmin),
-			Labels: map[string]string{iamv1beta1.RoleReferenceLabel: iamv1beta1.ClusterAdmin,
-				iamv1beta1.UserReferenceLabel: username},
-		},
-		Subjects: []rbacv1.Subject{
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s-%s", username, iamv1beta1.ClusterAdmin)}}
+	op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, clusterRoleBinding, func() error {
+		clusterRoleBinding.Labels = map[string]string{iamv1beta1.RoleReferenceLabel: iamv1beta1.ClusterAdmin, iamv1beta1.UserReferenceLabel: username}
+		clusterRoleBinding.Subjects = []rbacv1.Subject{
 			{
 				Kind:     rbacv1.UserKind,
 				APIGroup: rbacv1.GroupName,
 				Name:     username,
 			},
-		},
-		RoleRef: rbacv1.RoleRef{
+		}
+		clusterRoleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
 			Kind:     iamv1beta1.ResourceKindClusterRole,
 			Name:     iamv1beta1.ClusterAdmin,
-		},
+		}
+		if err := controllerutil.SetControllerReference(globalRoleBinding, clusterRoleBinding, r.Scheme()); err != nil {
+			return fmt.Errorf("failed to set controller reference: %s", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update cluster admin role binding %s: %s", clusterRoleBinding.Name, err)
 	}
-	if err := controllerutil.SetControllerReference(globalRoleBinding, clusterRoleBinding, r.Scheme()); err != nil {
-		return fmt.Errorf("failed to set controller reference: %s", err)
-	}
-	return client.IgnoreAlreadyExists(r.Create(ctx, clusterRoleBinding))
+	r.logger.V(4).Info("cluster admin role binding successfully synced", "cluster", clusterName, "operation", op, "name", globalRoleBinding.Name)
+	return nil
 }
 
 func (r *Reconciler) multiClusterSync(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
@@ -166,9 +158,6 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, globalRoleBinding *ia
 			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue
 		}
-		if clusterutils.IsHostCluster(&cluster) {
-			continue
-		}
 		if err := r.syncGlobalRoleBinding(ctx, &cluster, globalRoleBinding); err != nil {
 			return fmt.Errorf("failed to sync global role binding %s to cluster %s: %s", globalRoleBinding.Name, cluster.Name, err)
 		}
@@ -181,9 +170,6 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, globalRoleBinding *ia
 }
 
 func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster *clusterv1alpha1.Cluster, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	if r.ClusterClientSet.IsHostCluster(cluster) {
-		return nil
-	}
 	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
@@ -199,7 +185,11 @@ func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster *cluster
 	if err != nil {
 		return fmt.Errorf("failed to update global role binding: %s", err)
 	}
-
+	if globalRoleBinding.RoleRef.Name == iamv1beta1.PlatformAdmin {
+		if err := r.assignClusterAdminRole(ctx, cluster.Name, clusterClient, target); err != nil {
+			return fmt.Errorf("failed to assign cluster admin: %s", err)
+		}
+	}
 	r.logger.V(4).Info("global role binding successfully synced", "cluster", cluster.Name, "operation", op, "name", globalRoleBinding.Name)
 	return nil
 }
