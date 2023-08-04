@@ -24,8 +24,6 @@ import (
 	"sort"
 	"time"
 
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
-
 	"github.com/go-logr/logr"
 	"helm.sh/helm/v3/pkg/getter"
 	helmrelease "helm.sh/helm/v3/pkg/release"
@@ -54,6 +52,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
@@ -478,7 +477,11 @@ func (r *InstallPlanReconciler) updateInstallPlan(ctx context.Context, plan *cor
 			target.Finalizers = plan.Finalizers
 			target.Annotations = plan.Annotations
 			target.Status = plan.Status
-			return r.Update(ctx, target)
+			if err := r.Update(ctx, target); err != nil {
+				return err
+			}
+			target.DeepCopyInto(plan)
+			r.logger.V(4).Info("installplan status changed", "name", plan.Name, "old", plan.Status, "new", target.Status)
 		}
 		return nil
 	}); err != nil {
@@ -740,6 +743,10 @@ func (r *InstallPlanReconciler) updateExtensionStatus(ctx context.Context, exten
 		if err := r.Get(ctx, types.NamespacedName{Name: extensionName}, extension); err != nil {
 			return client.IgnoreNotFound(err)
 		}
+		if (extension.Status.State == corev1alpha1.StateEnabled || extension.Status.State == corev1alpha1.StateDisabled) &&
+			status.State == corev1alpha1.StateInstalled {
+			return nil
+		}
 		expected := extension.DeepCopy()
 		expected.Status.State = status.State
 		expected.Status.PlannedInstallVersion = status.PlannedInstallVersion
@@ -747,7 +754,10 @@ func (r *InstallPlanReconciler) updateExtensionStatus(ctx context.Context, exten
 		if expected.Status.State != extension.Status.State ||
 			expected.Status.PlannedInstallVersion != status.PlannedInstallVersion ||
 			!reflect.DeepEqual(expected.Status.ClusterSchedulingStatuses, extension.Status.ClusterSchedulingStatuses) {
-			return r.Update(ctx, expected)
+			if err := r.Update(ctx, expected); err != nil {
+				return err
+			}
+			r.logger.V(4).Info("extension status changed", "name", extensionName, "old", extension.Status, "new", expected.Status)
 		}
 		return nil
 	})
@@ -915,7 +925,6 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(ctx context.Context, plan 
 		return r.syncExtensionInstallationStatus(ctx, plan, false)
 	case corev1alpha1.StateUpgrading:
 		return r.syncExtensionInstallationStatus(ctx, plan, true)
-
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
 		if configChanged(plan, "") || versionChanged(plan, "") {
