@@ -59,13 +59,13 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ClusterClientSet == nil {
+		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
+	}
 	r.Client = mgr.GetClient()
 	r.helper = rbachelper.NewHelper(r.Client)
 	r.logger = mgr.GetLogger().WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	if r.ClusterClientSet == nil {
-		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
-	}
 	ctr, err := builder.
 		ControllerManagedBy(mgr).
 		For(&iamv1beta1.GlobalRole{}).
