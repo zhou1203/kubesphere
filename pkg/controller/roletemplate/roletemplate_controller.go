@@ -4,12 +4,15 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/klog/v2"
+
 	"k8s.io/client-go/tools/record"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
@@ -27,42 +30,41 @@ const (
 type Reconciler struct {
 	client.Client
 	recorder record.EventRecorder
+	logger   klog.Logger
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-	roletemplate := &iamv1beta1.RoleTemplate{}
-	err := r.Client.Get(ctx, req.NamespacedName, roletemplate)
-	if err != nil {
+	roleTemplate := &iamv1beta1.RoleTemplate{}
+
+	if err := r.Get(ctx, req.NamespacedName, roleTemplate); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	err = r.injectRoleTemplateToRuleOwner(ctx, roletemplate)
-	if err != nil {
+	if err := r.injectRoleTemplateToRuleOwner(ctx, roleTemplate); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) injectRoleTemplateToRuleOwner(ctx context.Context, roletemplate *iamv1beta1.RoleTemplate) error {
-	if _, exist := roletemplate.Labels[rbachelper.LabelGlobalScope]; exist {
-		if err := r.aggregateGlobalRoles(ctx, roletemplate); err != nil {
+func (r *Reconciler) injectRoleTemplateToRuleOwner(ctx context.Context, roleTemplate *iamv1beta1.RoleTemplate) error {
+	if roleTemplate.Labels[iamv1beta1.ScopeLabel] == iamv1beta1.ScopeGlobal {
+		if err := r.aggregateGlobalRoles(ctx, roleTemplate); err != nil {
 			return err
 		}
 	}
-	if _, exist := roletemplate.Labels[rbachelper.LabelWorkspaceScope]; exist {
-		if err := r.aggregateWorkspaceRoles(ctx, roletemplate); err != nil {
+	if roleTemplate.Labels[iamv1beta1.ScopeLabel] == iamv1beta1.ScopeWorkspace {
+		if err := r.aggregateWorkspaceRoles(ctx, roleTemplate); err != nil {
 			return err
 		}
 	}
-	if _, exist := roletemplate.Labels[rbachelper.LabelClusterScope]; exist {
-		if err := r.aggregateClusterRoles(ctx, roletemplate); err != nil {
+	if roleTemplate.Labels[iamv1beta1.ScopeLabel] == iamv1beta1.ScopeCluster {
+		if err := r.aggregateClusterRoles(ctx, roleTemplate); err != nil {
 			return err
 		}
 	}
-	if _, exist := roletemplate.Labels[rbachelper.LabelNamespaceScope]; exist {
-		if err := r.aggregateRoles(ctx, roletemplate); err != nil {
+	if roleTemplate.Labels[iamv1beta1.ScopeLabel] == iamv1beta1.ScopeNamespace {
+		if err := r.aggregateRoles(ctx, roleTemplate); err != nil {
 			return err
 		}
 	}
@@ -73,16 +75,13 @@ func (r *Reconciler) injectRoleTemplateToRuleOwner(ctx context.Context, roletemp
 // (all role types have the field AggregationRoleTemplates) matching the AggregationRoleTemplates filed.
 // Note that autoAggregateRoles just aggregate the templates by field ".aggregationRoleTemplates.roleSelectors",
 // and if the roleTemplate content is changed, the role including the roleTemplate should not be updated.
-func (r *Reconciler) aggregateGlobalRoles(ctx context.Context, roletemplate *iamv1beta1.RoleTemplate) error {
+func (r *Reconciler) aggregateGlobalRoles(ctx context.Context, roleTemplate *iamv1beta1.RoleTemplate) error {
 	list := &iamv1beta1.GlobalRoleList{}
-	l := map[string]string{autoAggregateIndexKey: "true"}
-	err := r.List(ctx, list, client.MatchingFields(l))
-	if err != nil {
+	if err := r.List(ctx, list, client.MatchingFields(fields.Set{autoAggregateIndexKey: "true"})); err != nil {
 		return err
 	}
-
 	for _, role := range list.Items {
-		err := r.aggregate(ctx, rbachelper.GlobalRoleRuleOwner{GlobalRole: &role}, roletemplate)
+		err := r.aggregate(ctx, rbachelper.GlobalRoleRuleOwner{GlobalRole: &role}, roleTemplate)
 		if err != nil {
 			return err
 		}
@@ -90,16 +89,14 @@ func (r *Reconciler) aggregateGlobalRoles(ctx context.Context, roletemplate *iam
 	return nil
 }
 
-func (r *Reconciler) aggregateWorkspaceRoles(ctx context.Context, roletemplate *iamv1beta1.RoleTemplate) error {
+func (r *Reconciler) aggregateWorkspaceRoles(ctx context.Context, roleTemplate *iamv1beta1.RoleTemplate) error {
 	list := &iamv1beta1.WorkspaceRoleList{}
-	l := map[string]string{autoAggregateIndexKey: "true"}
-	err := r.List(ctx, list, client.MatchingFields(l))
-	if err != nil {
+	if err := r.List(ctx, list, client.MatchingFields(fields.Set{autoAggregateIndexKey: "true"})); err != nil {
 		return err
 	}
 
 	for _, role := range list.Items {
-		err := r.aggregate(ctx, rbachelper.WorkspaceRoleRuleOwner{WorkspaceRole: &role}, roletemplate)
+		err := r.aggregate(ctx, rbachelper.WorkspaceRoleRuleOwner{WorkspaceRole: &role}, roleTemplate)
 		if err != nil {
 			return err
 		}
@@ -107,14 +104,14 @@ func (r *Reconciler) aggregateWorkspaceRoles(ctx context.Context, roletemplate *
 	return nil
 }
 
-func (r *Reconciler) aggregateClusterRoles(ctx context.Context, roletemplate *iamv1beta1.RoleTemplate) error {
+func (r *Reconciler) aggregateClusterRoles(ctx context.Context, roleTemplate *iamv1beta1.RoleTemplate) error {
 	list := &iamv1beta1.ClusterRoleList{}
-	if err := r.List(ctx, list, client.MatchingFields(map[string]string{autoAggregateIndexKey: "true"})); err != nil {
+	if err := r.List(ctx, list, client.MatchingFields(fields.Set{autoAggregateIndexKey: "true"})); err != nil {
 		return err
 	}
 
 	for _, role := range list.Items {
-		err := r.aggregate(ctx, rbachelper.ClusterRoleRuleOwner{ClusterRole: &role}, roletemplate)
+		err := r.aggregate(ctx, rbachelper.ClusterRoleRuleOwner{ClusterRole: &role}, roleTemplate)
 		if err != nil {
 			return err
 		}
@@ -122,16 +119,13 @@ func (r *Reconciler) aggregateClusterRoles(ctx context.Context, roletemplate *ia
 	return nil
 }
 
-func (r *Reconciler) aggregateRoles(ctx context.Context, roletemplate *iamv1beta1.RoleTemplate) error {
+func (r *Reconciler) aggregateRoles(ctx context.Context, roleTemplate *iamv1beta1.RoleTemplate) error {
 	list := &iamv1beta1.RoleList{}
-	l := map[string]string{autoAggregateIndexKey: "true"}
-	err := r.List(ctx, list, client.MatchingFields(l))
-	if err != nil {
+	if err := r.List(ctx, list, client.MatchingFields(fields.Set{autoAggregateIndexKey: "true"})); err != nil {
 		return err
 	}
-
 	for _, role := range list.Items {
-		err := r.aggregate(ctx, rbachelper.RoleRuleOwner{Role: &role}, roletemplate)
+		err := r.aggregate(ctx, rbachelper.RoleRuleOwner{Role: &role}, roleTemplate)
 		if err != nil {
 			return err
 		}
@@ -146,33 +140,36 @@ func (r *Reconciler) aggregate(ctx context.Context, ruleOwner rbachelper.RuleOwn
 	if aggregation == nil {
 		return nil
 	}
-
 	hasTemplateName := sliceutil.HasString(aggregation.TemplateNames, roleTemplate.Name)
-	if !hasTemplateName {
-		if isContainsLabels(roleTemplate.Labels, aggregation.RoleSelector.MatchLabels) {
-			cover, _ := rbachelper.Covers(ruleOwner.GetRules(), roleTemplate.Spec.Rules)
-			if cover && hasTemplateName {
-				return nil
-			}
-
-			if !cover {
-				ruleOwner.SetRules(append(ruleOwner.GetRules(), roleTemplate.Spec.Rules...))
-			}
-
-			if !hasTemplateName {
-				aggregation.TemplateNames = append(aggregation.TemplateNames, roleTemplate.Name)
-				ruleOwner.SetAggregationRule(aggregation)
-			}
-
-			if err := r.Client.Update(ctx, ruleOwner.GetObject().(client.Object)); err != nil {
-				r.recorder.Event(ruleOwner.GetObject(), corev1.EventTypeWarning, reasonFailedSync, err.Error())
-				return err
-			}
-
-			r.recorder.Event(ruleOwner.GetObject(), corev1.EventTypeNormal, "Synced", messageResourceSynced)
-		}
+	if hasTemplateName {
+		return nil
+	}
+	selector, err := metav1.LabelSelectorAsSelector(&aggregation.RoleSelector)
+	if err != nil {
+		r.logger.V(4).Error(err, "failed to pares role selector", "template", ruleOwner.GetName())
+		return nil
+	}
+	if !selector.Matches(labels.Set(roleTemplate.Labels)) {
+		return nil
+	}
+	cover, _ := rbachelper.Covers(ruleOwner.GetRules(), roleTemplate.Spec.Rules)
+	if cover && hasTemplateName {
+		return nil
 	}
 
+	if !cover {
+		ruleOwner.SetRules(append(ruleOwner.GetRules(), roleTemplate.Spec.Rules...))
+	}
+
+	aggregation.TemplateNames = append(aggregation.TemplateNames, roleTemplate.Name)
+	ruleOwner.SetAggregationRule(aggregation)
+
+	if err := r.Client.Update(ctx, ruleOwner.GetObject().(client.Object)); err != nil {
+		r.recorder.Event(ruleOwner.GetObject(), corev1.EventTypeWarning, reasonFailedSync, err.Error())
+		return err
+	}
+
+	r.recorder.Event(ruleOwner.GetObject(), corev1.EventTypeNormal, "Synced", messageResourceSynced)
 	return nil
 }
 
@@ -183,8 +180,8 @@ func (r *Reconciler) InjectClient(c client.Client) error {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.logger = mgr.GetLogger().WithName(controllerName)
 
 	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.GlobalRole{}, autoAggregateIndexKey, globalRoleIndexByAnnotation); err != nil {
 		return err
@@ -235,14 +232,4 @@ func roleIndexByAnnotation(obj client.Object) []string {
 		return []string{val}
 	}
 	return []string{}
-}
-
-func isContainsLabels(haystack, needle map[string]string) bool {
-	var count int
-	for key, val := range needle {
-		if haystack[key] == val {
-			count += 1
-		}
-	}
-	return count == len(needle)
 }

@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
@@ -143,19 +144,21 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 		return nil
 	}
 	var workspace tenantv1alpha2.WorkspaceTemplate
-	if err := r.Get(ctx, types.NamespacedName{Name: workspaceName}, &workspace); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-	if !metav1.IsControlledBy(workspaceRole, &workspace) {
-		workspaceRole.OwnerReferences = k8sutil.RemoveWorkspaceOwnerReference(workspaceRole.OwnerReferences)
-		if err := controllerutil.SetControllerReference(&workspace, workspaceRole, r.Scheme()); err != nil {
-			logger.Error(err, "set controller reference failed")
-			return err
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.Get(ctx, types.NamespacedName{Name: workspaceName}, &workspace); err != nil {
+			return client.IgnoreNotFound(err)
 		}
-		if err := r.Update(ctx, workspaceRole); err != nil {
-			logger.Error(err, "update workspace role failed")
-			return err
+		if !metav1.IsControlledBy(workspaceRole, &workspace) {
+			workspaceRole.OwnerReferences = k8sutil.RemoveWorkspaceOwnerReference(workspaceRole.OwnerReferences)
+			if err := controllerutil.SetControllerReference(&workspace, workspaceRole, r.Scheme()); err != nil {
+				return err
+			}
+			return r.Update(ctx, workspaceRole)
 		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update workspace role %s: %s", workspaceRole.Name, err)
 	}
 	return nil
 }

@@ -10,8 +10,8 @@ type RoleRuleOwner struct {
 	Role *iamv1beta1.Role
 }
 
-func (r RoleRuleOwner) RuleOwnerScopeKey() string {
-	return LabelNamespaceScope
+func (r RoleRuleOwner) GetRuleOwnerScope() string {
+	return iamv1beta1.ScopeNamespace
 }
 
 func (r RoleRuleOwner) GetObject() runtime.Object {

@@ -995,8 +995,6 @@ func (r *InstallPlanReconciler) syncClusterStatus(ctx context.Context, plan *cor
 		return err
 	}
 
-	// ==============
-
 	// Check if the target helm release exists.
 	// If it does, there is no need to execute the installation process again.
 	release, err := executor.Release(helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)))

@@ -10,8 +10,8 @@ type ClusterRoleRuleOwner struct {
 	ClusterRole *iamv1beta1.ClusterRole
 }
 
-func (c ClusterRoleRuleOwner) RuleOwnerScopeKey() string {
-	return LabelClusterScope
+func (c ClusterRoleRuleOwner) GetRuleOwnerScope() string {
+	return iamv1beta1.ScopeCluster
 }
 
 func (c ClusterRoleRuleOwner) GetObject() runtime.Object {

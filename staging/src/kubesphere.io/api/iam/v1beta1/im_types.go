@@ -112,6 +112,7 @@ type UserStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories="iam",scope="Cluster"
+
 // UserList contains a list of User
 type UserList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -125,21 +126,23 @@ type UserList struct {
 // +kubebuilder:resource:categories="iam",scope="Cluster"
 //+kubebuilder:storageversion
 
-type RoleBase struct {
+type BuiltinRole struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:EmbeddedResource
-	Role runtime.RawExtension `json:"role"`
+	Role           runtime.RawExtension `json:"role"`
+	TargetSelector metav1.LabelSelector `json:"targetSelector,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories="iam",scope="Cluster"
-// RoleBaseList contains a list of RoleBase
-type RoleBaseList struct {
+
+// BuiltinRoleList contains a list of BuiltinRole
+type BuiltinRoleList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []RoleBase `json:"items"`
+	Items           []BuiltinRole `json:"items"`
 }
 
 // +kubebuilder:object:root=true
@@ -183,6 +186,7 @@ const (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:object:root=true
+
 // LoginRecordList contains a list of LoginRecord
 type LoginRecordList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -194,6 +198,7 @@ type LoginRecordList struct {
 // +kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
 // +kubebuilder:resource:categories="group",scope="Cluster"
 // +kubebuilder:storageversion
+
 // Group is the Schema for the groups API
 type Group struct {
 	metav1.TypeMeta   `json:",inline"`
