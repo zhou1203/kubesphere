@@ -269,10 +269,10 @@ metadata:
   annotations:
     iam.kubesphere.io/dependencies: '["global-view-clusters"]'
     iam.kubesphere.io/role-template-rules: '{"clusters": "manage"}'
-    kubesphere.io/managed: "true"
   labels:
     iam.kubesphere.io/category: global-cluster-management
     iam.kubesphere.io/scope: "global"
+    kubesphere.io/managed: "true"
   name: global-manage-clusters
 spec:
   displayName:
@@ -463,6 +463,7 @@ metadata:
     iam.kubesphere.io/category: cluster-settings
     iam.kubesphere.io/scope: "cluster"
     iam.kubesphere.io/aggregate-to-cluster-viewer: ""
+    kubesphere.io/managed: "true"
   name: cluster-view-cluster-settings
 spec:
   displayName:
@@ -479,6 +480,7 @@ metadata:
   labels:
     iam.kubesphere.io/category: cluster-settings
     iam.kubesphere.io/scope: "cluster"
+    kubesphere.io/managed: "true"
   name: cluster-manage-cluster-settings
 spec:
   displayName:
@@ -531,6 +533,7 @@ metadata:
     iam.kubesphere.io/category: cluster-access-control
     iam.kubesphere.io/scope: "cluster"
     iam.kubesphere.io/aggregate-to-cluster-viewer: ""
+    kubesphere.io/managed: 'true'
   name: cluster-view-members
 spec:
   displayName:
