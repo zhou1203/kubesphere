@@ -61,7 +61,6 @@ import (
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
 	gatewayv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha2"
-	iamapiv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/iam/v1alpha2"
 	iamapiv1beta1 "kubesphere.io/kubesphere/pkg/kapis/iam/v1beta1"
 	"kubesphere.io/kubesphere/pkg/kapis/marketplace"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
@@ -186,9 +185,6 @@ func (s *APIServer) installKubeSphereAPIs() {
 		rbacAuthorizer, s.KubernetesClient.Config(), s.Config.TerminalOptions))
 	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(s.container, s.RuntimeClient))
 	urlruntime.Must(iamapiv1beta1.AddToContainer(s.container, imOperator, amOperator))
-	// TODO remove iam v1alpha2
-	urlruntime.Must(iamapiv1alpha2.AddToContainer(s.container,
-		im.NewLegacyOperator(s.RuntimeClient), am.NewLegacyOperator(s.RuntimeClient), rbacAuthorizer))
 
 	urlruntime.Must(oauth.AddToContainer(s.container, imOperator,
 		auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions),

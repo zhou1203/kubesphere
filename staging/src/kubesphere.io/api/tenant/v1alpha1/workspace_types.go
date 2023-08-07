@@ -41,13 +41,10 @@ type WorkspaceStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 }
 
-// +genclient
 // +kubebuilder:object:root=true
-// +genclient:nonNamespaced
+// +kubebuilder:resource:categories="tenant",scope="Cluster"
 
 // Workspace is the Schema for the workspaces API
-// +k8s:openapi-gen=true
-// +kubebuilder:resource:categories="tenant",scope="Cluster"
 type Workspace struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -56,7 +53,6 @@ type Workspace struct {
 }
 
 // +kubebuilder:object:root=true
-// +genclient:nonNamespaced
 
 // WorkspaceList contains a list of Workspace
 type WorkspaceList struct {

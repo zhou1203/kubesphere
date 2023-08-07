@@ -2,12 +2,15 @@ package rbac
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
@@ -34,28 +37,50 @@ func (h *Helper) GetAggregationRoleTemplateRule(ctx context.Context, owner RuleO
 	rules := make([]rbacv1.PolicyRule, 0)
 	newTemplateNames := make([]string, 0)
 	if aggregationRule == nil {
-		return rules, newTemplateNames, nil
+		return owner.GetRules(), newTemplateNames, nil
 	}
-	selector := aggregationRule.RoleSelector
-	roleTemplateList := &iamv1beta1.RoleTemplateList{}
-	// Ensure the roleTemplate can be aggregated at the specific role scope
-	selector.MatchLabels = labels.Merge(selector.MatchLabels, map[string]string{iamv1beta1.ScopeLabel: owner.GetRuleOwnerScope()})
-	asSelector, err := metav1.LabelSelectorAsSelector(&selector)
-	if err != nil {
-		klog.FromContext(ctx).Error(err, "failed to parse role selector", "scope", owner.GetRuleOwnerScope(), "name", owner.GetName())
-		return rules, newTemplateNames, nil
-	}
-	if err = h.List(ctx, roleTemplateList, &client.ListOptions{LabelSelector: asSelector}); err != nil {
-		return nil, nil, err
-	}
-	for _, roleTemplate := range roleTemplateList.Items {
-		newTemplateNames = append(newTemplateNames, roleTemplate.Name)
-		for _, rule := range roleTemplate.Spec.Rules {
-			if !ruleExists(rules, rule) {
-				rules = append(rules, rule)
+
+	logger := klog.FromContext(ctx)
+	if aggregationRule.RoleSelector == nil {
+		for _, templateName := range aggregationRule.TemplateNames {
+			roleTemplate := &iamv1beta1.RoleTemplate{}
+			if err := h.Get(ctx, types.NamespacedName{Name: templateName}, roleTemplate); err != nil {
+				if errors.IsNotFound(err) {
+					logger.V(4).Info("aggregation role template not found", "name", templateName, "role", owner.GetObject())
+					continue
+				}
+				return nil, nil, fmt.Errorf("failed to fetch role template: %s", err)
+			}
+			newTemplateNames = append(newTemplateNames, roleTemplate.Name)
+			for _, rule := range roleTemplate.Spec.Rules {
+				if !ruleExists(rules, rule) {
+					rules = append(rules, rule)
+				}
+			}
+		}
+	} else {
+		selector := aggregationRule.RoleSelector.DeepCopy()
+		roleTemplateList := &iamv1beta1.RoleTemplateList{}
+		// Ensure the roleTemplate can be aggregated at the specific role scope
+		selector.MatchLabels = labels.Merge(selector.MatchLabels, map[string]string{iamv1beta1.ScopeLabel: owner.GetRuleOwnerScope()})
+		asSelector, err := metav1.LabelSelectorAsSelector(selector)
+		if err != nil {
+			logger.Error(err, "failed to parse role selector", "scope", owner.GetRuleOwnerScope(), "name", owner.GetName())
+			return rules, newTemplateNames, nil
+		}
+		if err = h.List(ctx, roleTemplateList, &client.ListOptions{LabelSelector: asSelector}); err != nil {
+			return nil, nil, err
+		}
+		for _, roleTemplate := range roleTemplateList.Items {
+			newTemplateNames = append(newTemplateNames, roleTemplate.Name)
+			for _, rule := range roleTemplate.Spec.Rules {
+				if !ruleExists(rules, rule) {
+					rules = append(rules, rule)
+				}
 			}
 		}
 	}
+
 	return rules, newTemplateNames, nil
 }
 
@@ -72,7 +97,10 @@ func (h *Helper) AggregationRole(ctx context.Context, ruleOwner RuleOwner, recor
 	cover, _ := Covers(ruleOwner.GetRules(), newPolicyRules)
 
 	aggregationRule := ruleOwner.GetAggregationRule()
-	templateNamesEqual := sliceutil.Equal(aggregationRule.TemplateNames, newTemplateNames)
+	templateNamesEqual := false
+	if aggregationRule != nil {
+		templateNamesEqual = sliceutil.Equal(aggregationRule.TemplateNames, newTemplateNames)
+	}
 
 	if cover && templateNamesEqual {
 		return nil

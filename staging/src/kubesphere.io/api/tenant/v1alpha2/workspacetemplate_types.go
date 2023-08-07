@@ -67,8 +67,6 @@ type GenericOverride struct {
 	ClusterOverrides []ClusterOverride `json:"clusterOverrides,omitempty"`
 }
 
-// +genclient
-// +genclient:nonNamespaced
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories="tenant",scope="Cluster"
 
@@ -79,7 +77,6 @@ type WorkspaceTemplate struct {
 	Spec              WorkspaceTemplateSpec `json:"spec,omitempty"`
 }
 
-// +genclient:nonNamespaced
 // +kubebuilder:object:root=true
 
 // WorkspaceTemplateList contains a list of WorkspaceTemplate
