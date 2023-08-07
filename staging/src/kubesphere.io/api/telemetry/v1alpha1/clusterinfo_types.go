@@ -18,10 +18,8 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-// +genclient
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-// +genclient:nonNamespaced
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 // +kubebuilder:resource:scope="Cluster"
 // +kubebuilder:printcolumn:name="Provisioner",type="string",JSONPath=".spec.pluginInfo.name"
 
@@ -40,7 +38,7 @@ type ClusterInfo struct {
 type ClusterInfoSpec struct {
 }
 
-// ClusterInfoStatus. store cluster telemetry data
+// ClusterInfoStatus store cluster telemetry data
 type ClusterInfoStatus struct {
 	// when to sync data to ksCloud
 	SyncTime *metav1.Time `json:"syncTime,omitempty"`
@@ -119,7 +117,7 @@ type Platform struct {
 	User int `json:"user,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // ClusterInfoList contains a list of ClusterInfo
 type ClusterInfoList struct {

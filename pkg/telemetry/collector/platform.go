@@ -19,7 +19,7 @@ package collector
 import (
 	"context"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 )
 
@@ -38,7 +38,7 @@ func (p Project) RecordKey() string {
 
 func (p Project) Collect(opts *CollectorOpts) interface{} {
 	workspaceList := &tenantv1alpha1.WorkspaceList{}
-	userList := &iamv1alpha2.UserList{}
+	userList := &iamv1beta1.UserList{}
 
 	// counting the number of workspace
 	if err := opts.Client.List(opts.Ctx, workspaceList); err != nil {

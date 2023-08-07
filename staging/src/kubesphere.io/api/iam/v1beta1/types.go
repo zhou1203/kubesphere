@@ -14,8 +14,8 @@ type CategorySpec struct {
 	Icon        string            `json:"icon,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
 
 // Category is the Schema for the categories API
 type Category struct {
@@ -25,8 +25,8 @@ type Category struct {
 	Spec CategorySpec `json:"spec,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
 
 // CategoryList contains a list of Category
 type CategoryList struct {
@@ -42,11 +42,12 @@ type AggregationRoleTemplates struct {
 	//+listType=set
 	TemplateNames []string `json:"templateNames,omitempty"`
 
+	// +optional
 	// RoleSelectors select rules from RoleTemplate`s rules by labels
-	RoleSelector metav1.LabelSelector `json:"roleSelector,omitempty"`
+	RoleSelector *metav1.LabelSelector `json:"roleSelector,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // SubjectAccessReview checks whether a user or group can perform an action.
 type SubjectAccessReview struct {
@@ -156,15 +157,16 @@ type SubjectAccessReviewStatus struct {
 	EvaluationError string `json:"evaluationError,omitempty" protobuf:"bytes,3,opt,name=evaluationError"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
-//+kubebuilder:storageversion
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:storageversion
 
 // GlobalRole is the Schema for the globalroles API
 type GlobalRole struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	// +optional
 	// AggregationRoleTemplates means which RoleTemplates are composed this Role
 	AggregationRoleTemplates *AggregationRoleTemplates `json:"aggregationRoleTemplates,omitempty"`
 
@@ -172,7 +174,7 @@ type GlobalRole struct {
 	Rules []rbacv1.PolicyRule `json:"rules"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 // +kubebuilder:resource:categories="iam",scope="Cluster"
 
 // GlobalRoleList contains a list of GlobalRole
@@ -184,7 +186,7 @@ type GlobalRoleList struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories="iam",scope="Cluster"
-//+kubebuilder:storageversion
+// +kubebuilder:storageversion
 
 // GlobalRoleBinding is the Schema for the globalrolebindings API
 type GlobalRoleBinding struct {
@@ -213,11 +215,11 @@ type GlobalRoleBindingList struct {
 	Items           []GlobalRoleBinding `json:"items"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
-//+kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
-//+kubebuilder:printcolumn:name="Alias",type="string",JSONPath=".metadata.annotations.kubesphere\\.io/alias-name"
-//+kubebuilder:storageversion
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
+// +kubebuilder:printcolumn:name="Alias",type="string",JSONPath=".metadata.annotations.kubesphere\\.io/alias-name"
+// +kubebuilder:storageversion
 
 // WorkspaceRole is the Schema for the workspaceroles API
 type WorkspaceRole struct {
@@ -231,8 +233,8 @@ type WorkspaceRole struct {
 	Rules []rbacv1.PolicyRule `json:"rules,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
 
 // WorkspaceRoleList contains a list of WorkspaceRole
 type WorkspaceRoleList struct {
@@ -243,7 +245,7 @@ type WorkspaceRoleList struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
-//+kubebuilder:storageversion
+// +kubebuilder:storageversion
 // +kubebuilder:resource:categories="iam",scope="Cluster"
 
 // WorkspaceRoleBinding is the Schema for the workspacerolebindings API
@@ -270,8 +272,8 @@ type WorkspaceRoleBindingList struct {
 	Items           []WorkspaceRoleBinding `json:"items"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Namespaced
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Namespaced
 
 // Role is the Schema for the roles API
 type Role struct {
@@ -285,8 +287,8 @@ type Role struct {
 	Rules []rbacv1.PolicyRule `json:"rules,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Namespaced
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Namespaced
 
 // RoleList contains a list of Role
 type RoleList struct {
@@ -295,8 +297,8 @@ type RoleList struct {
 	Items           []Role `json:"items"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Namespaced
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Namespaced
 
 type RoleBinding struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -311,8 +313,8 @@ type RoleBinding struct {
 	RoleRef rbacv1.RoleRef `json:"roleRef" protobuf:"bytes,3,opt,name=roleRef"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Namespaced
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Namespaced
 
 type RoleBindingList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -320,8 +322,8 @@ type RoleBindingList struct {
 	Items           []RoleBinding `json:"items"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
 
 // ClusterRole is the Schema for the clusterroles API
 type ClusterRole struct {
@@ -335,8 +337,8 @@ type ClusterRole struct {
 	Rules []rbacv1.PolicyRule `json:"rules,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
 
 // ClusterRoleList contains a list of ClusterRole
 type ClusterRoleList struct {
@@ -345,8 +347,8 @@ type ClusterRoleList struct {
 	Items           []ClusterRole `json:"items"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
 
 type ClusterRoleBinding struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -361,8 +363,8 @@ type ClusterRoleBinding struct {
 	RoleRef rbacv1.RoleRef `json:"roleRef" protobuf:"bytes,3,opt,name=roleRef"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
 
 type ClusterRoleBindingList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -392,8 +394,8 @@ type RoleTemplate struct {
 	Spec RoleTemplateSpec `json:"spec,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:categories=iam,scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:categories=iam,scope=Cluster
 
 // RoleTemplateList contains a list of RoleTemplate
 type RoleTemplateList struct {

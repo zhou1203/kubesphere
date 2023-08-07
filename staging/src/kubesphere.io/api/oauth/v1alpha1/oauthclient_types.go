@@ -30,8 +30,8 @@ var (
 	GrantMethodPrompt GrantMethod = "prompt"
 )
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:scope=Cluster,categories=oauth
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster,categories=oauth
 
 // OAuthClient is the Schema for the oauthclients API
 type OAuthClient struct {
@@ -56,7 +56,7 @@ type OAuthClient struct {
 	AccessTokenInactivityTimeout int64 `json:"accessTokenInactivityTimeout,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // OAuthClientList contains a list of OAuthClient
 type OAuthClientList struct {

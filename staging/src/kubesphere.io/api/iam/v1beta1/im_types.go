@@ -124,7 +124,7 @@ type UserList struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories="iam",scope="Cluster"
-//+kubebuilder:storageversion
+// +kubebuilder:storageversion
 
 type BuiltinRole struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -153,7 +153,7 @@ type BuiltinRoleList struct {
 // +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".spec.reason"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:resource:categories="iam",scope="Cluster"
-//+kubebuilder:storageversion
+// +kubebuilder:storageversion
 
 type LoginRecord struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -235,7 +235,7 @@ type GroupRef struct {
 // +kubebuilder:printcolumn:name="Group",type="string",JSONPath=".groupRef.name"
 // +kubebuilder:printcolumn:name="Users",type="string",JSONPath=".users"
 // +kubebuilder:resource:categories="group",scope="Cluster"
-//+kubebuilder:storageversion
+// +kubebuilder:storageversion
 
 // GroupBinding is the Schema for the groupbindings API
 type GroupBinding struct {

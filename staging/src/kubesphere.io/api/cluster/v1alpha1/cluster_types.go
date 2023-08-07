@@ -177,10 +177,7 @@ type ClusterStatus struct {
 	UID types.UID `json:"uid,omitempty"`
 }
 
-// +genclient
 // +kubebuilder:object:root=true
-// +k8s:openapi-gen=true
-// +genclient:nonNamespaced
 // +kubebuilder:printcolumn:name="Provider",type="string",JSONPath=".spec.provider"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.kubernetesVersion"
 // +kubebuilder:resource:scope=Cluster

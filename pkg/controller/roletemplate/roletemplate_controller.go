@@ -144,7 +144,7 @@ func (r *Reconciler) aggregate(ctx context.Context, ruleOwner rbachelper.RuleOwn
 	if hasTemplateName {
 		return nil
 	}
-	selector, err := metav1.LabelSelectorAsSelector(&aggregation.RoleSelector)
+	selector, err := metav1.LabelSelectorAsSelector(aggregation.RoleSelector)
 	if err != nil {
 		r.logger.V(4).Error(err, "failed to pares role selector", "template", ruleOwner.GetName())
 		return nil
@@ -164,7 +164,7 @@ func (r *Reconciler) aggregate(ctx context.Context, ruleOwner rbachelper.RuleOwn
 	aggregation.TemplateNames = append(aggregation.TemplateNames, roleTemplate.Name)
 	ruleOwner.SetAggregationRule(aggregation)
 
-	if err := r.Client.Update(ctx, ruleOwner.GetObject().(client.Object)); err != nil {
+	if err := r.Update(ctx, ruleOwner.GetObject().(client.Object)); err != nil {
 		r.recorder.Event(ruleOwner.GetObject(), corev1.EventTypeWarning, reasonFailedSync, err.Error())
 		return err
 	}
