@@ -22,7 +22,7 @@ const (
 	KubeSphereAPIServerName    = "ks-apiserver"
 	KubeSphereConfigName       = "kubesphere-config"
 	KubeSphereConfigMapDataKey = "kubesphere.yaml"
-	KubectlPodNamePrefix       = "ks-managed-kubectl"
+	KubectlPodNamePrefix       = "kubectl-"
 
 	WorkspaceLabelKey        = "kubesphere.io/workspace"
 	DisplayNameAnnotationKey = "kubesphere.io/alias-name"

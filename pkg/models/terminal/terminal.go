@@ -40,6 +40,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 )
@@ -276,7 +277,7 @@ func (n NodeTerminaler) CleanUpNSEnterPod() {
 	atomic.AddInt64(idx.(*int64), -1)
 
 	if *(idx.(*int64)) == 0 {
-		err := n.client.CoreV1().Pods(n.Namespace).Delete(context.Background(), n.PodName, metav1.DeleteOptions{})
+		err := n.client.CoreV1().Pods(n.Namespace).Delete(context.Background(), n.PodName, metav1.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})
 		if err != nil {
 			klog.Warning(err)
 		}
@@ -334,7 +335,7 @@ func (t *terminaler) cleanupKubectlPod(namespace, name string) {
 	if !strings.HasPrefix(name, constants.KubectlPodNamePrefix) || namespace != constants.KubeSphereNamespace {
 		return
 	}
-	if err := t.client.CoreV1().Pods(namespace).Delete(context.Background(), name, metav1.DeleteOptions{}); err != nil {
+	if err := t.client.CoreV1().Pods(namespace).Delete(context.Background(), name, metav1.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)}); err != nil {
 		klog.Warning(err)
 		return
 	}
