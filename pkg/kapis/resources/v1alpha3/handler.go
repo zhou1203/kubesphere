@@ -38,7 +38,7 @@ var (
 	ClusterMetricNames = []string{
 		overview.NamespaceCount, overview.PodCount, overview.DeploymentCount,
 		overview.StatefulSetCount, overview.DaemonSetCount, overview.JobCount,
-		overview.CronJobCount, overview.PersistentVolumeCount, overview.ServiceCount,
+		overview.CronJobCount, overview.PersistentVolumeClaimCount, overview.ServiceCount,
 		overview.IngressCount, overview.ClusterRoleBindingCount, overview.ClusterRoleCount,
 	}
 
