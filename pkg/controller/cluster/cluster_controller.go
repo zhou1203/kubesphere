@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
@@ -49,6 +50,7 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/multicluster"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/version"
 )
@@ -89,20 +91,16 @@ type Reconciler struct {
 	client.Client
 
 	hostConfig      *rest.Config
-	hostClient      kubernetes.Interface
 	hostClusterName string
 	resyncPeriod    time.Duration
 	installLock     sync.Map
+	clusterClient   clusterclient.Interface
 }
 
-func NewReconciler(hostConfig *rest.Config, hostClusterName string, resyncPeriod time.Duration) (*Reconciler, error) {
-	hostClient, err := kubernetes.NewForConfig(hostConfig)
-	if err != nil {
-		return nil, err
-	}
+func NewReconciler(hostConfig *rest.Config, clusterClient clusterclient.Interface, hostClusterName string, resyncPeriod time.Duration) (*Reconciler, error) {
 	return &Reconciler{
 		hostConfig:      hostConfig,
-		hostClient:      hostClient,
+		clusterClient:   clusterClient,
 		hostClusterName: hostClusterName,
 		resyncPeriod:    resyncPeriod,
 	}, nil
@@ -220,7 +218,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// The object is being deleted
 		if sets.New(cluster.ObjectMeta.Finalizers...).Has(clusterv1alpha1.Finalizer) {
 			// cleanup after cluster has been deleted
-			if err := r.syncClusterMembers(ctx, nil, cluster); err != nil {
+			if err := r.syncClusterMembers(ctx, cluster); err != nil {
 				klog.Errorf("Failed to sync cluster members for %s: %v", req.Name, err)
 				return ctrl.Result{}, err
 			}
@@ -246,7 +244,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to create cluster config for %s: %s", cluster.Name, err)
 	}
 
-	clusterClient, err := kubernetes.NewForConfig(clusterConfig)
+	clusterClient, err := r.clusterClient.GetKubernetesClientSet(cluster.Name)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create cluster client for %s: %s", cluster.Name, err)
 	}
@@ -319,7 +317,7 @@ func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *cluste
 		klog.Infof("Starting installing KS Core for the cluster %s", cluster.Name)
 		defer klog.Infof("Finished installing KS Core for the cluster %s", cluster.Name)
 
-		hostConfig, _, err := getKubeSphereConfig(r.hostClient)
+		hostConfig, _, err := getKubeSphereConfig(ctx, clusterClient)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -379,18 +377,18 @@ func (r *Reconciler) syncClusterStatus(ctx context.Context, cluster *clusterv1al
 		return ctrl.Result{}, err
 	}
 
-	if err = r.setClusterNameInConfigMap(clusterClient, cluster.Name); err != nil {
+	if err = r.setClusterNameInConfigMap(ctx, clusterClient, cluster.Name); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err = r.syncClusterMembers(ctx, clusterClient, cluster); err != nil {
+	if err = r.syncClusterMembers(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to sync cluster membership for %s: %s", cluster.Name, err)
 	}
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) setClusterNameInConfigMap(client kubernetes.Interface, name string) error {
-	configData, cm, err := getKubeSphereConfig(client)
+func (r *Reconciler) setClusterNameInConfigMap(ctx context.Context, client kubernetes.Interface, name string) error {
+	configData, cm, err := getKubeSphereConfig(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -522,21 +520,24 @@ func (r *Reconciler) updateKubeConfigExpirationDateCondition(cluster *clusterv1a
 }
 
 // syncClusterMembers Sync granted clusters for users periodically
-func (r *Reconciler) syncClusterMembers(ctx context.Context, clusterClient kubernetes.Interface, cluster *clusterv1alpha1.Cluster) error {
+func (r *Reconciler) syncClusterMembers(ctx context.Context, cluster *clusterv1alpha1.Cluster) error {
 	users := &iamv1beta1.UserList{}
 	if err := r.List(ctx, users); err != nil {
 		return err
+	}
+	clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
 
 	grantedUsers := sets.New[string]()
 	clusterName := cluster.Name
 	if cluster.DeletionTimestamp.IsZero() {
-		list, err := clusterClient.RbacV1().ClusterRoleBindings().List(context.Background(),
-			metav1.ListOptions{LabelSelector: iamv1beta1.UserReferenceLabel})
-		if err != nil {
+		clusterRoleBindings := &iamv1beta1.ClusterRoleBindingList{}
+		if err := clusterClient.List(ctx, clusterRoleBindings, client.HasLabels{iamv1beta1.UserReferenceLabel}); err != nil {
 			return fmt.Errorf("failed to list clusterrolebindings: %s", err)
 		}
-		for _, clusterRoleBinding := range list.Items {
+		for _, clusterRoleBinding := range clusterRoleBindings.Items {
 			for _, sub := range clusterRoleBinding.Subjects {
 				if sub.Kind == iamv1beta1.ResourceKindUser {
 					grantedUsers.Insert(sub.Name)
@@ -561,12 +562,18 @@ func (r *Reconciler) syncClusterMembers(ctx context.Context, clusterClient kuber
 		}
 		grantedClustersAnnotation = strings.Join(grantedClusters.UnsortedList(), ",")
 		if user.Annotations[iamv1beta1.GrantedClustersAnnotation] != grantedClustersAnnotation {
-			if user.Annotations == nil {
-				user.Annotations = make(map[string]string, 0)
-			}
-			user.Annotations[iamv1beta1.GrantedClustersAnnotation] = grantedClustersAnnotation
-			if err := r.Update(ctx, user); err != nil {
-				return err
+			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				if err := r.Get(ctx, types.NamespacedName{Name: user.Name}, user); err != nil {
+					return err
+				}
+				if user.Annotations == nil {
+					user.Annotations = make(map[string]string, 0)
+				}
+				user.Annotations[iamv1beta1.GrantedClustersAnnotation] = grantedClustersAnnotation
+				return r.Update(ctx, user)
+			})
+			if err != nil {
+				return fmt.Errorf("failed to update granted clusters annotation: %s", err)
 			}
 		}
 	}

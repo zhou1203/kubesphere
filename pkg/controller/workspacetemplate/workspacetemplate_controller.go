@@ -22,13 +22,12 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/labels"
-
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
@@ -190,7 +189,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceTemplate *te
 }
 
 func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
-	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return err
 	}
@@ -306,7 +305,7 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workspaceTemplate *ten
 			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue
 		}
-		clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+		clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
 		if err != nil {
 			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue

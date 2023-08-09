@@ -170,7 +170,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, globalRoleBinding *ia
 }
 
 func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster *clusterv1alpha1.Cluster, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}

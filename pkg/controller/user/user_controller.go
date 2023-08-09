@@ -49,9 +49,8 @@ import (
 )
 
 const (
-	controllerName  = "user-controller"
-	finalizer       = "finalizers.kubesphere.io/users"
-	syncFailMessage = "Failed to sync: %s"
+	controllerName = "user-controller"
+	finalizer      = "finalizers.kubesphere.io/users"
 )
 
 var _ kscontroller.Controller = &Reconciler{}
@@ -202,7 +201,7 @@ func (r *Reconciler) syncUser(ctx context.Context, cluster clusterv1alpha1.Clust
 	if r.ClusterClientSet.IsHostCluster(&cluster) {
 		return nil
 	}
-	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
