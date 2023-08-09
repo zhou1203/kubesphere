@@ -306,7 +306,7 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 
 	// "cluster" controller
 	if cmOptions.IsControllerEnabled("cluster") {
-		clusterReconciler, err := cluster.NewReconciler(client.Config(), cmOptions.MultiClusterOptions.HostClusterName, cmOptions.MultiClusterOptions.ClusterControllerResyncPeriod)
+		clusterReconciler, err := cluster.NewReconciler(client.Config(), clusterClientSet, cmOptions.MultiClusterOptions.HostClusterName, cmOptions.MultiClusterOptions.ClusterControllerResyncPeriod)
 		if err != nil {
 			klog.Fatalf("Unable to create Cluster controller: %v", err)
 		}

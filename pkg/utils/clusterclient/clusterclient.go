@@ -45,7 +45,7 @@ type Interface interface {
 	Get(string) (*clusterv1alpha1.Cluster, error)
 	GetInnerCluster(string) *innerCluster
 	GetKubernetesClientSet(string) (*kubernetes.Clientset, error)
-	GetClusterClient(string) (runtimeclient.Client, error)
+	GetRuntimeClient(string) (runtimeclient.Client, error)
 	ListClusters(ctx context.Context) ([]clusterv1alpha1.Cluster, error)
 }
 
@@ -157,7 +157,7 @@ func newInnerCluster(cluster *clusterv1alpha1.Cluster) *innerCluster {
 	}
 }
 
-func (c *clusterClients) GetClusterClient(clusterName string) (runtimeclient.Client, error) {
+func (c *clusterClients) GetRuntimeClient(clusterName string) (runtimeclient.Client, error) {
 	c.RLock()
 	client, ok := c.clusterClientWithoutCache[clusterName]
 	c.RUnlock()

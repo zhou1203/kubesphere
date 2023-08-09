@@ -151,7 +151,7 @@ func (r *Reconciler) syncGlobalRole(ctx context.Context, cluster clusterv1alpha1
 	if r.ClusterClientSet.IsHostCluster(&cluster) {
 		return nil
 	}
-	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}

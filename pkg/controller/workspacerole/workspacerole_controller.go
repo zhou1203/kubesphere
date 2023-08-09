@@ -190,7 +190,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceRole *iamv1b
 }
 
 func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceRole *iamv1beta1.WorkspaceRole) error {
-	clusterClient, err := r.ClusterClientSet.GetClusterClient(cluster.Name)
+	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}

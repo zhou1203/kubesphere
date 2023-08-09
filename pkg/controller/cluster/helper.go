@@ -87,8 +87,8 @@ func installKSCoreInMemberCluster(kubeConfig, jwtSecret string) error {
 	return nil
 }
 
-func getKubeSphereConfig(client kubernetes.Interface) (*config.Config, *corev1.ConfigMap, error) {
-	cm, err := client.CoreV1().ConfigMaps(constants.KubeSphereNamespace).Get(context.TODO(), constants.KubeSphereConfigName, metav1.GetOptions{})
+func getKubeSphereConfig(ctx context.Context, client kubernetes.Interface) (*config.Config, *corev1.ConfigMap, error) {
+	cm, err := client.CoreV1().ConfigMaps(constants.KubeSphereNamespace).Get(ctx, constants.KubeSphereConfigName, metav1.GetOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
