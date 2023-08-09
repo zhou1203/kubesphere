@@ -631,7 +631,7 @@ func (h *tenantHandler) GetPlatformMetrics(req *restful.Request, resp *restful.R
 	}
 
 	// get count of workspaces a tenant can access
-	workspaces, err := h.tenant.ListWorkspaces(user, parameter)
+	workspaces, err := h.tenant.ListWorkspaceTemplates(user, parameter)
 	if err != nil {
 		api.HandleInternalError(resp, req, err)
 		return
