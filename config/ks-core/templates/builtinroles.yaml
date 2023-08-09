@@ -129,8 +129,9 @@ metadata:
     iam.kubesphere.io/scope: "workspace"
 role:
   aggregationRoleTemplates:
-    roleSelectors:
-      - iam.kubesphere.io/scope: 'workspace'
+    roleSelector:
+      matchLabels:
+        iam.kubesphere.io/scope: 'workspace'
     templateNames:
       - workspace-manage-workspace-settings
       - workspace-view-workspace-settings
