@@ -116,8 +116,7 @@ func (r *metricsCounter) collect(metricName, prefix, namespace, workspace string
 		opts = append(opts, opt)
 	}
 
-	err := r.client.List(context.Background(), objList, opts...,
-	)
+	err := r.client.List(context.Background(), objList, opts...)
 
 	if err != nil {
 		return nil, err
