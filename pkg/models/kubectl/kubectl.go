@@ -21,14 +21,12 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/apimachinery/pkg/types"
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models"
@@ -51,26 +49,33 @@ func NewOperator(cacheClient runtimeclient.Client, kubectlImage string) Interfac
 }
 
 func (o *operator) GetKubectlPod(username string) (models.PodInfo, error) {
-	if err := o.createKubectlPod(username); err != nil {
-		return models.PodInfo{}, err
-	}
-
+	pod := &corev1.Pod{}
 	// wait for the pod to be ready
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*1)
 	defer cancel()
-
-	podName := fmt.Sprintf("%s-%s", constants.KubectlPodNamePrefix, username)
-	if err := wait.PollImmediateUntil(2*time.Second, func() (bool, error) {
-		pod := &corev1.Pod{}
-		err := o.client.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: podName}, pod)
-		if err != nil || !isPodReady(pod) {
+	if err := wait.PollImmediateUntil(time.Second, func() (bool, error) {
+		if err := o.client.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: fmt.Sprintf("%s%s", constants.KubectlPodNamePrefix, username)}, pod); err != nil {
+			if errors.IsNotFound(err) {
+				if pod, err = o.createKubectlPod(username); err != nil {
+					return false, err
+				}
+			}
 			return false, err
+		}
+		if !pod.DeletionTimestamp.IsZero() {
+			return false, nil
+		}
+		if !isPodReady(pod) {
+			return false, nil
 		}
 		return true, nil
 	}, ctx.Done()); err != nil {
 		return models.PodInfo{}, err
 	}
-	return models.PodInfo{Namespace: constants.KubeSphereNamespace, Pod: podName, Container: "kubectl"}, nil
+	if !isPodReady(pod) {
+		return models.PodInfo{}, fmt.Errorf("pod not ready")
+	}
+	return models.PodInfo{Namespace: pod.Namespace, Pod: pod.Name, Container: "kubectl"}, nil
 }
 
 func isPodReady(pod *corev1.Pod) bool {
@@ -82,19 +87,14 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func (o *operator) createKubectlPod(username string) error {
-	if err := o.client.Get(context.Background(), types.NamespacedName{Name: username}, &iamv1beta1.User{}); err != nil {
-		// ignore if user not exist
-		if errors.IsNotFound(err) {
-			return nil
-		}
-		return err
+func (o *operator) createKubectlPod(username string) (*corev1.Pod, error) {
+	if err := o.client.Get(context.Background(), types.NamespacedName{Name: fmt.Sprintf("kubeconfig-%s", username), Namespace: constants.KubeSphereNamespace}, &corev1.Secret{}); err != nil {
+		return nil, err
 	}
-
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: constants.KubeSphereNamespace,
-			Name:      fmt.Sprintf("%s-%s", constants.KubectlPodNamePrefix, username),
+			Name:      fmt.Sprintf("%s%s", constants.KubectlPodNamePrefix, username),
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -106,6 +106,10 @@ func (o *operator) createKubectlPod(username string) error {
 						{
 							Name:      "host-time",
 							MountPath: "/etc/localtime",
+						},
+						{
+							Name:      "kubeconfig",
+							MountPath: "/root/.kube/",
 						},
 					},
 				},
@@ -120,15 +124,17 @@ func (o *operator) createKubectlPod(username string) error {
 						},
 					},
 				},
+				{
+					Name: "kubeconfig",
+					VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+						SecretName: fmt.Sprintf("kubeconfig-%s", username),
+					}},
+				},
 			},
 		},
 	}
-
 	if err := o.client.Create(context.Background(), pod); err != nil {
-		if errors.IsAlreadyExists(err) {
-			return nil
-		}
-		return err
+		return nil, err
 	}
-	return nil
+	return pod, nil
 }

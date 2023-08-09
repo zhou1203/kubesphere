@@ -21,21 +21,20 @@ import (
 	"strconv"
 	"strings"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/query"
-	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
-
 	"github.com/emicklei/go-restful/v3"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/klog/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
+	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/models/components"
 	"kubesphere.io/kubesphere/pkg/models/git"
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 	"kubesphere.io/kubesphere/pkg/models/kubectl"
 	"kubesphere.io/kubesphere/pkg/models/quotas"
 	"kubesphere.io/kubesphere/pkg/models/registries"
+	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 	"kubesphere.io/kubesphere/pkg/models/revisions"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 )
@@ -264,7 +263,6 @@ func (r *resourceHandler) GetKubectlPod(request *restful.Request, response *rest
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, errors.Wrap(err))
 		return
 	}
-
 	response.WriteEntity(kubectlPod)
 }
 
