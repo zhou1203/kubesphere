@@ -29,7 +29,7 @@ type Collector interface {
 	// RecordKey  telemetry data key
 	RecordKey() string
 	// Collect telemetry data value
-	Collect(*CollectorOpts) interface{}
+	Collect(*CollectorOpts) (interface{}, error)
 }
 
 type CollectorOpts struct {

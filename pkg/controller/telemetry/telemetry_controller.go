@@ -85,6 +85,7 @@ func (r *Reconciler) syncToKSCloud(ctx context.Context, clusterInfo *telemetryv1
 		}
 	}
 	if clusterId == "" { // When the data has not been collected yet
+		klog.Infof("clusterInfo %s clusterId is empty. skip sync", clusterInfo.Name)
 		return nil
 	}
 
@@ -94,7 +95,7 @@ func (r *Reconciler) syncToKSCloud(ctx context.Context, clusterInfo *telemetryv1
 		klog.Errorf("convert clusterInfo %s status to json error %v", clusterInfo.Name, err)
 		return err
 	}
-	telemetryReq := fmt.Sprintf(`{ "data": %s }`, string(reqData))
+	telemetryReq := fmt.Sprintf(`{ "user_id": "%s","data": %s }`, data.CloudId, string(reqData))
 	request, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s%s", *r.Options.KSCloudURL, strings.ReplaceAll(defaultTelemetryEndpoint, "${cluster_id}", clusterId)), bytes.NewBufferString(telemetryReq))
 	if err != nil {
 		klog.Errorf("new request for clusterInfo %s error %v", clusterInfo.Name, err)

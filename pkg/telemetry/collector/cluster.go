@@ -18,6 +18,7 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,14 +63,17 @@ func (c Cluster) RecordKey() string {
 	return "clusters"
 }
 
-func (c Cluster) Collect(opts *CollectorOpts) interface{} {
+func (c Cluster) Collect(opts *CollectorOpts) (interface{}, error) {
 	var clusterList = &clusterv1alpha1.ClusterList{}
 	if err := opts.Client.List(opts.Ctx, clusterList); err != nil {
-		return c
+		return c, nil
 	}
 	// statistics cluster Data
 	resCluster := make([]Cluster, len(clusterList.Items))
 	for i, cluster := range clusterList.Items {
+		if string(cluster.Status.UID) == "" {
+			return nil, fmt.Errorf("collector cluster  %s error. cluster is not ready", cluster.Name)
+		}
 		resCluster[i] = Cluster{
 			Name:           cluster.Name,
 			Uid:            string(cluster.UID),
@@ -84,13 +88,12 @@ func (c Cluster) Collect(opts *CollectorOpts) interface{} {
 		}
 		kubeClient, err := c.getKubeClient(cluster.Spec.Connection.KubeConfig)
 		if err != nil {
-			klog.Errorf("get kube client from cluster %v error %v", cluster.Name, err)
-			continue
+			return nil, fmt.Errorf("get kube client from cluster %v error %v", cluster.Name, err)
 		}
 		resCluster[i].Namespace = c.getNamespace(opts.Ctx, kubeClient)
 		resCluster[i].Nodes = c.getNodes(opts.Ctx, kubeClient)
 	}
-	return resCluster
+	return resCluster, nil
 }
 
 func (c Cluster) getKubeClient(config []byte) (kubernetes.Interface, error) {

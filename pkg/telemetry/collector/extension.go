@@ -17,9 +17,9 @@ limitations under the License.
 package collector
 
 import (
+	"fmt"
 	"time"
 
-	"k8s.io/klog/v2"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
@@ -37,12 +37,11 @@ func (e Extension) RecordKey() string {
 	return "extension"
 }
 
-func (e Extension) Collect(opts *CollectorOpts) interface{} {
+func (e Extension) Collect(opts *CollectorOpts) (interface{}, error) {
 	subsList := &corev1alpha1.InstallPlanList{}
 	err := opts.Client.List(opts.Ctx, subsList)
 	if err != nil {
-		klog.Errorf("get SubscriptionList error %v", err) // contain not found
-		return nil
+		return nil, fmt.Errorf("get SubscriptionList error %v", err)
 	}
 	// statistic extension data
 	resData := make([]Extension, len(subsList.Items))
@@ -53,5 +52,5 @@ func (e Extension) Collect(opts *CollectorOpts) interface{} {
 			Ctime:   s.CreationTimestamp.Local().Format(time.RFC3339),
 		}
 	}
-	return resData
+	return resData, nil
 }

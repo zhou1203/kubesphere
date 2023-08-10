@@ -36,21 +36,21 @@ func (p Project) RecordKey() string {
 	return "platform"
 }
 
-func (p Project) Collect(opts *CollectorOpts) interface{} {
+func (p Project) Collect(opts *CollectorOpts) (interface{}, error) {
 	workspaceList := &tenantv1alpha1.WorkspaceList{}
 	userList := &iamv1beta1.UserList{}
 
 	// counting the number of workspace
 	if err := opts.Client.List(opts.Ctx, workspaceList); err != nil {
-		return nil
+		return nil, err
 	}
 	p.Workspace = len(workspaceList.Items)
 
 	// counting the number of user
 	if err := opts.Client.List(context.Background(), userList); err != nil {
-		return nil
+		return nil, err
 	}
 	p.User = len(userList.Items)
 
-	return p
+	return p, nil
 }

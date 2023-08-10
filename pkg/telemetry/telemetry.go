@@ -34,21 +34,24 @@ import (
 )
 
 const (
-	cloudID           = "cloudId"
-	defaultNameFormat = "20060102150405"
+	cloudID            = "cloudId"
+	defaultNameFormat  = "20060102150405"
+	collectRetryPeriod = time.Minute * 10
 )
 
 type telemetry struct {
-	client     runtimeclient.Client
-	options    *Options
-	collectors []collector.Collector
+	client             runtimeclient.Client
+	options            *Options
+	collectors         []collector.Collector
+	collectRetryPeriod time.Duration
 	sync.Once
 }
 
 func NewTelemetry(opts ...Option) manager.Runnable {
 	t := &telemetry{
-		options:    NewTelemetryOptions(),
-		collectors: collector.Registered,
+		options:            NewTelemetryOptions(),
+		collectors:         collector.Registered,
+		collectRetryPeriod: collectRetryPeriod,
 	}
 	for _, o := range opts {
 		o(t)
@@ -108,7 +111,17 @@ func (t *telemetry) collect(ctx context.Context) error {
 		wg.Add(1)
 		go func(lc collector.Collector) {
 			defer wg.Done()
-			data[lc.RecordKey()] = lc.Collect(collectionOpt)
+			collect, cancel := context.WithCancel(ctx)
+			wait.Until(func() {
+				value, err := lc.Collect(collectionOpt)
+				if err != nil {
+					// retry
+					klog.Errorf("collector %s collect data error %v", lc.RecordKey(), err)
+					return
+				}
+				data[lc.RecordKey()] = value
+				cancel()
+			}, t.collectRetryPeriod, collect.Done())
 		}(c)
 	}
 	wg.Wait()
