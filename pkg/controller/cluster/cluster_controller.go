@@ -90,19 +90,26 @@ var hostCluster = &clusterv1alpha1.Cluster{
 type Reconciler struct {
 	client.Client
 
-	hostConfig      *rest.Config
-	hostClusterName string
-	resyncPeriod    time.Duration
-	installLock     sync.Map
-	clusterClient   clusterclient.Interface
+	hostConfig       *rest.Config
+	hostClient       kubernetes.Interface
+	hostClusterName  string
+	resyncPeriod     time.Duration
+	installLock      sync.Map
+	clusterClientSet clusterclient.Interface
 }
 
-func NewReconciler(hostConfig *rest.Config, clusterClient clusterclient.Interface, hostClusterName string, resyncPeriod time.Duration) (*Reconciler, error) {
+func NewReconciler(hostConfig *rest.Config, clusterClientSet clusterclient.Interface, hostClusterName string, resyncPeriod time.Duration) (*Reconciler, error) {
+	hostClient, err := kubernetes.NewForConfig(hostConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Reconciler{
-		hostConfig:      hostConfig,
-		clusterClient:   clusterClient,
-		hostClusterName: hostClusterName,
-		resyncPeriod:    resyncPeriod,
+		hostConfig:       hostConfig,
+		hostClient:       hostClient,
+		clusterClientSet: clusterClientSet,
+		hostClusterName:  hostClusterName,
+		resyncPeriod:     resyncPeriod,
 	}, nil
 }
 
@@ -244,7 +251,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to create cluster config for %s: %s", cluster.Name, err)
 	}
 
-	clusterClient, err := r.clusterClient.GetKubernetesClientSet(cluster.Name)
+	clusterClient, err := r.clusterClientSet.GetKubernetesClientSet(cluster.Name)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create cluster client for %s: %s", cluster.Name, err)
 	}
@@ -317,7 +324,7 @@ func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *cluste
 		klog.Infof("Starting installing KS Core for the cluster %s", cluster.Name)
 		defer klog.Infof("Finished installing KS Core for the cluster %s", cluster.Name)
 
-		hostConfig, _, err := getKubeSphereConfig(ctx, clusterClient)
+		hostConfig, _, err := getKubeSphereConfig(ctx, r.hostClient)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -525,7 +532,7 @@ func (r *Reconciler) syncClusterMembers(ctx context.Context, cluster *clusterv1a
 	if err := r.List(ctx, users); err != nil {
 		return err
 	}
-	clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
+	clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
