@@ -109,13 +109,6 @@ spec:
         - list
         - get
         - watch
-    - apiGroups:
-        - '*'
-      resources:
-        - clusters
-        - cluster
-      verbs:
-        - list
 
 ---
 apiVersion: iam.kubesphere.io/v1beta1
@@ -189,12 +182,6 @@ spec:
         - workloads
       verbs:
         - '*'
-    - apiGroups:
-        - '*'
-      resources:
-        - clusters
-      verbs:
-        - list
     - apiGroups:
         - resources.kubesphere.io
       resources:

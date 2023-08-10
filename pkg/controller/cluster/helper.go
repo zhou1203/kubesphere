@@ -24,13 +24,13 @@ import (
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	"kubesphere.io/utils/helm"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/constants"
@@ -87,12 +87,11 @@ func installKSCoreInMemberCluster(kubeConfig, jwtSecret string) error {
 	return nil
 }
 
-func getKubeSphereConfig(ctx context.Context, client kubernetes.Interface) (*config.Config, *corev1.ConfigMap, error) {
-	cm, err := client.CoreV1().ConfigMaps(constants.KubeSphereNamespace).Get(ctx, constants.KubeSphereConfigName, metav1.GetOptions{})
-	if err != nil {
+func getKubeSphereConfig(ctx context.Context, client runtimeclient.Client) (*config.Config, *corev1.ConfigMap, error) {
+	cm := &corev1.ConfigMap{}
+	if err := client.Get(ctx, types.NamespacedName{Name: constants.KubeSphereConfigName, Namespace: constants.KubeSphereNamespace}, cm); err != nil {
 		return nil, nil, err
 	}
-
 	configData, err := config.GetFromConfigMap(cm)
 	if err != nil {
 		return nil, nil, err

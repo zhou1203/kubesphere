@@ -91,7 +91,6 @@ type Reconciler struct {
 	client.Client
 
 	hostConfig       *rest.Config
-	hostClient       kubernetes.Interface
 	hostClusterName  string
 	resyncPeriod     time.Duration
 	installLock      sync.Map
@@ -99,14 +98,8 @@ type Reconciler struct {
 }
 
 func NewReconciler(hostConfig *rest.Config, clusterClientSet clusterclient.Interface, hostClusterName string, resyncPeriod time.Duration) (*Reconciler, error) {
-	hostClient, err := kubernetes.NewForConfig(hostConfig)
-	if err != nil {
-		return nil, err
-	}
-
 	return &Reconciler{
 		hostConfig:       hostConfig,
-		hostClient:       hostClient,
 		clusterClientSet: clusterClientSet,
 		hostClusterName:  hostClusterName,
 		resyncPeriod:     resyncPeriod,
@@ -251,7 +244,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to create cluster config for %s: %s", cluster.Name, err)
 	}
 
-	clusterClient, err := r.clusterClientSet.GetKubernetesClientSet(cluster.Name)
+	clusterClient, err := kubernetes.NewForConfig(clusterConfig)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create cluster client for %s: %s", cluster.Name, err)
 	}
@@ -299,12 +292,10 @@ func (r *Reconciler) reconcileHostCluster(ctx context.Context, cluster *clusterv
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-
 	// update host cluster config
 	if !bytes.Equal(cluster.Spec.Connection.KubeConfig, hostKubeConfig) {
 		cluster.Spec.Connection.KubeConfig = hostKubeConfig
 	}
-
 	if cluster.Labels == nil {
 		cluster.Labels = make(map[string]string)
 	}
@@ -323,8 +314,7 @@ func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *cluste
 		defer r.installLock.Delete(cluster.Name)
 		klog.Infof("Starting installing KS Core for the cluster %s", cluster.Name)
 		defer klog.Infof("Finished installing KS Core for the cluster %s", cluster.Name)
-
-		hostConfig, _, err := getKubeSphereConfig(ctx, r.hostClient)
+		hostConfig, _, err := getKubeSphereConfig(ctx, r.Client)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -344,12 +334,10 @@ func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *cluste
 		}
 		return ctrl.Result{RequeueAfter: time.Second * 3}, nil
 	}
-
 	if err := r.updateKubeConfigExpirationDateCondition(cluster); err != nil {
 		// should not block the whole process
 		klog.Warningf("sync KubeConfig expiration date for cluster %s failed: %v", cluster.Name, err)
 	}
-
 	return r.syncClusterStatus(ctx, cluster, clusterClient)
 }
 
@@ -379,43 +367,42 @@ func (r *Reconciler) syncClusterStatus(ctx context.Context, cluster *clusterv1al
 		Message:            "Cluster is available now",
 	}
 	r.updateClusterCondition(cluster, readyCondition)
-
 	if err = r.Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	if err = r.setClusterNameInConfigMap(ctx, clusterClient, cluster.Name); err != nil {
+	if err = r.setClusterNameInConfigMap(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
 	}
-
 	if err = r.syncClusterMembers(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to sync cluster membership for %s: %s", cluster.Name, err)
 	}
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) setClusterNameInConfigMap(ctx context.Context, client kubernetes.Interface, name string) error {
-	configData, cm, err := getKubeSphereConfig(ctx, client)
+func (r *Reconciler) setClusterNameInConfigMap(ctx context.Context, cluster *clusterv1alpha1.Cluster) error {
+	clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
-	if configData.MultiClusterOptions == nil {
-		configData.MultiClusterOptions = &multicluster.Options{}
-	}
-	if configData.MultiClusterOptions.ClusterName == name {
-		return nil
-	}
-
-	configData.MultiClusterOptions.ClusterName = name
-	newConfigData, err := yaml.Marshal(configData)
-	if err != nil {
-		return err
-	}
-	cm.Data[constants.KubeSphereConfigMapDataKey] = string(newConfigData)
-	if _, err = client.CoreV1().ConfigMaps(constants.KubeSphereNamespace).Update(context.TODO(), cm, metav1.UpdateOptions{}); err != nil {
-		return err
-	}
-	return nil
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		configData, cm, err := getKubeSphereConfig(ctx, clusterClient)
+		if err != nil {
+			return err
+		}
+		if configData.MultiClusterOptions == nil {
+			configData.MultiClusterOptions = &multicluster.Options{}
+		}
+		if configData.MultiClusterOptions.ClusterName == cluster.Name {
+			return nil
+		}
+		configData.MultiClusterOptions.ClusterName = cluster.Name
+		newConfigData, err := yaml.Marshal(configData)
+		if err != nil {
+			return err
+		}
+		cm.Data[constants.KubeSphereConfigMapDataKey] = string(newConfigData)
+		return clusterClient.Update(ctx, cm)
+	})
 }
 
 func (r *Reconciler) checkIfClusterIsHostCluster(ctx context.Context, clusterKubeSystemUID types.UID) (bool, error) {
