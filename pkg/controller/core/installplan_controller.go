@@ -213,7 +213,7 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 		return ctrl.Result{}, err
 	}
 
-	if plan.Annotations[corev1alpha1.ForceDeleteAnnotation] == "true" {
+	if _, ok := plan.Annotations[corev1alpha1.ForceDeleteAnnotation]; ok {
 		if err = helmExecutor.ForceDelete(ctx); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -222,7 +222,9 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 		}
 	}
 
-	if plan.Status.State != corev1alpha1.StateUninstalling {
+	if plan.Status.State != corev1alpha1.StateUninstalling &&
+		plan.Status.State != corev1alpha1.StateUninstallFailed &&
+		plan.Status.State != corev1alpha1.StateUninstalled {
 		jobName, err := helmExecutor.Uninstall(ctx)
 		if err != nil {
 			logger.Error(err, "failed to delete helm release")
@@ -240,7 +242,7 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 		}
 	}
 
-	if _, err = helmExecutor.Release(); err != nil {
+	if _, err := helmExecutor.Release(); err != nil {
 		if isReleaseNotFoundError(err) {
 			// The involved release does not exist, just move on.
 			return ctrl.Result{}, r.postRemove(ctx, plan)
@@ -253,7 +255,6 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 		if err := r.Get(ctx, client.ObjectKey{Namespace: plan.Status.TargetNamespace, Name: plan.Status.JobName}, &job); err != nil {
 			return ctrl.Result{}, err
 		}
-
 		active, completed, failed := jobStatus(job)
 		if active {
 			return ctrl.Result{}, nil
