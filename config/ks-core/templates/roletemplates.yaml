@@ -823,6 +823,8 @@ metadata:
     iam.kubesphere.io/aggregate-to-regular: ""
     iam.kubesphere.io/aggregate-to-viewer: ""
     iam.kubesphere.io/aggregate-to-self-provisioner: ""
+    iam.kubesphere.io/hidden-role-template: 'true'
+    iam.kubesphere.io/basic-role-template: 'true'
     kubesphere.io/managed: 'true'
   name: workspace-view-workspace-settings
 spec:
@@ -1199,9 +1201,13 @@ metadata:
   annotations:
     iam.kubesphere.io/role-template-rules: '{"project-settings": "view"}'
   labels:
-    iam.kubesphere.io/category: project-settings
+    iam.kubesphere.io/category: namespace-settings
     iam.kubesphere.io/scope: "namespace"
     kubesphere.io/managed: "true"
+    iam.kubesphere.io/basic-role-template: 'true'
+    iam.kubesphere.io/hidden-role-template: 'true'
+    iam.kubesphere.io/aggregate-to-operator: ""
+    iam.kubesphere.io/aggregate-to-viewer: ""
   name: namespace-view-project-settings
 spec:
   description:
@@ -1239,7 +1245,8 @@ metadata:
   annotations:
     iam.kubesphere.io/role-template-rules: '{"project-settings": "manage"}'
   labels:
-    iam.kubesphere.io/category: project-settings
+    iam.kubesphere.io/category: namespace-settings
+    iam.kubesphere.io/hidden-role-template: 'true'
     iam.kubesphere.io/scope: "namespace"
     kubesphere.io/managed: "true"
   name: namespace-manage-project-settings
