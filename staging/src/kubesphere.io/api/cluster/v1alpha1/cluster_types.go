@@ -31,9 +31,10 @@ const (
 	// ClusterRegion is the description of which region the cluster been placed
 	ClusterRegion = "cluster.kubesphere.io/region"
 	// ClusterGroup is the name of the cluster group
-	ClusterGroup = "cluster.kubesphere.io/group"
-
-	Finalizer = "finalizer.cluster.kubesphere.io"
+	ClusterGroup            = "cluster.kubesphere.io/group"
+	ClusterVisibilityLabel  = "cluster.kubesphere.io/visibility"
+	ClusterVisibilityPublic = "public"
+	Finalizer               = "finalizer.cluster.kubesphere.io"
 )
 
 type ClusterSpec struct {

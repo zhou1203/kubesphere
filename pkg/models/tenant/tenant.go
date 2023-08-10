@@ -23,12 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/utils/pointer"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/mitchellh/mapstructure"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -37,11 +33,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	auditingv1alpha1 "kubesphere.io/kubesphere/pkg/api/auditing/v1alpha1"
@@ -769,14 +767,17 @@ func (t *tenantOperator) Auditing(user user.Info, queryParam *auditingv1alpha1.Q
 	})
 }
 
-func (t *tenantOperator) getClusterRoleBindingsByUser(clusterName, user string) (*rbacv1.ClusterRoleBindingList, error) {
-	kubernetesClientSet, err := t.clusterClient.GetKubernetesClientSet(clusterName)
+func (t *tenantOperator) getClusterRoleBindingsByUser(clusterName, username string) (*iamv1beta1.ClusterRoleBindingList, error) {
+	clusterClient, err := t.clusterClient.GetRuntimeClient(clusterName)
 	if err != nil {
 		return nil, err
 	}
-	return kubernetesClientSet.RbacV1().ClusterRoleBindings().
-		List(context.Background(),
-			metav1.ListOptions{LabelSelector: labels.FormatLabels(map[string]string{"iam.kubesphere.io/user-ref": user})})
+
+	clusterRoleBindings := &iamv1beta1.ClusterRoleBindingList{}
+	if err := clusterClient.List(context.Background(), clusterRoleBindings, runtimeclient.MatchingLabels{iamv1beta1.UserReferenceLabel: username}); err != nil {
+		return nil, err
+	}
+	return clusterRoleBindings, nil
 }
 
 func contains(objects []runtime.Object, object runtime.Object) bool {
@@ -835,7 +836,7 @@ func (t *tenantOperator) checkClusterPermission(user user.Info, clusters []strin
 		if err := t.client.Get(context.Background(), types.NamespacedName{Name: clusterName}, cluster); err != nil {
 			return err
 		}
-		if cluster.Labels["cluster.kubesphere.io/visibility"] == "public" {
+		if cluster.Labels[clusterv1alpha1.ClusterVisibilityLabel] == clusterv1alpha1.ClusterVisibilityPublic {
 			continue
 		}
 
@@ -858,13 +859,14 @@ func (t *tenantOperator) checkClusterPermission(user user.Info, clusters []strin
 			continue
 		}
 
-		list, err := t.getClusterRoleBindingsByUser(clusterName, user.GetName())
+		clusterRoleBindings, err := t.getClusterRoleBindingsByUser(clusterName, user.GetName())
 		if err != nil {
 			return err
 		}
 
 		allowed := false
-		for _, clusterRoleBinding := range list.Items {
+		for _, clusterRoleBinding := range clusterRoleBindings.Items {
+			// TODO fix me
 			if clusterRoleBinding.RoleRef.Name == iamv1beta1.ClusterAdmin {
 				allowed = true
 				break
