@@ -34,8 +34,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/extension"
 	"kubesphere.io/kubesphere/pkg/controller/globalrole"
 	"kubesphere.io/kubesphere/pkg/controller/globalrolebinding"
-	"kubesphere.io/kubesphere/pkg/controller/group"
-	"kubesphere.io/kubesphere/pkg/controller/groupbinding"
 	"kubesphere.io/kubesphere/pkg/controller/job"
 	"kubesphere.io/kubesphere/pkg/controller/ksserviceaccount"
 	kubeconfigctr "kubesphere.io/kubesphere/pkg/controller/kubeconfig"
@@ -83,8 +81,6 @@ var allControllers = []string{
 	"roletemplate",
 	"clusterrole",
 	"role",
-	"groupbinding",
-	"group",
 	"rulegroup",
 	"clusterrulegroup",
 	"globalrulegroup",
@@ -179,16 +175,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	if cmOptions.IsControllerEnabled("roletemplate") {
 		roletemplateController := &roletemplate.Reconciler{}
 		addControllerWithSetup(mgr, "roletemplate", roletemplateController)
-	}
-
-	// "groupbinding" controller
-	if cmOptions.IsControllerEnabled("groupbinding") {
-		addControllerWithSetup(mgr, "groupbinding", &groupbinding.Reconciler{})
-	}
-
-	// "group" controller
-	if cmOptions.IsControllerEnabled("group") {
-		addControllerWithSetup(mgr, "group", &group.Reconciler{})
 	}
 
 	// "serviceaccount" controller
