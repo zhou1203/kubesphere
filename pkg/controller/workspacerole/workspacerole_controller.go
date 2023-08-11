@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -52,6 +53,7 @@ import (
 
 const (
 	controllerName = "workspacerole-controller"
+	finalizer      = "finalizers.kubesphere.io/workspaceroles"
 )
 
 // Reconciler reconciles a WorkspaceRole object
@@ -124,6 +126,30 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := r.Get(ctx, req.NamespacedName, workspaceRole); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	if workspaceRole.ObjectMeta.DeletionTimestamp.IsZero() {
+		// The object is not being deleted, so if it does not have our finalizer,
+		// then lets add the finalizer and update the object.
+		if !controllerutil.ContainsFinalizer(workspaceRole, finalizer) {
+			expected := workspaceRole.DeepCopy()
+			controllerutil.AddFinalizer(expected, finalizer)
+			return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(workspaceRole))
+		}
+	} else {
+		// The object is being deleted
+		if controllerutil.ContainsFinalizer(workspaceRole, finalizer) {
+			if err := r.deleteRelatedResources(ctx, workspaceRole); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete related resources: %s", err)
+			}
+			// remove our finalizer from the list and update it.
+			controllerutil.RemoveFinalizer(workspaceRole, finalizer)
+			if err := r.Update(ctx, workspaceRole, &client.UpdateOptions{}); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
 	if err := r.bindWorkspace(ctx, logger, workspaceRole); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -136,6 +162,41 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *Reconciler) deleteRelatedResources(ctx context.Context, workspaceRole *iamv1beta1.WorkspaceRole) error {
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list clusters: %s", err)
+	}
+	var notReadyClusters []string
+	for _, cluster := range clusters {
+		if clusterutils.IsHostCluster(&cluster) {
+			continue
+		}
+		// skip if cluster is not ready
+		if !clusterutils.IsClusterReady(&cluster) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+		clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+		if err != nil {
+			return fmt.Errorf("failed to get cluster client: %s", err)
+		}
+		if err = clusterClient.Delete(ctx, &iamv1beta1.WorkspaceRole{ObjectMeta: metav1.ObjectMeta{Name: workspaceRole.Name}}); err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+	}
+	if len(notReadyClusters) > 0 {
+		err = fmt.Errorf("cluster not ready: %s", strings.Join(notReadyClusters, ","))
+		klog.FromContext(ctx).Error(err, "failed to delete related resources")
+		r.recorder.Event(workspaceRole, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
+		return err
+	}
+	return nil
 }
 
 func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, workspaceRole *iamv1beta1.WorkspaceRole) error {

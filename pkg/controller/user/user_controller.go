@@ -25,7 +25,7 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -130,18 +130,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	} else {
 		// The object is being deleted
 		if controllerutil.ContainsFinalizer(user, finalizer) {
-			if err := r.deleteRoleBindings(ctx, user); err != nil {
-				return ctrl.Result{}, err
+			if err := r.deleteRelatedResources(ctx, user); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete related rolebindings: %s", err)
 			}
-
-			if err := r.deleteGroupBindings(ctx, user); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			if err := r.deleteLoginRecords(ctx, user); err != nil {
-				return ctrl.Result{}, err
-			}
-
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(user, finalizer)
 			if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {
@@ -244,53 +235,63 @@ func (r *Reconciler) encryptPassword(ctx context.Context, user *iamv1beta1.User)
 	return nil
 }
 
-func (r *Reconciler) deleteGroupBindings(ctx context.Context, user *iamv1beta1.User) error {
-	groupBindings := &iamv1beta1.GroupBinding{}
-	return r.Client.DeleteAllOf(ctx, groupBindings, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
-}
-
-func (r *Reconciler) deleteRoleBindings(ctx context.Context, user *iamv1beta1.User) error {
+func (r *Reconciler) deleteRelatedResources(ctx context.Context, user *iamv1beta1.User) error {
 	if len(user.Name) > validation.LabelValueMaxLength {
 		// ignore invalid label value error
 		return nil
 	}
-
-	globalRoleBinding := &iamv1beta1.GlobalRoleBinding{}
-	err := r.Client.DeleteAllOf(ctx, globalRoleBinding, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
-	if err != nil {
+	if err := r.DeleteAllOf(ctx, &iamv1beta1.LoginRecord{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
 		return err
 	}
-
-	workspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{}
-	err = r.Client.DeleteAllOf(ctx, workspaceRoleBinding, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
-	if err != nil {
+	if err := r.DeleteAllOf(ctx, &iamv1beta1.GlobalRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
 		return err
 	}
-
-	clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
-	err = r.Client.DeleteAllOf(ctx, clusterRoleBinding, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
-	if err != nil {
+	if err := r.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
 		return err
 	}
-
-	roleBindingList := &rbacv1.RoleBindingList{}
-	err = r.Client.List(ctx, roleBindingList, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
+	clusters, err := r.ClusterClientSet.ListClusters(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list clusters: %s", err)
 	}
-
-	for _, roleBinding := range roleBindingList.Items {
-		err = r.Client.Delete(ctx, &roleBinding)
+	var notReadyClusters []string
+	for _, cluster := range clusters {
+		// skip if cluster is not ready
+		if !clusterutils.IsClusterReady(&cluster) {
+			notReadyClusters = append(notReadyClusters, cluster.Name)
+			continue
+		}
+		clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
 		if err != nil {
+			return fmt.Errorf("failed to get cluster client: %s", err)
+		}
+		if err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.ClusterRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
 			return err
 		}
+		if err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.ClusterRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
+			return err
+		}
+		if err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.ClusterRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
+			return err
+		}
+		if err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.RoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
+			return err
+		}
+		if !clusterutils.IsHostCluster(&cluster) {
+			if err = clusterClient.Delete(ctx, &iamv1beta1.User{ObjectMeta: metav1.ObjectMeta{Name: user.Name}}); err != nil {
+				if errors.IsNotFound(err) {
+					continue
+				}
+				return err
+			}
+		}
+	}
+	if len(notReadyClusters) > 0 {
+		err = fmt.Errorf("cluster not ready: %s", strings.Join(notReadyClusters, ","))
+		klog.FromContext(ctx).Error(err, "failed to delete related resources")
+		r.recorder.Event(user, corev1.EventTypeWarning, kscontroller.SyncFailed, fmt.Sprintf("cluster not ready: %s", strings.Join(notReadyClusters, ",")))
+		return err
 	}
 	return nil
-}
-
-func (r *Reconciler) deleteLoginRecords(ctx context.Context, user *iamv1beta1.User) error {
-	loginRecord := &iamv1beta1.LoginRecord{}
-	return r.Client.DeleteAllOf(ctx, loginRecord, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name})
 }
 
 // reconcileUserStatus updates the user status based on various conditions.
