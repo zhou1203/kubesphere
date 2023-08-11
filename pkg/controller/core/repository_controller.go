@@ -126,7 +126,7 @@ func (r *RepositoryReconciler) createOrUpdateExtensionVersion(ctx context.Contex
 			version.Labels[k] = v
 		}
 		version.Spec = extensionVersion.Spec
-		if err := controllerutil.SetOwnerReference(extension, extensionVersion, r.Scheme()); err != nil {
+		if err := controllerutil.SetOwnerReference(extension, version, r.Scheme()); err != nil {
 			return err
 		}
 		return nil
@@ -468,6 +468,11 @@ func (r *RepositoryReconciler) loadExtensionVersionSpecFrom(ctx context.Context,
 				result = extensionVersionSpec
 				break
 			}
+		}
+
+		if result == nil {
+			logger.V(6).Info("extension.yaml not found", "chart", chartURL)
+			return nil
 		}
 
 		if strings.HasPrefix(result.Icon, "http://") ||
