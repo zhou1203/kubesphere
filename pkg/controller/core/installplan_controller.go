@@ -195,7 +195,7 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 	if len(plan.Status.ClusterSchedulingStatuses) > 0 {
 		for clusterName, clusterSchedulingStatus := range plan.Status.ClusterSchedulingStatuses {
 			if err := r.uninstallClusterAgent(ctx, plan, clusterName); err != nil {
-				updateClusterSchedulingState(plan, clusterName, &clusterSchedulingStatus, corev1alpha1.StateUninstalled)
+				updateClusterSchedulingState(plan, clusterName, &clusterSchedulingStatus, corev1alpha1.StateUninstallFailed)
 				updateClusterSchedulingCondition(plan, clusterName, &clusterSchedulingStatus, corev1alpha1.ConditionTypeUninstalled, err.Error(), metav1.ConditionFalse)
 				if err = r.updateInstallPlan(ctx, plan); err != nil {
 					logger.Error(err, "failed to update scheduling state and conditions")
@@ -1222,6 +1222,15 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(ctx context.Context
 
 func (r *InstallPlanReconciler) uninstallClusterAgent(ctx context.Context, plan *corev1alpha1.InstallPlan, clusterName string) error {
 	logger := klog.FromContext(ctx).WithValues("cluster", clusterName)
+	clusterSchedulingStatus := plan.Status.ClusterSchedulingStatuses[clusterName]
+	targetNamespace := clusterSchedulingStatus.TargetNamespace
+	releaseName := clusterSchedulingStatus.ReleaseName
+
+	if releaseName == "" {
+		logger.V(4).Info("cluster not found")
+		delete(plan.Status.ClusterSchedulingStatuses, clusterName)
+		return r.updateInstallPlan(ctx, plan)
+	}
 
 	var cluster clusterv1alpha1.Cluster
 	if err := r.Get(ctx, types.NamespacedName{Name: clusterName}, &cluster); err != nil {
@@ -1232,42 +1241,6 @@ func (r *InstallPlanReconciler) uninstallClusterAgent(ctx context.Context, plan 
 		}
 		return err
 	}
-
-	clusterSchedulingStatus := plan.Status.ClusterSchedulingStatuses[clusterName]
-
-	var (
-		jobActive = false
-		jobFailed = false
-	)
-
-	if clusterSchedulingStatus.State == corev1alpha1.StateUninstalling && clusterSchedulingStatus.JobName != "" {
-		job := batchv1.Job{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: clusterSchedulingStatus.TargetNamespace, Name: clusterSchedulingStatus.JobName}, &job); err != nil {
-			logger.Error(err, "failed to get job", "namespace", clusterSchedulingStatus.TargetNamespace, "job", clusterSchedulingStatus.JobName)
-			return err
-		}
-		jobActive, _, jobFailed = jobStatus(job)
-
-		if jobFailed && clusterSchedulingStatus.State != corev1alpha1.StateUninstallFailed {
-			updateClusterSchedulingState(plan, clusterName, &clusterSchedulingStatus, corev1alpha1.StateUninstallFailed)
-			updateClusterSchedulingCondition(
-				plan, clusterName, &clusterSchedulingStatus, corev1alpha1.ConditionTypeUninstalled,
-				latestJobCondition(job).Message, metav1.ConditionFalse,
-			)
-			if err := r.updateInstallPlan(ctx, plan); err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-
-	// helm executor is still running
-	if jobActive || jobFailed {
-		return nil
-	}
-
-	targetNamespace := clusterSchedulingStatus.TargetNamespace
-	releaseName := clusterSchedulingStatus.ReleaseName
 
 	options := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
@@ -1288,13 +1261,37 @@ func (r *InstallPlanReconciler) uninstallClusterAgent(ctx context.Context, plan 
 		}
 		logger.Error(err, "failed to get helm release status")
 		return err
+	}
+
+	if clusterSchedulingStatus.State == corev1alpha1.StateUninstalling && clusterSchedulingStatus.JobName != "" {
+		var jobActive, jobFailed bool
+		job := batchv1.Job{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: clusterSchedulingStatus.TargetNamespace, Name: clusterSchedulingStatus.JobName}, &job); err != nil {
+			logger.Error(err, "failed to get job", "namespace", clusterSchedulingStatus.TargetNamespace, "job", clusterSchedulingStatus.JobName)
+			return err
+		}
+		jobActive, _, jobFailed = jobStatus(job)
+		if jobFailed && clusterSchedulingStatus.State != corev1alpha1.StateUninstallFailed {
+			updateClusterSchedulingState(plan, clusterName, &clusterSchedulingStatus, corev1alpha1.StateUninstallFailed)
+			updateClusterSchedulingCondition(
+				plan, clusterName, &clusterSchedulingStatus, corev1alpha1.ConditionTypeUninstalled,
+				latestJobCondition(job).Message, metav1.ConditionFalse,
+			)
+			if err := r.updateInstallPlan(ctx, plan); err != nil {
+				return err
+			}
+			return nil
+		}
+		// helm executor is still running
+		if jobActive || jobFailed {
+			return nil
+		}
 	} else {
 		jobName, err := executor.Uninstall(ctx, helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)))
 		if err != nil {
 			logger.Error(err, "failed to uninstall helm release")
 			return err
 		}
-
 		clusterSchedulingStatus.JobName = jobName
 		updateClusterSchedulingState(plan, cluster.Name, &clusterSchedulingStatus, corev1alpha1.StateUninstalling)
 		if err := r.updateInstallPlan(ctx, plan); err != nil {
