@@ -321,11 +321,13 @@ func (r *InstallPlanReconciler) loadChartData(ctx context.Context, ref *corev1al
 
 	// load chart data from url
 	if extensionVersion.Spec.ChartURL != "" {
-		buf, err := r.helmGetter.Get(extensionVersion.Spec.ChartURL,
-			getter.WithTimeout(5*time.Minute),
-			getter.WithURL(repo.Spec.URL),
-			getter.WithBasicAuth(repo.Spec.BasicAuth.Username, repo.Spec.BasicAuth.Password),
-		)
+		options := []getter.Option{
+			getter.WithTimeout(5 * time.Minute),
+			getter.WithURL(repo.Spec.URL)}
+		if repo.Spec.BasicAuth != nil {
+			options = append(options, getter.WithBasicAuth(repo.Spec.BasicAuth.Username, repo.Spec.BasicAuth.Password))
+		}
+		buf, err := r.helmGetter.Get(extensionVersion.Spec.ChartURL, options...)
 		if err != nil {
 			return nil, extensionVersion, err
 		}
