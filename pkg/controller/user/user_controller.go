@@ -131,7 +131,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// The object is being deleted
 		if controllerutil.ContainsFinalizer(user, finalizer) {
 			if err := r.deleteRelatedResources(ctx, user); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete related rolebindings: %s", err)
+				return ctrl.Result{}, fmt.Errorf("failed to delete related resources: %s", err)
 			}
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(user, finalizer)
@@ -267,14 +267,17 @@ func (r *Reconciler) deleteRelatedResources(ctx context.Context, user *iamv1beta
 		if err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.ClusterRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
 			return err
 		}
-		if err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.ClusterRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
+		roleBindings := &iamv1beta1.RoleBindingList{}
+		if err = clusterClient.List(ctx, roleBindings, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
 			return err
 		}
-		if err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.ClusterRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
-			return err
-		}
-		if err = clusterClient.DeleteAllOf(ctx, &iamv1beta1.RoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
-			return err
+		for _, roleBinding := range roleBindings.Items {
+			if err = clusterClient.Delete(ctx, &roleBinding); err != nil {
+				if errors.IsNotFound(err) {
+					continue
+				}
+				return err
+			}
 		}
 		if !clusterutils.IsHostCluster(&cluster) {
 			if err = clusterClient.Delete(ctx, &iamv1beta1.User{ObjectMeta: metav1.ObjectMeta{Name: user.Name}}); err != nil {
