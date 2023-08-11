@@ -315,6 +315,9 @@ func (h *iamHandler) ListClusterMembers(request *restful.Request, response *rest
 			if subject.Kind == rbacv1.UserKind {
 				user, err := h.im.DescribeUser(subject.Name)
 				if err != nil {
+					if errors.IsNotFound(err) {
+						continue
+					}
 					api.HandleError(response, request, err)
 					return
 				}
@@ -347,6 +350,9 @@ func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *re
 			if subject.Kind == rbacv1.UserKind {
 				user, err := h.im.DescribeUser(subject.Name)
 				if err != nil {
+					if errors.IsNotFound(err) {
+						continue
+					}
 					api.HandleError(response, request, err)
 					return
 				}
@@ -379,6 +385,9 @@ func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *re
 			if subject.Kind == rbacv1.UserKind {
 				user, err := h.im.DescribeUser(subject.Name)
 				if err != nil {
+					if errors.IsNotFound(err) {
+						continue
+					}
 					api.HandleError(response, request, err)
 					return
 				}
