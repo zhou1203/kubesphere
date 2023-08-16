@@ -28,7 +28,6 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -49,7 +48,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"kubesphere.io/kubesphere/pkg/constants"
-	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/version"
@@ -204,34 +202,39 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if cluster.ObjectMeta.DeletionTimestamp.IsZero() {
-		// The object is not being deleted, so if it does not have our finalizer,
-		// then lets add the finalizer and update the object. This is equivalent
-		// registering our finalizer.
+	// The object is being deleted
+	if !cluster.ObjectMeta.DeletionTimestamp.IsZero() {
 		if !sets.New(cluster.ObjectMeta.Finalizers...).Has(clusterv1alpha1.Finalizer) {
-			cluster.ObjectMeta.Finalizers = append(cluster.ObjectMeta.Finalizers, clusterv1alpha1.Finalizer)
-			if err := r.Update(ctx, cluster); err != nil {
-				return ctrl.Result{}, err
-			}
+			return ctrl.Result{}, nil
 		}
-	} else {
-		// The object is being deleted
-		if sets.New(cluster.ObjectMeta.Finalizers...).Has(clusterv1alpha1.Finalizer) {
-			// cleanup after cluster has been deleted
-			if err := r.syncClusterMembers(ctx, cluster); err != nil {
-				klog.Errorf("Failed to sync cluster members for %s: %v", req.Name, err)
-				return ctrl.Result{}, err
-			}
 
-			// remove our cluster finalizer
-			finalizers := sets.New(cluster.ObjectMeta.Finalizers...)
-			finalizers.Delete(clusterv1alpha1.Finalizer)
-			cluster.ObjectMeta.Finalizers = finalizers.UnsortedList()
-			if err := r.Update(ctx, cluster); err != nil {
-				return ctrl.Result{}, err
-			}
+		// cleanup after cluster has been deleted
+		if err := r.cleanup(ctx, cluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("cleanup for cluster %s failed: %s", cluster.Name, err.Error())
+		}
+		if err := r.syncClusterMembers(ctx, cluster); err != nil {
+			klog.Errorf("Failed to sync cluster members for %s: %v", req.Name, err)
+			return ctrl.Result{}, err
+		}
+
+		// remove our cluster finalizer
+		finalizers := sets.New(cluster.ObjectMeta.Finalizers...)
+		finalizers.Delete(clusterv1alpha1.Finalizer)
+		cluster.ObjectMeta.Finalizers = finalizers.UnsortedList()
+		if err := r.Update(ctx, cluster); err != nil {
+			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
+	}
+
+	// The object is not being deleted, so if it does not have our finalizer,
+	// then lets add the finalizer and update the object. This is equivalent
+	// registering our finalizer.
+	if !sets.New(cluster.ObjectMeta.Finalizers...).Has(clusterv1alpha1.Finalizer) {
+		cluster.ObjectMeta.Finalizers = append(cluster.ObjectMeta.Finalizers, clusterv1alpha1.Finalizer)
+		if err := r.Update(ctx, cluster); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	if len(cluster.Spec.Connection.KubeConfig) == 0 {
@@ -314,7 +317,7 @@ func (r *Reconciler) reconcileMemberCluster(ctx context.Context, cluster *cluste
 		defer r.installLock.Delete(cluster.Name)
 		klog.Infof("Starting installing KS Core for the cluster %s", cluster.Name)
 		defer klog.Infof("Finished installing KS Core for the cluster %s", cluster.Name)
-		hostConfig, _, err := getKubeSphereConfig(ctx, r.Client)
+		hostConfig, err := getKubeSphereConfig(ctx, r.Client)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -370,7 +373,7 @@ func (r *Reconciler) syncClusterStatus(ctx context.Context, cluster *clusterv1al
 	if err = r.Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err = r.setClusterNameInConfigMap(ctx, cluster); err != nil {
+	if err = r.setClusterNameInNamespace(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err = r.syncClusterMembers(ctx, cluster); err != nil {
@@ -379,29 +382,28 @@ func (r *Reconciler) syncClusterStatus(ctx context.Context, cluster *clusterv1al
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) setClusterNameInConfigMap(ctx context.Context, cluster *clusterv1alpha1.Cluster) error {
+func (r *Reconciler) setClusterNameInNamespace(ctx context.Context, cluster *clusterv1alpha1.Cluster) error {
 	clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		configData, cm, err := getKubeSphereConfig(ctx, clusterClient)
-		if err != nil {
+		kubeSphereNamespace := &corev1.Namespace{}
+		if err = clusterClient.Get(ctx, client.ObjectKey{Name: constants.KubeSphereNamespace}, kubeSphereNamespace); err != nil {
 			return err
 		}
-		if configData.MultiClusterOptions == nil {
-			configData.MultiClusterOptions = &multicluster.Options{}
-		}
-		if configData.MultiClusterOptions.ClusterName == cluster.Name {
+		annotations := kubeSphereNamespace.Annotations
+		if annotations[clusterv1alpha1.AnnotationClusterName] == cluster.Name &&
+			annotations[clusterv1alpha1.AnnotationHostClusterName] == r.hostClusterName {
 			return nil
 		}
-		configData.MultiClusterOptions.ClusterName = cluster.Name
-		newConfigData, err := yaml.Marshal(configData)
-		if err != nil {
-			return err
+		if annotations == nil {
+			annotations = make(map[string]string)
 		}
-		cm.Data[constants.KubeSphereConfigMapDataKey] = string(newConfigData)
-		return clusterClient.Update(ctx, cm)
+		annotations[clusterv1alpha1.AnnotationClusterName] = cluster.Name
+		annotations[clusterv1alpha1.AnnotationHostClusterName] = r.hostClusterName
+		kubeSphereNamespace.Annotations = annotations
+		return clusterClient.Update(ctx, kubeSphereNamespace)
 	})
 }
 
@@ -572,4 +574,18 @@ func (r *Reconciler) syncClusterMembers(ctx context.Context, cluster *clusterv1a
 		}
 	}
 	return nil
+}
+
+func (r *Reconciler) cleanup(ctx context.Context, cluster *clusterv1alpha1.Cluster) error {
+	clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster client: %s", err)
+	}
+	kubeSphereNamespace := &corev1.Namespace{}
+	if err = clusterClient.Get(ctx, client.ObjectKey{Name: constants.KubeSphereNamespace}, kubeSphereNamespace); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	delete(kubeSphereNamespace.Annotations, clusterv1alpha1.AnnotationClusterName)
+	delete(kubeSphereNamespace.Annotations, clusterv1alpha1.AnnotationHostClusterName)
+	return clusterClient.Update(ctx, kubeSphereNamespace)
 }

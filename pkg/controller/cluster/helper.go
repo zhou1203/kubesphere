@@ -87,16 +87,16 @@ func installKSCoreInMemberCluster(kubeConfig, jwtSecret string) error {
 	return nil
 }
 
-func getKubeSphereConfig(ctx context.Context, client runtimeclient.Client) (*config.Config, *corev1.ConfigMap, error) {
+func getKubeSphereConfig(ctx context.Context, client runtimeclient.Client) (*config.Config, error) {
 	cm := &corev1.ConfigMap{}
 	if err := client.Get(ctx, types.NamespacedName{Name: constants.KubeSphereConfigName, Namespace: constants.KubeSphereNamespace}, cm); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	configData, err := config.GetFromConfigMap(cm)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return configData, cm, nil
+	return configData, nil
 }
 
 func hasCondition(conditions []clusterv1alpha1.ClusterCondition, conditionsType clusterv1alpha1.ClusterConditionType) bool {
