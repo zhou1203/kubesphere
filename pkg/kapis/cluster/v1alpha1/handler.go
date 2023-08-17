@@ -23,17 +23,17 @@ import (
 	"net/http"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	"github.com/emicklei/go-restful/v3"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/emicklei/go-restful/v3"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"kubesphere.io/api/cluster/v1alpha1"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	clusterv1alpha1 "kubesphere.io/kubesphere/pkg/api/cluster/v1alpha1"
+	apiv1alpha1 "kubesphere.io/kubesphere/pkg/api/cluster/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
@@ -54,7 +54,7 @@ func newHandler(cacheClient runtimeclient.Client) *handler {
 
 // updateKubeConfig updates the kubeconfig of the specific cluster, this API is used to update expired kubeconfig.
 func (h *handler) updateKubeConfig(request *restful.Request, response *restful.Response) {
-	var req clusterv1alpha1.UpdateClusterRequest
+	var req apiv1alpha1.UpdateClusterRequest
 	if err := request.ReadEntity(&req); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
@@ -62,18 +62,18 @@ func (h *handler) updateKubeConfig(request *restful.Request, response *restful.R
 
 	clusterName := request.PathParameter("cluster")
 
-	cluster := &v1alpha1.Cluster{}
+	cluster := &clusterv1alpha1.Cluster{}
 	if err := h.client.Get(context.Background(), types.NamespacedName{Name: clusterName}, cluster); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
 	}
-	if _, ok := cluster.Labels[v1alpha1.HostCluster]; ok {
+	if _, ok := cluster.Labels[clusterv1alpha1.HostCluster]; ok {
 		api.HandleBadRequest(response, request, fmt.Errorf("update kubeconfig of the host cluster is not allowed"))
 		return
 	}
 	// For member clusters that use proxy mode, we don't need to update the kubeconfig,
 	// if the certs expired, just restart the tower component in the host cluster, it will renew the cert.
-	if cluster.Spec.Connection.Type == v1alpha1.ConnectionTypeProxy {
+	if cluster.Spec.Connection.Type == clusterv1alpha1.ConnectionTypeProxy {
 		api.HandleBadRequest(response, request, fmt.Errorf(
 			"update kubeconfig of member clusters which using proxy mode is not allowed, their certs are managed and will be renewed by tower",
 		))
@@ -135,15 +135,13 @@ func (h *handler) updateKubeConfig(request *restful.Request, response *restful.R
 
 // ValidateCluster validate cluster kubeconfig and kubesphere apiserver address, check their accessibility
 func (h *handler) validateCluster(request *restful.Request, response *restful.Response) {
-	var cluster v1alpha1.Cluster
-
-	err := request.ReadEntity(&cluster)
-	if err != nil {
+	var cluster clusterv1alpha1.Cluster
+	if err := request.ReadEntity(&cluster); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
 	}
 
-	if cluster.Spec.Connection.Type != v1alpha1.ConnectionTypeDirect {
+	if cluster.Spec.Connection.Type != clusterv1alpha1.ConnectionTypeDirect {
 		api.HandleBadRequest(response, request, fmt.Errorf("cluster connection type MUST be direct"))
 		return
 	}
@@ -170,7 +168,24 @@ func (h *handler) validateCluster(request *restful.Request, response *restful.Re
 		return
 	}
 
+	// Check if the cluster is managed by other host cluster
+	if err = clusterIsManaged(clientSet); err != nil {
+		api.HandleBadRequest(response, request, err)
+		return
+	}
 	response.WriteHeader(http.StatusOK)
+}
+
+func clusterIsManaged(client kubernetes.Interface) error {
+	kubeSphereNamespace, err := client.CoreV1().Namespaces().Get(context.TODO(), constants.KubeSphereNamespace, metav1.GetOptions{})
+	if err != nil {
+		return runtimeclient.IgnoreNotFound(err)
+	}
+	hostClusterName := kubeSphereNamespace.Annotations[clusterv1alpha1.AnnotationHostClusterName]
+	if hostClusterName != "" {
+		return fmt.Errorf("current cluster is managed by another host cluster '%s'", hostClusterName)
+	}
+	return nil
 }
 
 // validateKubeConfig takes base64 encoded kubeconfig and check its validity
@@ -180,7 +195,7 @@ func (h *handler) validateKubeConfig(clusterName string, clientSet kubernetes.In
 		return err
 	}
 
-	clusterList := &v1alpha1.ClusterList{}
+	clusterList := &clusterv1alpha1.ClusterList{}
 	if err := h.client.List(context.Background(), clusterList); err != nil {
 		return err
 	}
@@ -245,8 +260,7 @@ func (h *handler) getMemberClusterConfig(clientSet kubernetes.Interface) (*confi
 
 // getHostClusterConfig returns KubeSphere running config from host cluster ConfigMap
 func (h *handler) getHostClusterConfig() (*config.Config, error) {
-	hostCm := &v1.ConfigMap{}
-
+	hostCm := &corev1.ConfigMap{}
 	if err := h.client.Get(context.Background(),
 		types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: constants.KubeSphereConfigName}, hostCm); err != nil {
 		return nil, fmt.Errorf("failed to get host cluster %s/configmap/%s, err: %s",
