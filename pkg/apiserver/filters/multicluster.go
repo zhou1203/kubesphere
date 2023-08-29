@@ -85,9 +85,9 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	innCluster := m.GetInnerCluster(cluster.Name)
-	if innCluster == nil {
-		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(fmt.Sprintf("cluster %s is not ready", cluster.Name)), w)
+	clusterClient, err := m.GetClusterClient(cluster.Name)
+	if err != nil {
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(err.Error()), w)
 		return
 	}
 
@@ -102,10 +102,10 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 	if cluster.Spec.Connection.Type == clusterv1alpha1.ConnectionTypeDirect &&
 		len(cluster.Spec.Connection.KubeSphereAPIEndpoint) == 0 {
 
-		u.Scheme = innCluster.KubernetesURL.Scheme
-		u.Host = innCluster.KubernetesURL.Host
+		u.Scheme = clusterClient.KubernetesURL.Scheme
+		u.Host = clusterClient.KubernetesURL.Host
 		u.Path = fmt.Sprintf(proxyURLFormat, u.Path)
-		transport = innCluster.Transport
+		transport = clusterClient.Transport
 
 		// The reason we need this is kube-apiserver doesn't behave like a standard proxy, it will strip
 		// authorization header of proxy requests. Use custom header to avoid stripping by kube-apiserver.
@@ -138,8 +138,8 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 		}
 	} else {
 		// everything else goes to ks-apiserver, since our ks-apiserver has the ability to proxy kube-apiserver requests
-		u.Host = innCluster.KubesphereURL.Host
-		u.Scheme = innCluster.KubesphereURL.Scheme
+		u.Host = clusterClient.KubeSphereURL.Host
+		u.Scheme = clusterClient.KubeSphereURL.Scheme
 	}
 
 	httpProxy := proxy.NewUpgradeAwareHandler(&u, transport, false, false, &responder{})

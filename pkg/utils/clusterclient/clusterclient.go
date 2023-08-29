@@ -18,87 +18,178 @@ package clusterclient
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
 	"sync"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
-	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 type Interface interface {
-	IsHostCluster(cluster *clusterv1alpha1.Cluster) bool
-	IsClusterReady(cluster *clusterv1alpha1.Cluster) bool
-	GetClusterKubeConfig(string) (string, error)
 	Get(string) (*clusterv1alpha1.Cluster, error)
-	GetInnerCluster(string) *innerCluster
-	GetKubernetesClientSet(string) (*kubernetes.Clientset, error)
-	GetRuntimeClient(string) (runtimeclient.Client, error)
 	ListClusters(ctx context.Context) ([]clusterv1alpha1.Cluster, error)
+	GetClusterClient(string) (*ClusterClient, error)
+	GetRuntimeClient(string) (runtimeclient.Client, error)
+	IsClusterReady(cluster *clusterv1alpha1.Cluster) bool
+	IsHostCluster(cluster *clusterv1alpha1.Cluster) bool
 }
 
-type innerCluster struct {
-	KubernetesURL *url.URL
-	KubesphereURL *url.URL
-	Transport     http.RoundTripper
+type ClusterClient struct {
+	KubernetesURL     *url.URL
+	KubeSphereURL     *url.URL
+	KubernetesVersion string
+	RestConfig        *rest.Config
+	Transport         http.RoundTripper
+	Client            runtimeclient.Client
+	KubernetesClient  kubernetes.Interface
 }
 
 type clusterClients struct {
 	sync.RWMutex
 	// build an in memory cluster cache to speed things up
-	innerClusters             map[string]*innerCluster
-	clusterClientWithoutCache map[string]runtimeclient.Client
-	cache                     runtimecache.Cache
+	clients map[string]*ClusterClient
+	cache   runtimecache.Cache
 }
 
 func NewClusterClientSet(runtimeCache runtimecache.Cache) (Interface, error) {
 	c := &clusterClients{
-		innerClusters:             make(map[string]*innerCluster),
-		clusterClientWithoutCache: make(map[string]runtimeclient.Client, 0),
-		cache:                     runtimeCache,
+		clients: make(map[string]*ClusterClient),
+		cache:   runtimeCache,
 	}
 
-	clusterInformer, err := runtimeCache.GetInformerForKind(context.Background(), schema.GroupVersionKind{
-		Group:   "cluster.kubesphere.io",
-		Version: "v1alpha1",
-		Kind:    "Cluster",
-	})
+	clusterInformer, err := runtimeCache.GetInformerForKind(context.Background(), clusterv1alpha1.SchemeGroupVersion.WithKind(clusterv1alpha1.ResourceKindCluster))
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = clusterInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	if _, err = clusterInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			c.addCluster(obj)
+			if _, err = c.addCluster(obj); err != nil {
+				klog.Error(err)
+			}
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			oldCluster := oldObj.(*clusterv1alpha1.Cluster)
 			newCluster := newObj.(*clusterv1alpha1.Cluster)
 			if !reflect.DeepEqual(oldCluster.Spec, newCluster.Spec) {
 				c.removeCluster(oldCluster)
-				c.addCluster(newObj)
+				if _, err = c.addCluster(newObj); err != nil {
+					klog.Error(err)
+				}
 			}
 		},
 		DeleteFunc: c.removeCluster,
-	})
+	}); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
 
+func (c *clusterClients) addCluster(obj interface{}) (*ClusterClient, error) {
+	cluster := obj.(*clusterv1alpha1.Cluster)
+	klog.V(4).Infof("add new cluster %s", cluster.Name)
+
+	kubernetesEndpoint, err := url.Parse(cluster.Spec.Connection.KubernetesAPIEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("parse kubernetes apiserver endpoint %s failed: %v", cluster.Spec.Connection.KubernetesAPIEndpoint, err)
+	}
+	kubesphereEndpoint, err := url.Parse(cluster.Spec.Connection.KubeSphereAPIEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("parse kubesphere apiserver endpoint %s failed: %v", cluster.Spec.Connection.KubeSphereAPIEndpoint, err)
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(cluster.Spec.Connection.KubeConfig)
+	if err != nil {
+		return nil, err
+	}
+	transport, err := rest.TransportFor(restConfig)
+	if err != nil {
+		return nil, err
+	}
+	kubernetesClient, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, err
+	}
+	serverVersion, err := kubernetesClient.Discovery().ServerVersion()
 	if err != nil {
 		return nil, err
 	}
 
-	return c, nil
+	mapper, err := apiutil.NewDynamicRESTMapper(restConfig)
+	if err != nil {
+		return nil, err
+	}
+	writeClient, err := runtimeclient.New(restConfig, runtimeclient.Options{
+		Scheme: scheme.Scheme,
+		Mapper: mapper,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cacheClient, err := runtimecache.New(restConfig, runtimecache.Options{
+		Scheme: scheme.Scheme,
+		Mapper: mapper,
+	})
+	if err != nil {
+		return nil, err
+	}
+	go cacheClient.Start(context.Background()) // nolint
+	if !cacheClient.WaitForCacheSync(context.Background()) {
+		return nil, errors.New("WaitForCacheSync failed")
+	}
+
+	client, err := runtimeclient.NewDelegatingClient(runtimeclient.NewDelegatingClientInput{
+		CacheReader: cacheClient,
+		Client:      writeClient,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	clusterClient := &ClusterClient{
+		KubernetesURL:     kubernetesEndpoint,
+		KubeSphereURL:     kubesphereEndpoint,
+		KubernetesVersion: serverVersion.GitVersion,
+		RestConfig:        restConfig,
+		Transport:         transport,
+		Client:            client,
+		KubernetesClient:  kubernetesClient,
+	}
+	c.Lock()
+	c.clients[cluster.Name] = clusterClient
+	c.Unlock()
+	return clusterClient, nil
+}
+
+func (c *clusterClients) removeCluster(obj interface{}) {
+	cluster := obj.(*clusterv1alpha1.Cluster)
+	klog.V(4).Infof("remove cluster %s", cluster.Name)
+	c.Lock()
+	delete(c.clients, cluster.Name)
+	c.Unlock()
+}
+
+func (c *clusterClients) Get(clusterName string) (*clusterv1alpha1.Cluster, error) {
+	cluster := &clusterv1alpha1.Cluster{}
+	err := c.cache.Get(context.Background(), types.NamespacedName{Name: clusterName}, cluster)
+	return cluster, err
 }
 
 func (c *clusterClients) ListClusters(ctx context.Context) ([]clusterv1alpha1.Cluster, error) {
@@ -109,131 +200,27 @@ func (c *clusterClients) ListClusters(ctx context.Context) ([]clusterv1alpha1.Cl
 	return clusterList.Items, nil
 }
 
-func (c *clusterClients) removeCluster(obj interface{}) {
-	cluster := obj.(*clusterv1alpha1.Cluster)
-	klog.V(4).Infof("remove cluster %s", cluster.Name)
-	c.Lock()
-	delete(c.clusterClientWithoutCache, cluster.Name)
-	delete(c.innerClusters, cluster.Name)
-	c.Unlock()
-}
-
-func newInnerCluster(cluster *clusterv1alpha1.Cluster) *innerCluster {
-	kubernetesEndpoint, err := url.Parse(cluster.Spec.Connection.KubernetesAPIEndpoint)
-	if err != nil {
-		klog.Errorf("Parse kubernetes apiserver endpoint %s failed, %v", cluster.Spec.Connection.KubernetesAPIEndpoint, err)
-		return nil
-	}
-
-	kubesphereEndpoint, err := url.Parse(cluster.Spec.Connection.KubeSphereAPIEndpoint)
-	if err != nil {
-		klog.Errorf("Parse kubesphere apiserver endpoint %s failed, %v", cluster.Spec.Connection.KubeSphereAPIEndpoint, err)
-		return nil
-	}
-
-	// prepare for
-	clientConfig, err := clientcmd.NewClientConfigFromBytes(cluster.Spec.Connection.KubeConfig)
-	if err != nil {
-		klog.Errorf("Unable to create client config from kubeconfig bytes, %#v", err)
-		return nil
-	}
-
-	clusterConfig, err := clientConfig.ClientConfig()
-	if err != nil {
-		klog.Errorf("Failed to get client config, %#v", err)
-		return nil
-	}
-
-	transport, err := rest.TransportFor(clusterConfig)
-	if err != nil {
-		klog.Errorf("Create transport failed, %v", err)
-		return nil
-	}
-
-	return &innerCluster{
-		KubernetesURL: kubernetesEndpoint,
-		KubesphereURL: kubesphereEndpoint,
-		Transport:     transport,
-	}
-}
-
-func (c *clusterClients) GetRuntimeClient(clusterName string) (runtimeclient.Client, error) {
+func (c *clusterClients) GetClusterClient(name string) (*ClusterClient, error) {
 	c.RLock()
-	client, ok := c.clusterClientWithoutCache[clusterName]
-	c.RUnlock()
-	if ok {
+	defer c.RUnlock()
+	if client, ok := c.clients[name]; ok {
 		return client, nil
 	}
 
-	cluster, err := c.Get(clusterName)
+	// double check if the cluster exists but is not cached
+	cluster, err := c.Get(name)
 	if err != nil {
 		return nil, err
 	}
+	return c.addCluster(cluster)
+}
 
-	clientConfig, err := clientcmd.NewClientConfigFromBytes(cluster.Spec.Connection.KubeConfig)
+func (c *clusterClients) GetRuntimeClient(name string) (runtimeclient.Client, error) {
+	clusterClient, err := c.GetClusterClient(name)
 	if err != nil {
 		return nil, err
 	}
-
-	clusterConfig, err := clientConfig.ClientConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	clusterConfig.Host = cluster.Spec.Connection.KubernetesAPIEndpoint
-
-	client, err = runtimeclient.New(clusterConfig, runtimeclient.Options{
-		Scheme: scheme.Scheme,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	c.Lock()
-	c.clusterClientWithoutCache[clusterName] = client
-	c.Unlock()
-	return client, nil
-}
-
-func (c *clusterClients) addCluster(obj interface{}) *innerCluster {
-	cluster := obj.(*clusterv1alpha1.Cluster)
-	klog.V(4).Infof("add new cluster %s", cluster.Name)
-	_, err := url.Parse(cluster.Spec.Connection.KubernetesAPIEndpoint)
-	if err != nil {
-		klog.Errorf("Parse kubernetes apiserver endpoint %s failed, %v", cluster.Spec.Connection.KubernetesAPIEndpoint, err)
-		return nil
-	}
-	inner := newInnerCluster(cluster)
-	c.Lock()
-	c.innerClusters[cluster.Name] = inner
-	c.Unlock()
-	return inner
-}
-
-func (c *clusterClients) Get(clusterName string) (*clusterv1alpha1.Cluster, error) {
-	cluster := &clusterv1alpha1.Cluster{}
-	err := c.cache.Get(context.Background(), types.NamespacedName{Name: clusterName}, cluster)
-	return cluster, err
-}
-
-func (c *clusterClients) GetClusterKubeConfig(clusterName string) (string, error) {
-	cluster, err := c.Get(clusterName)
-	if err != nil {
-		return "", err
-	}
-	return string(cluster.Spec.Connection.KubeConfig), nil
-}
-
-func (c *clusterClients) GetInnerCluster(name string) *innerCluster {
-	c.RLock()
-	defer c.RUnlock()
-	if inner, ok := c.innerClusters[name]; ok {
-		return inner
-	} else if cluster, err := c.Get(name); err == nil {
-		// double check if the cluster exists but is not cached
-		return c.addCluster(cluster)
-	}
-	return nil
+	return clusterClient.Client, nil
 }
 
 func (c *clusterClients) IsClusterReady(cluster *clusterv1alpha1.Cluster) bool {
@@ -242,28 +229,4 @@ func (c *clusterClients) IsClusterReady(cluster *clusterv1alpha1.Cluster) bool {
 
 func (c *clusterClients) IsHostCluster(cluster *clusterv1alpha1.Cluster) bool {
 	return clusterutils.IsHostCluster(cluster)
-}
-
-func (c *clusterClients) GetKubernetesClientSet(name string) (*kubernetes.Clientset, error) {
-	kubeconfig, err := c.GetClusterKubeConfig(name)
-	if err != nil {
-		return nil, err
-	}
-	restConfig, err := newRestConfigFromString(kubeconfig)
-	if err != nil {
-		return nil, err
-	}
-	clientSet, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		return nil, err
-	}
-	return clientSet, nil
-}
-
-func newRestConfigFromString(kubeconfig string) (*rest.Config, error) {
-	bytes, err := clientcmd.NewClientConfigFromBytes([]byte(kubeconfig))
-	if err != nil {
-		return nil, err
-	}
-	return bytes.ClientConfig()
 }

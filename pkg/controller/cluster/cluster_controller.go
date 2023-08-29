@@ -35,7 +35,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
@@ -221,10 +220,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		finalizers := sets.New(cluster.ObjectMeta.Finalizers...)
 		finalizers.Delete(clusterv1alpha1.Finalizer)
 		cluster.ObjectMeta.Finalizers = finalizers.UnsortedList()
-		if err := r.Update(ctx, cluster); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.Update(ctx, cluster)
 	}
 
 	// The object is not being deleted, so if it does not have our finalizer,
@@ -232,9 +228,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// registering our finalizer.
 	if !sets.New(cluster.ObjectMeta.Finalizers...).Has(clusterv1alpha1.Finalizer) {
 		cluster.ObjectMeta.Finalizers = append(cluster.ObjectMeta.Finalizers, clusterv1alpha1.Finalizer)
-		if err := r.Update(ctx, cluster); err != nil {
-			return ctrl.Result{}, err
-		}
+		return ctrl.Result{}, r.Update(ctx, cluster)
 	}
 
 	if len(cluster.Spec.Connection.KubeConfig) == 0 {
@@ -242,40 +236,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	clusterConfig, err := clientcmd.RESTConfigFromKubeConfig(cluster.Spec.Connection.KubeConfig)
+	clusterClient, err := r.clusterClientSet.GetClusterClient(cluster.Name)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to create cluster config for %s: %s", cluster.Name, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster client for %s: %s", cluster.Name, err)
 	}
-
-	clusterClient, err := kubernetes.NewForConfig(clusterConfig)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to create cluster client for %s: %s", cluster.Name, err)
-	}
-
 	// cluster is ready, we can pull kubernetes cluster info through agent
 	// since there is no agent necessary for host cluster, so updates for host cluster
 	// is safe.
 	if len(cluster.Spec.Connection.KubernetesAPIEndpoint) == 0 {
-		cluster.Spec.Connection.KubernetesAPIEndpoint = clusterConfig.Host
+		cluster.Spec.Connection.KubernetesAPIEndpoint = clusterClient.RestConfig.Host
+		return ctrl.Result{}, r.Update(ctx, cluster)
 	}
 
-	serverVersion, err := clusterClient.Discovery().ServerVersion()
-	if err != nil {
-		klog.Errorf("Failed to get kubernetes version, %#v", err)
-		return ctrl.Result{}, err
-	}
-	cluster.Status.KubernetesVersion = serverVersion.GitVersion
+	cluster.Status.KubernetesVersion = clusterClient.KubernetesVersion
 
-	nodes, err := clusterClient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		klog.Errorf("Failed to get cluster nodes, %#v", err)
-		return ctrl.Result{}, err
+	nodes := &corev1.NodeList{}
+	if err = clusterClient.Client.List(ctx, nodes); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster nodes: %s", err.Error())
 	}
 	cluster.Status.NodeCount = len(nodes.Items)
 
 	// Use kube-system namespace UID as cluster ID
-	kubeSystem, err := clusterClient.CoreV1().Namespaces().Get(context.TODO(), metav1.NamespaceSystem, metav1.GetOptions{})
-	if err != nil {
+	kubeSystem := &corev1.Namespace{}
+	if err = clusterClient.Client.Get(ctx, client.ObjectKey{Name: metav1.NamespaceSystem}, kubeSystem); err != nil {
 		return ctrl.Result{}, err
 	}
 	cluster.Status.UID = kubeSystem.UID
@@ -285,9 +268,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 	if isHost {
-		return r.reconcileHostCluster(ctx, cluster, clusterClient)
+		return r.reconcileHostCluster(ctx, cluster, clusterClient.KubernetesClient)
 	}
-	return r.reconcileMemberCluster(ctx, cluster, clusterClient)
+	return r.reconcileMemberCluster(ctx, cluster, clusterClient.KubernetesClient)
 }
 
 func (r *Reconciler) reconcileHostCluster(ctx context.Context, cluster *clusterv1alpha1.Cluster, clusterClient kubernetes.Interface) (ctrl.Result, error) {
