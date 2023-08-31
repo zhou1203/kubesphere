@@ -115,6 +115,7 @@ func (s *jsBundle) rawFromRemote(endpoint extensionsv1alpha1.Endpoint, w http.Re
 	}
 
 	handler := proxy.NewUpgradeAwareHandler(location, tr, false, false, &responder{})
+	handler.UseLocationHost = true
 	handler.ServeHTTP(w, req)
 }
 
