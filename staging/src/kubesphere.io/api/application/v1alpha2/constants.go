@@ -19,6 +19,7 @@ package v1alpha2
 const (
 	MsgLen               = 512
 	HelmRepoSyncStateLen = 10
+	MaxStateNum          = 10
 
 	// app version state
 	StateDraft     = "draft"
@@ -64,8 +65,12 @@ const (
 	RepoSyncPeriod          = "app.kubesphere.io/sync-period"
 	OriginWorkspaceLabelKey = "kubesphere.io/workspace-origin"
 
-	RepoIDLabelKey       = "application.kubesphere.io/repo-id"
-	AppIDLabelKey        = "application.kubesphere.io/app-id"
-	AppVersionIDLabelKey = "application.kubesphere.io/app-version-id"
-	CategoryIDLabelKey   = "application.kubesphere.io/app-category-id"
+	RepoIDLabelKey       = "app.kubesphere.io/repo-id"
+	AppIDLabelKey        = "app.kubesphere.io/app-id"
+	AppVersionIDLabelKey = "app.kubesphere.io/app-version-id"
+	CategoryIDLabelKey   = "app.kubesphere.io/app-category-id"
+
+	AppReleaseReferenceLabelKey = "app.kubesphere.io/app-release-ref"
+
+	ReqUserAnnotationKey = "app.kubesphere.io/req-user"
 )

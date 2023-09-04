@@ -33,6 +33,7 @@ import (
 
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
+	"kubesphere.io/kubesphere/pkg/controller/application"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/user"
@@ -199,6 +200,7 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	}
 
 	hookServer.Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
+	hookServer.Register("/mutate-application-kubesphere-io-v1alpha2", &webhook.Admission{Handler: &application.InjectorHandler{}})
 	hookServer.Register("/convert", &conversion.Webhook{})
 
 	klog.V(0).Info("Starting the controllers.")

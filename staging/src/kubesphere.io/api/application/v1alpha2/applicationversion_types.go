@@ -33,7 +33,7 @@ type ApplicationVersionSpec struct {
 	// DataRef refers to a configMap which contains raw chart or yaml data.
 	DataRef *ConfigMapKeyRef `json:"dataRef"`
 	// create time
-	Created *metav1.Time `json:"created"`
+	Created *metav1.Time `json:"created,omitempty"`
 	// Chart addition data
 	ChartAdditionData *ChartAdditionData `json:"chartAdditionData,omitempty"`
 }

@@ -211,3 +211,37 @@ webhooks:
         scope: '*'
     sideEffects: None
     timeoutSeconds: 30
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: applicationreleases.application.kubesphere.io
+webhooks:
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      caBundle: {{ b64enc $ca.Cert | quote }}
+      service:
+        name: ks-controller-manager
+        namespace: kubesphere-system
+        path: /mutate-application-kubesphere-io-v1alpha2
+        port: 443
+    failurePolicy: Fail
+    matchPolicy: Exact
+    name: applicationreleases.application.kubesphere.io
+    namespaceSelector: {}
+    objectSelector: {}
+    rules:
+      - apiGroups:
+          - application.kubesphere.io
+        apiVersions:
+          - v1alpha2
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - applicationreleases
+        scope: '*'
+    sideEffects: None
+    timeoutSeconds: 30

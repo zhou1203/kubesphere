@@ -185,7 +185,6 @@ spec:
                 type: string
             required:
             - appClassName
-            - created
             - dataRef
             - displayName
             - version
