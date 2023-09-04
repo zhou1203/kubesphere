@@ -50,7 +50,7 @@ import (
 )
 
 const (
-	helminstallerController  = "helminstaller-controller"
+	helminstallerController  = "apprelease-helminstaller-controller"
 	helminstallerName        = "kubesphere.io/helm-application"
 	helminstallProtection    = "kubesphere.io/helminstall-protection"
 	clusterRoleName          = "kubesphere:application:helminstaller"
@@ -167,9 +167,16 @@ func (r *AppReleaseHelmInstallerReconciler) checkHelmReleaseAndUpdateAppReleaseS
 	// If don't find the target helm release, retry until do.
 	release, err := executor.Release()
 	if err != nil {
-		// TODO: Job failed to execute during startup due to an environmental, such as image not being fetched
-		// update apprls failed status based on job state
-		return err
+		// Job failed to execute during startup due to an environmental, such as image not being fetched
+		// update app release failed status based on job state
+		if apprls.Status.JobName != "" {
+			jobKey := client.ObjectKey{Namespace: apprls.GetRlsNamespace(), Name: apprls.Status.JobName}
+			if r.isJobStatusFailed(ctx, jobKey) {
+				return r.updateStatus(ctx, apprls, appv1alpha2.AppReleaseStatusFailed)
+			}
+		}
+
+		return fmt.Errorf("%v, retrying", err)
 	}
 
 	switch release.Info.Status {
@@ -180,6 +187,21 @@ func (r *AppReleaseHelmInstallerReconciler) checkHelmReleaseAndUpdateAppReleaseS
 	}
 
 	return nil
+}
+
+func (r *AppReleaseHelmInstallerReconciler) isJobStatusFailed(ctx context.Context, jobKey client.ObjectKey) bool {
+	job := &batchv1.Job{}
+	if err := r.Get(ctx, jobKey, job); err != nil {
+		// return false, allow retry
+		klog.Errorf("fetch job failed, jobKey:%s, err:%v", jobKey.String(), err)
+		return false
+	}
+
+	if job.Status.Failed > 0 || (job.Spec.BackoffLimit != nil && job.Status.Failed > *job.Spec.BackoffLimit) {
+		return true
+	}
+
+	return false
 }
 
 func (r *AppReleaseHelmInstallerReconciler) loadData(ctx context.Context, appVerionId string) ([]byte, error) {
@@ -241,7 +263,7 @@ func (r *AppReleaseHelmInstallerReconciler) createOrUpgradeAppRelease(ctx contex
 		helm.SetLabels(labels.Set{helminstallProtection: rls.Name}),
 	}
 
-	if _, err = executor.Upgrade(ctx, rls.Name, data, rls.Spec.Values, options...); err != nil {
+	if rls.Status.JobName, err = executor.Upgrade(ctx, rls.Name, data, rls.Spec.Values, options...); err != nil {
 		klog.Errorf("failed to create executor job, err: %v", err)
 		return r.updateStatus(ctx, rls, appv1alpha2.AppReleaseStatusFailed, "failed to create executor job")
 	}

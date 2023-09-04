@@ -93,6 +93,9 @@ spec:
                   - state
                   type: object
                 type: array
+              jobName:
+                description: JobName for installation and upgrade
+                type: string
               lastDeployed:
                 description: last deploy time or upgrade time
                 format: date-time

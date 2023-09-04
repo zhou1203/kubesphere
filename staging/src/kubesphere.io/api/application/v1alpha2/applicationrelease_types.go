@@ -54,6 +54,8 @@ type ApplicationReleaseStatus struct {
 	// current release spec hash
 	// This is used to compare whether the spec has been modified to determine if an upgrade is needed.
 	SpecHash string `json:"specHash,omitempty"`
+	// JobName for installation and upgrade
+	JobName string `json:"jobName,omitempty"`
 	// deploy status list of history, which will store at most 10 state
 	DeployStatus []ApplicationReleaseDeployStatus `json:"deployStatus,omitempty"`
 	// last update time
