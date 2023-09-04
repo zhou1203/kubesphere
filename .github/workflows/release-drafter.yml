@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+      - kse-3.x
+      - ksc
 
 jobs:
   update_release_draft:
