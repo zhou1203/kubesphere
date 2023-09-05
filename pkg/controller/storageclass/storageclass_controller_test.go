@@ -83,7 +83,7 @@ func Test(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(tt.objs...).Build()
 			reconciler := &Reconciler{}
-			reconciler.InjectClient(fakeClient)
+			reconciler.Client = fakeClient
 
 			if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: tt.req}); tt.isErr != (err != nil) {
 				t.Errorf("%s Reconcile() unexpected error: %v", tt.name, err)

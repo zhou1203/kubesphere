@@ -18,7 +18,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/go-logr/logr"
@@ -27,11 +26,11 @@ import (
 	"k8s.io/klog/v2"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -80,32 +79,24 @@ func (r *CategoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(categoryController)
 	r.recorder = mgr.GetEventRecorderFor(categoryController)
-	ctr, err := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		Named(categoryController).
 		For(&corev1alpha1.Category{}).
-		Build(r)
-
-	if err != nil {
-		return fmt.Errorf("failed to setup %s: %s", categoryController, err)
-	}
-
-	err = ctr.Watch(&source.Kind{Type: &corev1alpha1.Extension{}},
-		handler.EnqueueRequestsFromMapFunc(func(object client.Object) []reconcile.Request {
-			var requests []reconcile.Request
-			extension := object.(*corev1alpha1.Extension)
-			if category := extension.Labels[corev1alpha1.CategoryLabel]; category != "" {
-				requests = append(requests, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name: category,
-					},
-				})
-			}
-			return requests
-		}),
-		predicate.LabelChangedPredicate{},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to setup %s: %s", categoryController, err)
-	}
-	return nil
+		Watches(
+			&corev1alpha1.Extension{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+				var requests []reconcile.Request
+				extension := object.(*corev1alpha1.Extension)
+				if category := extension.Labels[corev1alpha1.CategoryLabel]; category != "" {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: category,
+						},
+					})
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.LabelChangedPredicate{}),
+		).
+		Complete(r)
 }

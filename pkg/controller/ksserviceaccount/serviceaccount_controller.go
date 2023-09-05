@@ -141,12 +141,8 @@ func (r *Reconciler) deleteSecretToken(ctx context.Context, sa *corev1alpha1.Ser
 	return nil
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Client = mgr.GetClient()
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
 	}

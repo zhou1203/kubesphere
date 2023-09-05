@@ -9,6 +9,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	telemetryv1alpha1 "kubesphere.io/api/telemetry/v1alpha1"
+
 	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/telemetry/collector"
 )
@@ -58,7 +60,7 @@ func TestCollectRetry(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			tt := &telemetry{
-				client:             fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+				client:             fake.NewClientBuilder().WithScheme(scheme.Scheme).WithStatusSubresource(&telemetryv1alpha1.ClusterInfo{}).Build(),
 				collectors:         tc.collectors,
 				collectRetryPeriod: time.Second,
 				Once:               sync.Once{},
@@ -70,7 +72,5 @@ func TestCollectRetry(t *testing.T) {
 				t.Error(err)
 			}
 		})
-
 	}
-
 }

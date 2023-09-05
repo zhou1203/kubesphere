@@ -173,15 +173,11 @@ func (r *Reconciler) aggregate(ctx context.Context, ruleOwner rbachelper.RuleOwn
 	return nil
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	r.logger = mgr.GetLogger().WithName(controllerName)
+	r.Client = mgr.GetClient()
 
 	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.GlobalRole{}, autoAggregateIndexKey, globalRoleIndexByAnnotation); err != nil {
 		return err

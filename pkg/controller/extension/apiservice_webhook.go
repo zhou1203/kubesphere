@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 )
@@ -15,31 +16,31 @@ type APIServiceWebhook struct {
 	client.Client
 }
 
-func (r *APIServiceWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) error {
+func (r *APIServiceWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	return r.validateAPIService(ctx, obj.(*extensionsv1alpha1.APIService))
 }
 
-func (r *APIServiceWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) error {
+func (r *APIServiceWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	return r.validateAPIService(ctx, newObj.(*extensionsv1alpha1.APIService))
 }
 
-func (r *APIServiceWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) error {
-	return nil
+func (r *APIServiceWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
-func (r *APIServiceWebhook) validateAPIService(ctx context.Context, service *extensionsv1alpha1.APIService) error {
+func (r *APIServiceWebhook) validateAPIService(ctx context.Context, service *extensionsv1alpha1.APIService) (admission.Warnings, error) {
 	apiServices := &extensionsv1alpha1.APIServiceList{}
 	if err := r.Client.List(ctx, apiServices, &client.ListOptions{}); err != nil {
-		return err
+		return nil, err
 	}
 	for _, apiService := range apiServices.Items {
 		if apiService.Name != service.Name &&
 			apiService.Spec.Group == service.Spec.Group &&
 			apiService.Spec.Version == service.Spec.Version {
-			return fmt.Errorf("APIService %s/%s is already exists", service.Spec.Group, service.Spec.Version)
+			return nil, fmt.Errorf("APIService %s/%s is already exists", service.Spec.Group, service.Spec.Version)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (r *APIServiceWebhook) SetupWithManager(mgr ctrl.Manager) error {

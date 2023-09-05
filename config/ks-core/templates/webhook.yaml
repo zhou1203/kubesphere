@@ -14,7 +14,6 @@ metadata:
   name: ks-controller-manager-webhook-cert
 type: Opaque
 
-
 {{ if eq .Values.role "host" }}
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -29,7 +28,7 @@ webhooks:
       service:
         name: ks-controller-manager
         namespace: kubesphere-system
-        path: /validate-email-iam-kubesphere-io-v1beta1
+        path: /validate-iam-kubesphere-io-v1beta1-user
         port: 443
     failurePolicy: Fail
     matchPolicy: Exact
@@ -225,7 +224,7 @@ webhooks:
       service:
         name: ks-controller-manager
         namespace: kubesphere-system
-        path: /mutate-application-kubesphere-io-v1alpha2
+        path: /mutate-application-kubesphere-io-v1alpha2-applicationrelease
         port: 443
     failurePolicy: Fail
     matchPolicy: Exact

@@ -44,6 +44,7 @@ import (
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	"kubesphere.io/utils/helm"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -51,7 +52,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/scheme"
@@ -132,15 +132,6 @@ func (r *InstallPlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.kubeConfig = string(data)
 	}
 
-	ctr, err := ctrl.NewControllerManagedBy(mgr).
-		Named(installPlanController).
-		For(&corev1alpha1.InstallPlan{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
-		Build(r)
-	if err != nil {
-		return kscontroller.FailedToSetup(installPlanController, err)
-	}
-
 	labelSelector, err := predicate.LabelSelectorPredicate(metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{{
 			Key:      corev1alpha1.InstallPlanReferenceLabel,
@@ -150,34 +141,34 @@ func (r *InstallPlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return kscontroller.FailedToSetup(installPlanController, err)
 	}
 
-	err = ctr.Watch(
-		&source.Kind{Type: &batchv1.Job{}},
-		handler.EnqueueRequestsFromMapFunc(
-			func(h client.Object) []reconcile.Request {
-				return []reconcile.Request{{
-					NamespacedName: types.NamespacedName{
-						Name: h.GetLabels()[corev1alpha1.InstallPlanReferenceLabel],
-					}}}
-			}),
-		predicate.And(labelSelector, predicate.Funcs{
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				oldJob := e.ObjectOld.(*batchv1.Job)
-				newJob := e.ObjectNew.(*batchv1.Job)
-				return !reflect.DeepEqual(oldJob.Status, newJob.Status)
-			},
-			CreateFunc: func(e event.CreateEvent) bool {
-				return false
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				return false
-			},
-		}))
-
-	if err != nil {
-		return kscontroller.FailedToSetup(installPlanController, err)
-	}
-
-	return nil
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(installPlanController).
+		For(&corev1alpha1.InstallPlan{}).
+		Watches(
+			&batchv1.Job{},
+			handler.EnqueueRequestsFromMapFunc(
+				func(ctx context.Context, h client.Object) []reconcile.Request {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name: h.GetLabels()[corev1alpha1.InstallPlanReferenceLabel],
+						}}}
+				}),
+			builder.WithPredicates(predicate.And(labelSelector, predicate.Funcs{
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					oldJob := e.ObjectOld.(*batchv1.Job)
+					newJob := e.ObjectNew.(*batchv1.Job)
+					return !reflect.DeepEqual(oldJob.Status, newJob.Status)
+				},
+				CreateFunc: func(e event.CreateEvent) bool {
+					return false
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					return false
+				},
+			})),
+		).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
+		Complete(r)
 }
 
 // reconcileDelete delete the helm release involved and remove finalizer from installplan.

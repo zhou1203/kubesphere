@@ -141,12 +141,9 @@ func (r *Reconciler) getCurrentRevision(item *batchv1.Job) JobRevision {
 	return revision
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Client = mgr.GetClient()
+
 	return builder.
 		ControllerManagedBy(mgr).
 		For(

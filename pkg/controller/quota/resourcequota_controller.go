@@ -76,16 +76,13 @@ type Reconciler struct {
 	scheme *runtime.Scheme
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.logger = ctrl.Log.WithName("controllers").WithName(ControllerName)
 	r.recorder = mgr.GetEventRecorderFor(ControllerName)
 	r.scheme = mgr.GetScheme()
 	r.registry = generic.NewRegistry(install.NewQuotaConfigurationForControllers(mgr.GetClient()).Evaluators())
+	r.Client = mgr.GetClient()
+
 	if r.MaxConcurrentReconciles <= 0 {
 		r.MaxConcurrentReconciles = DefaultMaxConcurrentReconciles
 	}
@@ -117,8 +114,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	realClock := clock.RealClock{}
 	for _, resource := range resources {
-		err := c.Watch(
-			&source.Kind{Type: resource},
+		if err = c.Watch(
+			source.Kind(mgr.GetCache(), resource),
 			handler.EnqueueRequestsFromMapFunc(r.mapper),
 			predicate.Funcs{
 				GenericFunc: func(e event.GenericEvent) bool {
@@ -147,19 +144,17 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 				DeleteFunc: func(e event.DeleteEvent) bool {
 					return true
 				},
-			})
-		if err != nil {
+			}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *Reconciler) mapper(h client.Object) []reconcile.Request {
+func (r *Reconciler) mapper(ctx context.Context, h client.Object) []reconcile.Request {
 	// check if the quota controller can evaluate this kind, if not, ignore it altogether...
 	var result []reconcile.Request
 	evaluators := r.registry.List()
-	ctx := context.TODO()
 	resourceQuotaNames, err := resourceQuotaNamesFor(ctx, r.Client, h.GetNamespace())
 	if err != nil {
 		klog.Errorf("failed to get resource quota names for: %v %T %v, err: %v", h.GetNamespace(), h, h.GetName(), err)

@@ -193,13 +193,9 @@ func (r *Reconciler) deleteRoleBindings(ctx context.Context, group *iamv1beta1.G
 	return nil
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.Client = mgr.GetClient()
 
 	return builder.
 		ControllerManagedBy(mgr).

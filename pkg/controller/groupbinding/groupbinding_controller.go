@@ -162,13 +162,9 @@ func (r *Reconciler) patchUser(ctx context.Context, user *iamv1beta1.User, group
 	return r.Patch(ctx, newUser, patch)
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.Client = mgr.GetClient()
 
 	return builder.
 		ControllerManagedBy(mgr).

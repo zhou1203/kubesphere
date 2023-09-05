@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 )
@@ -16,22 +17,22 @@ type ReverseProxyWebhook struct {
 	client.Client
 }
 
-func (r *ReverseProxyWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) error {
+func (r *ReverseProxyWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	return r.validateReverseProxy(ctx, obj.(*extensionsv1alpha1.ReverseProxy))
 }
 
-func (r *ReverseProxyWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) error {
+func (r *ReverseProxyWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	return r.validateReverseProxy(ctx, newObj.(*extensionsv1alpha1.ReverseProxy))
 }
 
-func (r *ReverseProxyWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) error {
-	return nil
+func (r *ReverseProxyWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
-func (r *ReverseProxyWebhook) validateReverseProxy(ctx context.Context, proxy *extensionsv1alpha1.ReverseProxy) error {
+func (r *ReverseProxyWebhook) validateReverseProxy(ctx context.Context, proxy *extensionsv1alpha1.ReverseProxy) (admission.Warnings, error) {
 	reverseProxies := &extensionsv1alpha1.ReverseProxyList{}
 	if err := r.Client.List(ctx, reverseProxies, &client.ListOptions{}); err != nil {
-		return err
+		return nil, err
 	}
 	for _, reverseProxy := range reverseProxies.Items {
 		if reverseProxy.Name == proxy.Name {
@@ -42,14 +43,14 @@ func (r *ReverseProxyWebhook) validateReverseProxy(ctx context.Context, proxy *e
 			continue
 		}
 		if reverseProxy.Spec.Matcher.Path == proxy.Spec.Matcher.Path {
-			return fmt.Errorf("ReverseProxy %v is already exists", proxy.Spec.Matcher)
+			return nil, fmt.Errorf("ReverseProxy %v is already exists", proxy.Spec.Matcher)
 		}
 		if strings.HasSuffix(reverseProxy.Spec.Matcher.Path, "*") &&
 			strings.HasPrefix(proxy.Spec.Matcher.Path, strings.TrimRight(reverseProxy.Spec.Matcher.Path, "*")) {
-			return fmt.Errorf("ReverseProxy %v is already exists", proxy.Spec.Matcher)
+			return nil, fmt.Errorf("ReverseProxy %v is already exists", proxy.Spec.Matcher)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (r *ReverseProxyWebhook) SetupWithManager(mgr ctrl.Manager) error {

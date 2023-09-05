@@ -151,13 +151,9 @@ func (r *Reconciler) userForLoginRecord(ctx context.Context, loginRecord *iamv1b
 	return user, nil
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.Client = mgr.GetClient()
 
 	return builder.
 		ControllerManagedBy(mgr).

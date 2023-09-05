@@ -4,7 +4,6 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: (unknown)
-  creationTimestamp: null
   name: oauthclients.oauth.kubesphere.io
 spec:
   group: oauth.kubesphere.io

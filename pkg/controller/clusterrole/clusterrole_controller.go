@@ -22,15 +22,12 @@ type Reconciler struct {
 	helper   *rbachelper.Helper
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	r.helper = rbachelper.NewHelper(c)
-	return nil
-}
-
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.Client = mgr.GetClient()
+	r.helper = rbachelper.NewHelper(mgr.GetClient())
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{

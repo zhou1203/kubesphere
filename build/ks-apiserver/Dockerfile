@@ -3,7 +3,7 @@
 # that can be found in the LICENSE file.
 
 # Build
-FROM golang:1.19.4 as build_context
+FROM golang:1.20.7 as build_context
 
 ENV OUTDIR=/out
 RUN mkdir -p ${OUTDIR}/usr/local/bin/
@@ -18,7 +18,7 @@ RUN mv /workspace/bin/cmd/ks-apiserver ${OUTDIR}/usr/local/bin/
 # Final image
 #############
 
-FROM alpine:3.16.2
+FROM alpine:3.18.3
 
 COPY --from=build_context /out/ /
 

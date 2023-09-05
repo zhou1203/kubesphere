@@ -150,17 +150,19 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 		return err
 	}
 
-	mgrOptions := manager.Options{
-		Scheme:  scheme.Scheme,
+	webhookServer := webhook.NewServer(webhook.Options{
 		CertDir: s.WebhookCertDir,
 		Port:    8443,
+	})
+	mgrOptions := manager.Options{
+		Scheme:        scheme.Scheme,
+		WebhookServer: webhookServer,
 	}
 
 	if s.LeaderElect {
 		mgrOptions = manager.Options{
 			Scheme:                  scheme.Scheme,
-			CertDir:                 s.WebhookCertDir,
-			Port:                    8443,
+			WebhookServer:           webhookServer,
 			LeaderElection:          s.LeaderElect,
 			LeaderElectionNamespace: "kubesphere-system",
 			LeaderElectionID:        "ks-controller-manager-leader-election",
@@ -185,23 +187,25 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	}
 
 	// Setup webhooks
-	klog.V(2).Info("setting up webhook server")
-	hookServer := mgr.GetWebhookServer()
-
 	klog.V(2).Info("registering webhooks to the webhook server")
 	if s.IsControllerEnabled("cluster") {
-		hookServer.Register("/validate-cluster-kubesphere-io-v1alpha1", &webhook.Admission{Handler: &cluster.ValidatingHandler{Client: mgr.GetClient()}})
+		if err = cluster.SetupWebhookWithManager(mgr); err != nil {
+			klog.Fatalf("unable to register cluster webhook: %v", err)
+		}
 	}
-	hookServer.Register("/validate-email-iam-kubesphere-io-v1beta1", &webhook.Admission{Handler: &user.EmailValidator{Client: mgr.GetClient()}})
+	if err = user.SetupWebhookWithManager(mgr); err != nil {
+		klog.Fatalf("unable to register user webhook: %v", err)
+	}
+	if err = application.SetupWebhookWithManager(mgr); err != nil {
+		klog.Fatalf("unable to register application webhook: %v", err)
+	}
 
 	resourceQuotaAdmission, err := quota.NewResourceQuotaAdmission(mgr.GetClient(), mgr.GetScheme())
 	if err != nil {
 		klog.Fatalf("unable to create resource quota admission: %v", err)
 	}
-
-	hookServer.Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
-	hookServer.Register("/mutate-application-kubesphere-io-v1alpha2", &webhook.Admission{Handler: &application.InjectorHandler{}})
-	hookServer.Register("/convert", &conversion.Webhook{})
+	mgr.GetWebhookServer().Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
+	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(scheme.Scheme))
 
 	klog.V(0).Info("Starting the controllers.")
 	if err = mgr.Start(ctx); err != nil {

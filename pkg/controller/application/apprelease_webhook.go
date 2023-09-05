@@ -18,42 +18,38 @@ package application
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
+	"fmt"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	appv1alpha2 "kubesphere.io/api/application/v1alpha2"
 )
 
-type InjectorHandler struct {
-	decoder *admission.Decoder
+func SetupWebhookWithManager(mgr ctrl.Manager) error {
+	return builder.WebhookManagedBy(mgr).
+		For(&appv1alpha2.ApplicationRelease{}).
+		WithDefaulter(&applicationAnnotator{}).
+		Complete()
 }
 
-var _ admission.DecoderInjector = &InjectorHandler{}
+type applicationAnnotator struct{}
 
-// InjectDecoder injects the decoder into a InjectorHandler.
-func (h *InjectorHandler) InjectDecoder(d *admission.Decoder) error {
-	h.decoder = d
-	return nil
-}
-
-// Handle handles admission requests.
-func (h *InjectorHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
-	rls := &appv1alpha2.ApplicationRelease{}
-	if err := h.decoder.Decode(req, rls); err != nil {
-		return admission.Errored(http.StatusBadRequest, err)
+func (a *applicationAnnotator) Default(ctx context.Context, obj runtime.Object) error {
+	rls, ok := obj.(*appv1alpha2.ApplicationRelease)
+	if !ok {
+		return fmt.Errorf("expected a ApplicationRelease but got a %T", obj)
+	}
+	req, err := admission.RequestFromContext(ctx)
+	if err != nil {
+		return err
 	}
 
 	if rls.Annotations == nil {
 		rls.Annotations = map[string]string{}
 	}
 	rls.Annotations[appv1alpha2.ReqUserAnnotationKey] = req.UserInfo.Username
-
-	marshaledRls, err := json.Marshal(rls)
-	if err != nil {
-		return admission.Errored(http.StatusInternalServerError, err)
-	}
-
-	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledRls)
+	return nil
 }

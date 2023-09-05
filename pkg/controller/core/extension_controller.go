@@ -27,13 +27,13 @@ import (
 	"k8s.io/client-go/util/retry"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -132,47 +132,37 @@ func (r *ExtensionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 func (r *ExtensionReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.logger = ctrl.Log.WithName("controllers").WithName(extensionController)
-	ctr, err := ctrl.NewControllerManagedBy(mgr).
-		Named(extensionController).
-		For(&corev1alpha1.Extension{}).
-		Build(r)
-
-	if err != nil {
-		return fmt.Errorf("failed to setup %s: %s", extensionController, err)
-	}
-
 	if r.K8sVersion == "" {
 		return fmt.Errorf("failed to setup %s: K8sVersion must not be empty", extensionController)
 	}
-
-	err = ctr.Watch(&source.Kind{Type: &corev1alpha1.ExtensionVersion{}},
-		handler.EnqueueRequestsFromMapFunc(func(object client.Object) []reconcile.Request {
-			var requests []reconcile.Request
-			extensionVersion := object.(*corev1alpha1.ExtensionVersion)
-			extensionName := extensionVersion.Labels[corev1alpha1.ExtensionReferenceLabel]
-			if extensionName != "" {
-				requests = append(requests, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name: extensionName,
-					},
-				})
-			}
-			return requests
-		}),
-		predicate.Funcs{
-			GenericFunc: func(event event.GenericEvent) bool {
-				return false
-			},
-			UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-				return false
-			},
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to setup %s: %s", categoryController, err)
-	}
-
-	return nil
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(extensionController)
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(extensionController).
+		For(&corev1alpha1.Extension{}).
+		Watches(
+			&corev1alpha1.ExtensionVersion{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+				var requests []reconcile.Request
+				extensionVersion := object.(*corev1alpha1.ExtensionVersion)
+				extensionName := extensionVersion.Labels[corev1alpha1.ExtensionReferenceLabel]
+				if extensionName != "" {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: extensionName,
+						},
+					})
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.Funcs{
+				GenericFunc: func(event event.GenericEvent) bool {
+					return false
+				},
+				UpdateFunc: func(updateEvent event.UpdateEvent) bool {
+					return false
+				},
+			}),
+		).
+		Complete(r)
 }

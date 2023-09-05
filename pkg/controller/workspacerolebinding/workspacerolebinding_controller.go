@@ -33,12 +33,12 @@ import (
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
@@ -70,35 +70,25 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
 
-	ctr, err := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		For(&iamv1beta1.WorkspaceRoleBinding{}).
-		Build(r)
-
-	if err != nil {
-		return kscontroller.FailedToSetup(controllerName, err)
-	}
-
-	err = ctr.Watch(
-		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
-		handler.EnqueueRequestsFromMapFunc(r.mapper),
-		predicate.ClusterStatusChangedPredicate{},
-	)
-
-	if err != nil {
-		return kscontroller.FailedToSetup(controllerName, err)
-	}
-	return nil
+		Watches(
+			&clusterv1alpha1.Cluster{},
+			handler.EnqueueRequestsFromMapFunc(r.mapper),
+			builder.WithPredicates(predicate.ClusterStatusChangedPredicate{}),
+		).
+		Complete(r)
 }
 
-func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
+func (r *Reconciler) mapper(ctx context.Context, o client.Object) []reconcile.Request {
 	cluster := o.(*clusterv1alpha1.Cluster)
 	if !clusterutils.IsClusterReady(cluster) {
 		return []reconcile.Request{}
 	}
 	workspaceRoleBindings := &iamv1beta1.WorkspaceRoleBindingList{}
-	if err := r.List(context.Background(), workspaceRoleBindings); err != nil {
+	if err := r.List(ctx, workspaceRoleBindings); err != nil {
 		r.logger.Error(err, "failed to list workspace role bindings")
 		return []reconcile.Request{}
 	}
@@ -106,7 +96,7 @@ func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
 	for _, workspaceRoleBinding := range workspaceRoleBindings.Items {
 		workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
 		workspaceName := workspaceRoleBinding.Labels[tenantv1alpha1.WorkspaceLabel]
-		if err := r.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspaceTemplate); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Name: workspaceName}, workspaceTemplate); err != nil {
 			klog.Errorf("failed to get workspace template %s: %s", workspaceName, err)
 			continue
 		}

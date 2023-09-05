@@ -77,7 +77,7 @@ var _ = Describe("LoginRecord", func() {
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(user, loginRecord).Build()
 
 		reconciler = NewReconciler(time.Hour, 1)
-		reconciler.InjectClient(fakeClient)
+		reconciler.Client = fakeClient
 		reconciler.recorder = record.NewFakeRecorder(2)
 	})
 

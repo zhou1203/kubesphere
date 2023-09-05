@@ -82,14 +82,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	r.kubeconfigOperator = kubeconfig.NewOperator(mgr.GetClient(), r.config)
+	r.Client = mgr.GetClient()
 
 	return builder.
 		ControllerManagedBy(mgr).

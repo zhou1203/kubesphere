@@ -46,7 +46,7 @@ func TestAddAnnotation(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(job).Build()
 
 	reconciler := &Reconciler{}
-	reconciler.InjectClient(fakeClient)
+	reconciler.Client = fakeClient
 
 	tests := []struct {
 		name  string

@@ -19,42 +19,63 @@ package user
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/mail"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 )
 
-type EmailValidator struct {
-	Client  client.Client
-	decoder *admission.Decoder
+func SetupWebhookWithManager(mgr ctrl.Manager) error {
+	return builder.WebhookManagedBy(mgr).
+		For(&iamv1beta1.User{}).
+		WithValidator(&emailValidator{
+			Client: mgr.GetClient(),
+		}).
+		Complete()
 }
 
-func (a *EmailValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
-	user := &iamv1beta1.User{}
-	err := a.decoder.Decode(req, user)
-	if err != nil {
-		return admission.Errored(http.StatusBadRequest, err)
+type emailValidator struct {
+	client.Client
+}
+
+// validate admits a pod if a specific annotation exists.
+func (v *emailValidator) validate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	user, ok := obj.(*iamv1beta1.User)
+	if !ok {
+		return nil, fmt.Errorf("expected a User but got a %T", obj)
 	}
 
 	allUsers := iamv1beta1.UserList{}
-	if err = a.Client.List(ctx, &allUsers, &client.ListOptions{}); err != nil {
-		return admission.Errored(http.StatusInternalServerError, err)
+	if err := v.Client.List(ctx, &allUsers, &client.ListOptions{}); err != nil {
+		return nil, err
 	}
 
 	if _, err := mail.ParseAddress(user.Spec.Email); user.Spec.Email != "" && err != nil {
-		return admission.Errored(http.StatusBadRequest, fmt.Errorf("invalid email address:%s", user.Spec.Email))
+		return nil, fmt.Errorf("invalid email address:%s", user.Spec.Email)
 	}
 
 	alreadyExist := emailAlreadyExist(allUsers, user)
 	if alreadyExist {
-		return admission.Errored(http.StatusConflict, fmt.Errorf("user email: %s already exists", user.Spec.Email))
+		return nil, fmt.Errorf("user email: %s already exists", user.Spec.Email)
 	}
+	return nil, nil
+}
 
-	return admission.Allowed("")
+func (v *emailValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	return v.validate(ctx, obj)
+}
+
+func (v *emailValidator) ValidateUpdate(ctx context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
+	return v.validate(ctx, newObj)
+}
+
+func (v *emailValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	return v.validate(ctx, obj)
 }
 
 func emailAlreadyExist(users iamv1beta1.UserList, user *iamv1beta1.User) bool {
@@ -68,15 +89,4 @@ func emailAlreadyExist(users iamv1beta1.UserList, user *iamv1beta1.User) bool {
 		}
 	}
 	return false
-}
-
-// InjectDecoder injects the decoder.
-func (a *EmailValidator) InjectDecoder(d *admission.Decoder) error {
-	a.decoder = d
-	return nil
-}
-
-func (a *EmailValidator) InjectClient(c client.Client) error {
-	a.Client = c
-	return nil
 }

@@ -63,14 +63,10 @@ type ResourceQuotaAdmission struct {
 }
 
 func NewResourceQuotaAdmission(client client.Client, scheme *runtime.Scheme) (webhook.AdmissionHandler, error) {
-	decoder, err := admission.NewDecoder(scheme)
-	if err != nil {
-		return nil, err
-	}
 	return &ResourceQuotaAdmission{
 		client:      client,
 		lockFactory: NewDefaultLockFactory(),
-		decoder:     decoder,
+		decoder:     admission.NewDecoder(scheme),
 		registry:    generic.NewRegistry(install.NewQuotaConfigurationForAdmission().Evaluators()),
 	}, nil
 }

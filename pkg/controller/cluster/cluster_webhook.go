@@ -18,68 +18,66 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net/http"
 
-	v1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 )
 
-type ValidatingHandler struct {
-	Client  client.Client
-	decoder *admission.Decoder
+func SetupWebhookWithManager(mgr ctrl.Manager) error {
+	return builder.WebhookManagedBy(mgr).
+		For(&clusterv1alpha1.Cluster{}).
+		WithValidator(&clusterValidator{}).
+		Complete()
 }
 
-var _ admission.DecoderInjector = &ValidatingHandler{}
+type clusterValidator struct{}
 
-// InjectDecoder injects the decoder into a ValidatingHandler.
-func (h *ValidatingHandler) InjectDecoder(d *admission.Decoder) error {
-	h.decoder = d
-	return nil
+func (v *clusterValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
-// Handle handles admission requests.
-func (h *ValidatingHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
-	if req.Operation != v1.Update {
-		return admission.Allowed("")
+func (v *clusterValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	oldCluster, ok := oldObj.(*clusterv1alpha1.Cluster)
+	if !ok {
+		return nil, fmt.Errorf("expected a Cluster but got a %T", oldObj)
 	}
-
-	newCluster := &clusterv1alpha1.Cluster{}
-	if err := h.decoder.DecodeRaw(req.Object, newCluster); err != nil {
-		return admission.Errored(http.StatusBadRequest, err)
-	}
-
-	oldCluster := &clusterv1alpha1.Cluster{}
-	if err := h.decoder.DecodeRaw(req.OldObject, oldCluster); err != nil {
-		return admission.Errored(http.StatusBadRequest, err)
+	newCluster, ok := newObj.(*clusterv1alpha1.Cluster)
+	if !ok {
+		return nil, fmt.Errorf("expected a Cluster but got a %T", newObj)
 	}
 
 	// The cluster created for the first time has no status information
 	if oldCluster.Status.UID == "" {
-		return admission.Allowed("")
+		return nil, nil
 	}
 
 	clusterConfig, err := clientcmd.RESTConfigFromKubeConfig(newCluster.Spec.Connection.KubeConfig)
 	if err != nil {
-		return admission.Denied(fmt.Sprintf("failed to load cluster config for %s: %s", newCluster.Name, err))
+		return nil, fmt.Errorf("failed to load cluster config for %s: %s", newCluster.Name, err)
 	}
 	clusterClient, err := kubernetes.NewForConfig(clusterConfig)
 	if err != nil {
-		return admission.Denied(err.Error())
+		return nil, err
 	}
 	kubeSystem, err := clusterClient.CoreV1().Namespaces().Get(ctx, metav1.NamespaceSystem, metav1.GetOptions{})
 	if err != nil {
-		return admission.Denied(err.Error())
+		return nil, err
 	}
-
 	if oldCluster.Status.UID != kubeSystem.UID {
-		return admission.Denied("this kubeconfig corresponds to a different cluster than the previous one, you need to make sure that kubeconfig is not from another cluster")
+		return nil, errors.New("this kubeconfig corresponds to a different cluster than the previous one, you need to make sure that kubeconfig is not from another cluster")
 	}
-	return admission.Allowed("")
+	return nil, nil
+}
+
+func (v *clusterValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }

@@ -19,13 +19,13 @@ import (
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	marketplacev1alpha1 "kubesphere.io/api/marketplace/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models/marketplace"
@@ -99,78 +99,70 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.Add(r); err != nil {
 		return err
 	}
-	ctr, err := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		Named(marketplaceController).
 		For(&corev1alpha1.Extension{}).
-		Build(r)
-
-	if err != nil {
-		return fmt.Errorf("failed to setup %s: %s", marketplaceController, err)
-	}
-	err = ctr.Watch(&source.Kind{Type: &corev1.Secret{}},
-		handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
-			requests := make([]reconcile.Request, 0)
-			secret := obj.(*corev1.Secret)
-			options := &marketplace.Options{}
-			if err := yaml.NewDecoder(bytes.NewReader(secret.Data[marketplace.ConfigurationFileKey])).Decode(options); err != nil {
-				r.logger.Error(err, "failed to decode marketplace configuration")
-				return requests
-			}
-			extensions := &corev1alpha1.ExtensionList{}
-			if err := r.List(context.Background(), extensions, client.MatchingLabels{corev1alpha1.RepositoryReferenceLabel: options.RepositorySyncOptions.RepoName}); err != nil {
-				r.logger.Error(err, "failed to list extensions")
-				return requests
-			}
-			for _, extension := range extensions.Items {
-				requests = append(requests, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name: extension.Name,
-					},
-				})
-			}
-			return requests
-		}),
-		predicate.And(predicate.NewPredicateFuncs(func(object client.Object) bool {
-			if object.GetNamespace() == constants.KubeSphereNamespace && object.GetName() == marketplace.ConfigurationSecretName {
-				return true
-			}
-			return false
-		}), predicate.Funcs{
-			GenericFunc: func(genericEvent event.GenericEvent) bool {
-				return false
-			},
-			CreateFunc: func(event event.CreateEvent) bool {
-				return false
-			},
-			UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-				secretOld := updateEvent.ObjectOld.(*corev1.Secret)
-				secretNew := updateEvent.ObjectNew.(*corev1.Secret)
-
-				dataOld := secretOld.Data[marketplace.ConfigurationFileKey]
-				dataNew := secretNew.Data[marketplace.ConfigurationFileKey]
-
-				optionsOld := &marketplace.Options{}
-				if err := yaml.NewDecoder(bytes.NewReader(dataOld)).Decode(optionsOld); err != nil {
-					return false
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				requests := make([]reconcile.Request, 0)
+				secret := obj.(*corev1.Secret)
+				options := &marketplace.Options{}
+				if err := yaml.NewDecoder(bytes.NewReader(secret.Data[marketplace.ConfigurationFileKey])).Decode(options); err != nil {
+					r.logger.Error(err, "failed to decode marketplace configuration")
+					return requests
 				}
-
-				optionsNew := &marketplace.Options{}
-				if err := yaml.NewDecoder(bytes.NewReader(dataNew)).Decode(optionsNew); err != nil {
-					return false
+				extensions := &corev1alpha1.ExtensionList{}
+				if err := r.List(ctx, extensions, client.MatchingLabels{corev1alpha1.RepositoryReferenceLabel: options.RepositorySyncOptions.RepoName}); err != nil {
+					r.logger.Error(err, "failed to list extensions")
+					return requests
 				}
-
-				return !reflect.DeepEqual(optionsNew.Account, optionsOld.Account)
-			},
-			DeleteFunc: func(deleteEvent event.DeleteEvent) bool {
+				for _, extension := range extensions.Items {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: extension.Name,
+						},
+					})
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.And(predicate.NewPredicateFuncs(func(object client.Object) bool {
+				if object.GetNamespace() == constants.KubeSphereNamespace && object.GetName() == marketplace.ConfigurationSecretName {
+					return true
+				}
 				return false
-			},
-		}))
+			}), predicate.Funcs{
+				GenericFunc: func(genericEvent event.GenericEvent) bool {
+					return false
+				},
+				CreateFunc: func(event event.CreateEvent) bool {
+					return false
+				},
+				UpdateFunc: func(updateEvent event.UpdateEvent) bool {
+					secretOld := updateEvent.ObjectOld.(*corev1.Secret)
+					secretNew := updateEvent.ObjectNew.(*corev1.Secret)
 
-	if err != nil {
-		return fmt.Errorf("failed to setup %s: %s", marketplaceController, err)
-	}
+					dataOld := secretOld.Data[marketplace.ConfigurationFileKey]
+					dataNew := secretNew.Data[marketplace.ConfigurationFileKey]
 
-	return nil
+					optionsOld := &marketplace.Options{}
+					if err := yaml.NewDecoder(bytes.NewReader(dataOld)).Decode(optionsOld); err != nil {
+						return false
+					}
+
+					optionsNew := &marketplace.Options{}
+					if err := yaml.NewDecoder(bytes.NewReader(dataNew)).Decode(optionsNew); err != nil {
+						return false
+					}
+
+					return !reflect.DeepEqual(optionsNew.Account, optionsOld.Account)
+				},
+				DeleteFunc: func(deleteEvent event.DeleteEvent) bool {
+					return false
+				},
+			})),
+		).
+		Complete(r)
 }
 
 func max(a time.Duration, b time.Duration) time.Duration {

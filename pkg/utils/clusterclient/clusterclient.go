@@ -118,10 +118,6 @@ func (c *clusterClients) addCluster(obj interface{}) (*ClusterClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	transport, err := rest.TransportFor(restConfig)
-	if err != nil {
-		return nil, err
-	}
 	kubernetesClient, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
 		return nil, err
@@ -131,21 +127,18 @@ func (c *clusterClients) addCluster(obj interface{}) (*ClusterClient, error) {
 		return nil, err
 	}
 
-	mapper, err := apiutil.NewDynamicRESTMapper(restConfig)
+	httpClient, err := rest.HTTPClientFor(restConfig)
 	if err != nil {
 		return nil, err
 	}
-	writeClient, err := runtimeclient.New(restConfig, runtimeclient.Options{
-		Scheme: scheme.Scheme,
-		Mapper: mapper,
-	})
+	mapper, err := apiutil.NewDynamicRESTMapper(restConfig, httpClient)
 	if err != nil {
 		return nil, err
 	}
-
 	cacheClient, err := runtimecache.New(restConfig, runtimecache.Options{
-		Scheme: scheme.Scheme,
-		Mapper: mapper,
+		HTTPClient: httpClient,
+		Scheme:     scheme.Scheme,
+		Mapper:     mapper,
 	})
 	if err != nil {
 		return nil, err
@@ -155,9 +148,14 @@ func (c *clusterClients) addCluster(obj interface{}) (*ClusterClient, error) {
 		return nil, errors.New("WaitForCacheSync failed")
 	}
 
-	client, err := runtimeclient.NewDelegatingClient(runtimeclient.NewDelegatingClientInput{
-		CacheReader: cacheClient,
-		Client:      writeClient,
+	client, err := runtimeclient.New(restConfig, runtimeclient.Options{
+		HTTPClient: httpClient,
+		Scheme:     scheme.Scheme,
+		Mapper:     mapper,
+		Cache: &runtimeclient.CacheOptions{
+			Reader:       cacheClient,
+			Unstructured: true,
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -168,7 +166,7 @@ func (c *clusterClients) addCluster(obj interface{}) (*ClusterClient, error) {
 		KubeSphereURL:     kubesphereEndpoint,
 		KubernetesVersion: serverVersion.GitVersion,
 		RestConfig:        restConfig,
-		Transport:         transport,
+		Transport:         httpClient.Transport,
 		Client:            client,
 		KubernetesClient:  kubernetesClient,
 	}

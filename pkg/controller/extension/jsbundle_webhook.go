@@ -29,37 +29,37 @@ func (r *JSBundleWebhook) Default(ctx context.Context, obj runtime.Object) error
 	return nil
 }
 
-func (r *JSBundleWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) error {
+func (r *JSBundleWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	return r.validateJSBundle(ctx, obj.(*extensionsv1alpha1.JSBundle))
 }
 
-func (r *JSBundleWebhook) ValidateUpdate(ctx context.Context, _, newObj runtime.Object) error {
+func (r *JSBundleWebhook) ValidateUpdate(ctx context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
 	return r.validateJSBundle(ctx, newObj.(*extensionsv1alpha1.JSBundle))
 }
 
-func (r *JSBundleWebhook) ValidateDelete(_ context.Context, _ runtime.Object) error {
-	return nil
+func (r *JSBundleWebhook) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
-func (r *JSBundleWebhook) validateJSBundle(ctx context.Context, jsBundle *extensionsv1alpha1.JSBundle) error {
+func (r *JSBundleWebhook) validateJSBundle(ctx context.Context, jsBundle *extensionsv1alpha1.JSBundle) (admission.Warnings, error) {
 	if jsBundle.Status.Link == "" {
-		return nil
+		return nil, nil
 	}
 	extensionName := jsBundle.Labels[v1alpha1.ExtensionReferenceLabel]
 	if extensionName != "" && !strings.HasPrefix(jsBundle.Status.Link, fmt.Sprintf("/dist/%s", extensionName)) {
-		return fmt.Errorf("the prefix of status.link must be in the format /dist/%s/", extensionName)
+		return nil, fmt.Errorf("the prefix of status.link must be in the format /dist/%s/", extensionName)
 	}
 	jsBundles := &extensionsv1alpha1.JSBundleList{}
 	if err := r.Client.List(ctx, jsBundles, &client.ListOptions{}); err != nil {
-		return err
+		return nil, err
 	}
 	for _, item := range jsBundles.Items {
 		if item.Name != jsBundle.Name &&
 			item.Status.Link == jsBundle.Status.Link {
-			return fmt.Errorf("JSBundle %s is already exists", jsBundle.Status.Link)
+			return nil, fmt.Errorf("JSBundle %s is already exists", jsBundle.Status.Link)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (r *JSBundleWebhook) SetupWithManager(mgr ctrl.Manager) error {

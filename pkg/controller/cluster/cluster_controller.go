@@ -103,14 +103,10 @@ func NewReconciler(hostConfig *rest.Config, clusterClientSet clusterclient.Inter
 	}, nil
 }
 
-// InjectClient is used to inject the client into Reconciler.
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
 // SetupWithManager setups the Reconciler with manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Client = mgr.GetClient()
+	// Register timed tasker
 	mgr.Add(r)
 	return builder.
 		ControllerManagedBy(mgr).

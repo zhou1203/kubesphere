@@ -38,7 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
@@ -68,32 +67,26 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	r.logger = mgr.GetLogger().WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	ctr, err := builder.
+	return builder.
 		ControllerManagedBy(mgr).
 		For(&iamv1beta1.GlobalRoleBinding{}).
+		Watches(
+			&clusterv1alpha1.Cluster{},
+			handler.EnqueueRequestsFromMapFunc(r.mapper),
+			builder.WithPredicates(predicate.ClusterStatusChangedPredicate{}),
+		).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		Named(controllerName).
-		Build(r)
-	if err != nil {
-		return kscontroller.FailedToSetup(controllerName, err)
-	}
-	err = ctr.Watch(
-		&source.Kind{Type: &clusterv1alpha1.Cluster{}},
-		handler.EnqueueRequestsFromMapFunc(r.mapper),
-		predicate.ClusterStatusChangedPredicate{})
-	if err != nil {
-		return kscontroller.FailedToSetup(controllerName, err)
-	}
-	return nil
+		Complete(r)
 }
 
-func (r *Reconciler) mapper(o client.Object) []reconcile.Request {
+func (r *Reconciler) mapper(ctx context.Context, o client.Object) []reconcile.Request {
 	cluster := o.(*clusterv1alpha1.Cluster)
 	if !clusterutils.IsClusterReady(cluster) {
 		return []reconcile.Request{}
 	}
 	globalRoleBindings := &iamv1beta1.GlobalRoleBindingList{}
-	if err := r.List(context.Background(), globalRoleBindings); err != nil {
+	if err := r.List(ctx, globalRoleBindings); err != nil {
 		r.logger.Error(err, "failed to list global role bindings")
 		return []reconcile.Request{}
 	}
