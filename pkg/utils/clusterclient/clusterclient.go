@@ -37,7 +37,6 @@ import (
 
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 
-	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
@@ -46,8 +45,6 @@ type Interface interface {
 	ListClusters(ctx context.Context) ([]clusterv1alpha1.Cluster, error)
 	GetClusterClient(string) (*ClusterClient, error)
 	GetRuntimeClient(string) (runtimeclient.Client, error)
-	IsClusterReady(cluster *clusterv1alpha1.Cluster) bool
-	IsHostCluster(cluster *clusterv1alpha1.Cluster) bool
 }
 
 type ClusterClient struct {
@@ -219,12 +216,4 @@ func (c *clusterClients) GetRuntimeClient(name string) (runtimeclient.Client, er
 		return nil, err
 	}
 	return clusterClient.Client, nil
-}
-
-func (c *clusterClients) IsClusterReady(cluster *clusterv1alpha1.Cluster) bool {
-	return clusterutils.IsClusterReady(cluster)
-}
-
-func (c *clusterClients) IsHostCluster(cluster *clusterv1alpha1.Cluster) bool {
-	return clusterutils.IsHostCluster(cluster)
 }

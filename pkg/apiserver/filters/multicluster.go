@@ -29,6 +29,7 @@ import (
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
+	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
@@ -74,13 +75,13 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 	}
 
 	// request cluster is host cluster, no need go through agent
-	if m.IsHostCluster(cluster) {
+	if clusterutils.IsHostCluster(cluster) {
 		req.URL.Path = strings.Replace(req.URL.Path, fmt.Sprintf("/clusters/%s", info.Cluster), "", 1)
 		m.next.ServeHTTP(w, req)
 		return
 	}
 
-	if !m.IsClusterReady(cluster) {
+	if clusterutils.IsClusterReady(cluster) {
 		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(fmt.Sprintf("cluster %s is not ready", cluster.Name)), w)
 		return
 	}

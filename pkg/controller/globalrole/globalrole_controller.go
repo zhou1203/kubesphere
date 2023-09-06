@@ -202,7 +202,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, globalRole *iamv1beta
 }
 
 func (r *Reconciler) syncGlobalRole(ctx context.Context, cluster clusterv1alpha1.Cluster, globalRole *iamv1beta1.GlobalRole) error {
-	if r.ClusterClientSet.IsHostCluster(&cluster) {
+	if clusterutils.IsHostCluster(&cluster) {
 		return nil
 	}
 	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)

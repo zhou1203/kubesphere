@@ -180,7 +180,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, user *iamv1beta1.User
 }
 
 func (r *Reconciler) syncUser(ctx context.Context, cluster clusterv1alpha1.Cluster, user *iamv1beta1.User) error {
-	if r.ClusterClientSet.IsHostCluster(&cluster) {
+	if clusterutils.IsHostCluster(&cluster) {
 		return nil
 	}
 	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
