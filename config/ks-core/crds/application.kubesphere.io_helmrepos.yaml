@@ -55,8 +55,6 @@ spec:
               credential:
                 description: helm repo credential
                 properties:
-                  accessKeyID:
-                    type: string
                   caFile:
                     description: verify certificates of HTTPS-enabled servers using
                       this CA bundle
@@ -75,8 +73,6 @@ spec:
                   password:
                     description: chart repository password
                     type: string
-                  secretAccessKey:
-                    type: string
                   username:
                     description: chart repository username
                     type: string
@@ -94,11 +90,6 @@ spec:
               url:
                 description: helm repo url
                 type: string
-              version:
-                description: expected repo version, when this version is not equal
-                  status.version, the repo need upgrade this filed should be modified
-                  when any filed of the spec modified.
-                type: integer
             required:
             - name
             - url
@@ -106,12 +97,13 @@ spec:
           status:
             description: HelmRepoStatus defines the observed state of HelmRepo
             properties:
-              data:
-                description: repo index
-                type: string
               lastUpdateTime:
                 description: status last update time
                 format: date-time
+                type: string
+              specHash:
+                description: current release spec hash This is used to compare whether
+                  the spec has been modified to determine sync is needed.
                 type: string
               state:
                 description: current state of the repo, successful, failed or syncing
@@ -136,10 +128,6 @@ spec:
                   - syncTime
                   type: object
                 type: array
-              version:
-                description: if status.version!=spec.Version, we need sync the repo
-                  now
-                type: integer
             type: object
         type: object
     served: true

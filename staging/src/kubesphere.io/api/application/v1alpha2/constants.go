@@ -32,7 +32,6 @@ const (
 	// repo state
 	RepoStateSuccessful = "successful"
 	RepoStateFailed     = "failed"
-	RepoStateSyncing    = "syncing"
 
 	// app release state
 	AppReleaseStatusActive      = "active"
@@ -48,16 +47,16 @@ const (
 	AttachmentTypeIcon       = "icon"
 
 	AppStoreSuffix      = "-store"
-	AppIdPrefix         = "app-"
-	HelmRepoIdPrefix    = "repo-"
+	AppIDPrefix         = "app-"
+	HelmRepoIDPrefix    = "repo-"
 	BuiltinRepoPrefix   = "builtin-"
-	AppVersionIdPrefix  = "appv-"
-	CategoryIdPrefix    = "ctg-"
+	AppVersionIDPrefix  = "appv-"
+	CategoryIDPrefix    = "ctg-"
 	AppAttachmentPrefix = "att-"
 	AppReleasePrefix    = "rls-"
 	UncategorizedName   = "uncategorized"
-	UncategorizedId     = "ctg-uncategorized"
-	AppStoreRepoId      = "repo-helm"
+	UncategorizedID     = "ctg-uncategorized"
+	AppStoreRepoID      = "repo-helm"
 
 	AppInstance    = "app.kubesphere.io/instance"
 	AppReleaseName = "app.kubesphere.io/app-release-name"

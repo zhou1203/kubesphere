@@ -67,7 +67,7 @@ type ApplicationReleaseStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=apprls
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Release Name",type=string,JSONPath=".spec.DisplayName.en"
+// +kubebuilder:printcolumn:name="Release Name",type=string,JSONPath=".spec.displayName.en"
 // +kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.kubesphere\\.io/cluster"
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/namespace"

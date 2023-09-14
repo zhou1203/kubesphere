@@ -195,6 +195,10 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "apprelease-helminstaller", &application.AppReleaseHelmInstallerReconciler{KubeConfigPath: cmOptions.KubernetesOptions.KubeConfig})
 	}
 
+	if cmOptions.IsControllerEnabled("apprepo") {
+		addControllerWithSetup(mgr, "apprepo", &application.HelmRepoReconciler{})
+	}
+
 	// log all controllers process result
 	for _, name := range allControllers {
 		if cmOptions.IsControllerEnabled(name) {

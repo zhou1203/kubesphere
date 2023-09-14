@@ -9,3 +9,10 @@ const (
 	LanguageCodeZh      = "zh"
 	DefaultLanguageCode = LanguageCodeEn
 )
+
+func NewLocales(enVal, zhVal string) Locales {
+	return Locales{
+		LanguageCodeEn: LocaleString(enVal),
+		LanguageCodeZh: LocaleString(zhVal),
+	}
+}

@@ -47,7 +47,7 @@ type ApplicationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=app
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="application name",type=string,JSONPath=`.spec.DisplayName.en`
+// +kubebuilder:printcolumn:name="application name",type=string,JSONPath=`.spec.displayName.en`
 // +kubebuilder:printcolumn:name="workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"

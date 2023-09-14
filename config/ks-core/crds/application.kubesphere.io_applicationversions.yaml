@@ -17,7 +17,7 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.DisplayName.en
+    - jsonPath: .spec.displayName.en
       name: application name
       type: string
     - jsonPath: .status.state

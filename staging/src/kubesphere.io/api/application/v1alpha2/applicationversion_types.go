@@ -52,7 +52,7 @@ type ApplicationVersionStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=appver
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="application name",type=string,JSONPath=`.spec.DisplayName.en`
+// +kubebuilder:printcolumn:name="application name",type=string,JSONPath=`.spec.displayName.en`
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 

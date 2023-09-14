@@ -17,6 +17,10 @@ limitations under the License.
 package v1alpha2
 
 import (
+	"crypto/md5"
+	"encoding/json"
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kubesphere.io/api/constants"
@@ -35,13 +39,6 @@ type HelmRepoCredential struct {
 	CAFile string `json:"caFile,omitempty"`
 	// skip tls certificate checks for the repository, default is ture
 	InsecureSkipTLSVerify *bool `json:"insecureSkipTLSVerify,omitempty"`
-
-	S3Config `json:",inline"`
-}
-
-type S3Config struct {
-	AccessKeyID     string `json:"accessKeyID,omitempty"`
-	SecretAccessKey string `json:"secretAccessKey,omitempty"`
 }
 
 // HelmRepoSpec defines the desired state of HelmRepo
@@ -56,9 +53,6 @@ type HelmRepoSpec struct {
 	Description string `json:"description,omitempty"`
 	// sync period in seconds, no sync when SyncPeriod=0, the minimum SyncPeriod is 180s
 	SyncPeriod int `json:"syncPeriod,omitempty"`
-	// expected repo version, when this version is not equal status.version, the repo need upgrade
-	// this filed should be modified when any filed of the spec modified.
-	Version int `json:"version,omitempty"`
 }
 
 type HelmRepoSyncState struct {
@@ -71,16 +65,15 @@ type HelmRepoSyncState struct {
 
 // HelmRepoStatus defines the observed state of HelmRepo
 type HelmRepoStatus struct {
-	// repo index
-	Data string `json:"data,omitempty"`
 	// status last update time
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
 	// current state of the repo, successful, failed or syncing
 	State string `json:"state,omitempty"`
 	// sync state list of history, which will store at most 10 state
 	SyncState []HelmRepoSyncState `json:"syncState,omitempty"`
-	// if status.version!=spec.Version, we need sync the repo now
-	Version int `json:"version,omitempty"`
+	// current release spec hash
+	// This is used to compare whether the spec has been modified to determine sync is needed.
+	SpecHash string `json:"specHash,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -116,4 +109,9 @@ func (in *HelmRepo) GetWorkspace() string {
 
 func (in *HelmRepo) GetCreator() string {
 	return getValue(in.Annotations, constants.CreatorAnnotationKey)
+}
+
+func (in *HelmRepo) HashSpec() string {
+	specJSON, _ := json.Marshal(in.Spec)
+	return fmt.Sprintf("%x", md5.Sum(specJSON))
 }
