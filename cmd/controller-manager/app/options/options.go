@@ -42,9 +42,11 @@ type KubeSphereControllerManagerOptions struct {
 	AuthenticationOptions *authentication.Options
 	MultiClusterOptions   *multicluster.Options
 	TelemetryOptions      *telemetry.Options
-	LeaderElect           bool
-	LeaderElection        *leaderelection.LeaderElectionConfig
-	WebhookCertDir        string
+	// HelmImage defines the Pod image used by the helm executor.
+	HelmImage      string `json:"helmImage,omitempty" yaml:"helmImage,omitempty"`
+	LeaderElect    bool
+	LeaderElection *leaderelection.LeaderElectionConfig
+	WebhookCertDir string
 
 	// KubeSphere is using sigs.k8s.io/application as fundamental object to implement Application Management.
 	// There are other projects also built on sigs.k8s.io/application, when KubeSphere installed alongside
@@ -69,10 +71,11 @@ type KubeSphereControllerManagerOptions struct {
 }
 
 func NewKubeSphereControllerManagerOptions() *KubeSphereControllerManagerOptions {
-	s := &KubeSphereControllerManagerOptions{
+	return &KubeSphereControllerManagerOptions{
 		KubernetesOptions:     k8s.NewKubernetesOptions(),
 		MultiClusterOptions:   multicluster.NewOptions(),
 		AuthenticationOptions: authentication.NewOptions(),
+		HelmImage:             "kubesphere/helm:v3.12.1",
 		LeaderElection: &leaderelection.LeaderElectionConfig{
 			LeaseDuration: 30 * time.Second,
 			RenewDeadline: 15 * time.Second,
@@ -83,8 +86,6 @@ func NewKubeSphereControllerManagerOptions() *KubeSphereControllerManagerOptions
 		ApplicationSelector: "",
 		ControllerGates:     []string{"*"},
 	}
-
-	return s
 }
 
 func (s *KubeSphereControllerManagerOptions) Flags(allControllerNameSelectors []string) cliflag.NamedFlagSets {
@@ -113,6 +114,8 @@ func (s *KubeSphereControllerManagerOptions) Flags(allControllerNameSelectors []
 		"A list of controllers to enable. '*' enables all on-by-default controllers, 'foo' enables the controller "+
 		"named 'foo', '-foo' disables the controller named 'foo'.\nAll controllers: %s",
 		strings.Join(allControllerNameSelectors, ", ")))
+
+	gfs.StringVar(&s.HelmImage, "helm-image", s.HelmImage, "The Pod image used by the helm executor.")
 
 	gfs.BoolVar(&s.DebugMode, "debug", false, "Don't enable this if you don't know what it means.")
 

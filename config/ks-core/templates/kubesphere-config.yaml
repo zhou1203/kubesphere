@@ -33,4 +33,5 @@ data:
 {{- end }}
     multicluster:
       clusterRole: {{ .Values.role }}
+    helmImage: {{ template "helm.image" . }}
 {{- end }}

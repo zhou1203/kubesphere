@@ -53,6 +53,7 @@ func NewControllerManagerCommand() *cobra.Command {
 			AuthenticationOptions: conf.AuthenticationOptions,
 			MultiClusterOptions:   conf.MultiClusterOptions,
 			TelemetryOptions:      conf.TelemetryOptions,
+			HelmImage:             conf.HelmImage,
 			LeaderElection:        s.LeaderElection,
 			LeaderElect:           s.LeaderElect,
 			WebhookCertDir:        s.WebhookCertDir,

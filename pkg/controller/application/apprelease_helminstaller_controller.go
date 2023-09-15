@@ -18,28 +18,19 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
-	"errors"
-
+	helmrelease "helm.sh/helm/v3/pkg/release"
 	batchv1 "k8s.io/api/batch/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
-	appv1alpha2 "kubesphere.io/api/application/v1alpha2"
-	"kubesphere.io/utils/helm"
-
-	helmrelease "helm.sh/helm/v3/pkg/release"
-
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,6 +38,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	appv1alpha2 "kubesphere.io/api/application/v1alpha2"
+	"kubesphere.io/utils/helm"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 const (
@@ -65,6 +62,7 @@ type AppReleaseHelmInstallerReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
 	clusterClientSet clusterclient.Interface
+	HelmImage        string
 }
 
 // Reconcile reads that state of the cluster for a helmreleases object and makes changes based on the state read
@@ -139,7 +137,9 @@ func (r *AppReleaseHelmInstallerReconciler) sync(ctx context.Context, apprls *ap
 	r.generateRoleBindingIfNotExists(ctx, targetNamespace)
 
 	executor, err := helm.NewExecutor(r.kubeConfig, targetNamespace, releaseName,
-		helm.SetJobLabels(labels.Set{appv1alpha2.AppReleaseReferenceLabelKey: apprls.Name}))
+		helm.SetJobLabels(labels.Set{appv1alpha2.AppReleaseReferenceLabelKey: apprls.Name}),
+		helm.SetHelmImage(r.HelmImage),
+	)
 	if err != nil {
 		klog.Error(err, "failed to create executor")
 		return err

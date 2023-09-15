@@ -192,7 +192,10 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	}
 
 	if cmOptions.IsControllerEnabled("apprelease-helminstaller") {
-		addControllerWithSetup(mgr, "apprelease-helminstaller", &application.AppReleaseHelmInstallerReconciler{KubeConfigPath: cmOptions.KubernetesOptions.KubeConfig})
+		addControllerWithSetup(mgr, "apprelease-helminstaller", &application.AppReleaseHelmInstallerReconciler{
+			KubeConfigPath: cmOptions.KubernetesOptions.KubeConfig,
+			HelmImage:      cmOptions.HelmImage,
+		})
 	}
 
 	if cmOptions.IsControllerEnabled("apprepo") {
@@ -248,7 +251,10 @@ func addHostControllers(mgr manager.Manager, client k8s.Client, cmOptions *optio
 	}
 
 	if cmOptions.IsControllerEnabled("installplan") {
-		addControllerWithSetup(mgr, "installplan", &core.InstallPlanReconciler{KubeConfigPath: cmOptions.KubernetesOptions.KubeConfig})
+		addControllerWithSetup(mgr, "installplan", &core.InstallPlanReconciler{
+			KubeConfigPath: cmOptions.KubernetesOptions.KubeConfig,
+			HelmImage:      cmOptions.HelmImage,
+		})
 	}
 
 	// marketplace controller

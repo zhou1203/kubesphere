@@ -87,6 +87,7 @@ func newTestConfig() (*Config, error) {
 			Period:              pointer.Duration(time.Hour * 24),
 			ClusterInfoLiveTime: pointer.Duration(time.Hour * 24 * 365),
 		},
+		HelmImage: "kubesphere/helm:v3.12.1",
 	}
 	return conf, nil
 }

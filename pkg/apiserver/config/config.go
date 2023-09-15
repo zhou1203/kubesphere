@@ -140,9 +140,10 @@ type Config struct {
 	MultiClusterOptions   *multicluster.Options   `json:"multicluster,omitempty" yaml:"multicluster,omitempty" mapstructure:"multicluster"`
 	AuditingOptions       *auditing.Options       `json:"auditing,omitempty" yaml:"auditing,omitempty" mapstructure:"auditing"`
 	TerminalOptions       *terminal.Options       `json:"terminal,omitempty" yaml:"terminal,omitempty" mapstructure:"terminal"`
-
 	// enable/disable telemetry。
 	TelemetryOptions *telemetry.Options `json:"telemetry,omitempty" yaml:"telemetry,omitempty" mapstructure:"telemetry"`
+	// HelmImage defines the Pod image used by the helm executor.
+	HelmImage string `json:"helmImage,omitempty" yaml:"helmImage,omitempty" mapstructure:"helmImage"`
 }
 
 // New config creates a default non-empty Config
@@ -156,6 +157,7 @@ func New() *Config {
 		TerminalOptions:       terminal.NewTerminalOptions(),
 		AuditingOptions:       auditing.NewAuditingOptions(),
 		TelemetryOptions:      telemetry.NewTelemetryOptions(),
+		HelmImage:             "kubesphere/helm:v3.12.1",
 	}
 }
 

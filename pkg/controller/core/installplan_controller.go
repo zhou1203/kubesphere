@@ -38,11 +38,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
-	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	"kubesphere.io/utils/helm"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,6 +47,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"kubesphere.io/utils/helm"
 
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/scheme"
@@ -80,6 +81,7 @@ type InstallPlanReconciler struct {
 	helmGetter     getter.Getter
 	recorder       record.EventRecorder
 	logger         logr.Logger
+	HelmImage      string
 }
 
 func (r *InstallPlanReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -198,7 +200,9 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 	}
 
 	helmExecutor, err := helm.NewExecutor(r.kubeConfig, plan.Status.TargetNamespace, plan.Status.ReleaseName,
-		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}))
+		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
+		helm.SetHelmImage(r.HelmImage),
+	)
 	if err != nil {
 		logger.Error(err, "failed to create helm executor")
 		return ctrl.Result{}, err
@@ -847,7 +851,10 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(ctx context.Context, plan 
 
 	targetNamespace := fmt.Sprintf(targetNamespaceFormat, plan.Spec.Extension.Name)
 	releaseName := plan.Spec.Extension.Name
-	options := []helm.ExecutorOption{helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name})}
+	options := []helm.ExecutorOption{
+		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
+		helm.SetHelmImage(r.HelmImage),
+	}
 
 	executor, err := helm.NewExecutor(r.kubeConfig, targetNamespace, releaseName, options...)
 	if err != nil {
@@ -981,7 +988,9 @@ func (r *InstallPlanReconciler) syncClusterStatus(ctx context.Context, plan *cor
 	releaseName := fmt.Sprintf(agentReleaseFormat, plan.Spec.Extension.Name)
 
 	options := []helm.ExecutorOption{
-		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name})}
+		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
+		helm.SetHelmImage(r.HelmImage),
+	}
 
 	executor, err := helm.NewExecutor(r.kubeConfig, targetNamespace, releaseName, options...)
 	if err != nil {
@@ -1235,6 +1244,7 @@ func (r *InstallPlanReconciler) uninstallClusterAgent(ctx context.Context, plan 
 
 	options := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
+		helm.SetHelmImage(r.HelmImage),
 	}
 
 	executor, err := helm.NewExecutor(r.kubeConfig, targetNamespace, releaseName, options...)

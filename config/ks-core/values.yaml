@@ -244,3 +244,10 @@ kubectl:
     repository: kubesphereio/kubectl
     tag: "latest"
     pullPolicy: IfNotPresent
+
+helm:
+  image:
+    registry: ""
+    repository: kubesphereio/helm
+    tag: "v3.12.1"
+    pullPolicy: IfNotPresent
