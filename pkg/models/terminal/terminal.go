@@ -95,10 +95,8 @@ func (t TerminalSession) Next() *remotecommand.TerminalSize {
 // Read handles pty->process messages (stdin, resize)
 // Called in a loop from remotecommand as long as the process is running
 func (t TerminalSession) Read(p []byte) (int, error) {
-
 	var msg TerminalMessage
-	err := t.conn.ReadJSON(&msg)
-	if err != nil {
+	if err := t.conn.ReadJSON(&msg); err != nil {
 		return copy(p, endOfTransmission), err
 	}
 
@@ -183,7 +181,6 @@ func NewTerminaler(client kubernetes.Interface, config *rest.Config, options *Op
 }
 
 func NewNodeTerminaler(nodename string, options *Options, client kubernetes.Interface) (*NodeTerminaler, error) {
-
 	n := &NodeTerminaler{
 		Namespace:     "kubesphere-controls-system",
 		ContainerName: "nsenter",
@@ -196,7 +193,6 @@ func NewNodeTerminaler(nodename string, options *Options, client kubernetes.Inte
 	}
 
 	node, err := n.client.CoreV1().Nodes().Get(context.Background(), n.Nodename, metav1.GetOptions{})
-
 	if err != nil {
 		return n, fmt.Errorf("getting node error. nodename:%s, err: %v", n.Nodename, err)
 	}
@@ -217,12 +213,10 @@ func NewNodeTerminaler(nodename string, options *Options, client kubernetes.Inte
 
 func (n *NodeTerminaler) getNSEnterPod() (*v1.Pod, error) {
 	pod, err := n.client.CoreV1().Pods(n.Namespace).Get(context.Background(), n.PodName, metav1.GetOptions{})
-
 	if err != nil || (pod.Status.Phase != v1.PodRunning && pod.Status.Phase != v1.PodPending) {
 		// pod has timed out, but has not been cleaned up
 		if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
-			err := n.client.CoreV1().Pods(n.Namespace).Delete(context.Background(), n.PodName, metav1.DeleteOptions{})
-			if err != nil {
+			if err = n.client.CoreV1().Pods(n.Namespace).Delete(context.Background(), n.PodName, metav1.DeleteOptions{}); err != nil {
 				return pod, err
 			}
 		}
@@ -272,13 +266,12 @@ func (n *NodeTerminaler) getNSEnterPod() (*v1.Pod, error) {
 	return pod, nil
 }
 
-func (n NodeTerminaler) CleanUpNSEnterPod() {
+func (n *NodeTerminaler) CleanUpNSEnterPod() {
 	idx, _ := NodeSessionCounter.Load(n.Nodename)
 	atomic.AddInt64(idx.(*int64), -1)
 
 	if *(idx.(*int64)) == 0 {
-		err := n.client.CoreV1().Pods(n.Namespace).Delete(context.Background(), n.PodName, metav1.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})
-		if err != nil {
+		if err := n.client.CoreV1().Pods(n.Namespace).Delete(context.Background(), n.PodName, metav1.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)}); err != nil {
 			klog.Warning(err)
 		}
 	}
@@ -306,18 +299,13 @@ func (t *terminaler) startProcess(namespace, podName, containerName string, cmd 
 		return err
 	}
 
-	err = exec.Stream(remotecommand.StreamOptions{
+	return exec.StreamWithContext(context.Background(), remotecommand.StreamOptions{
 		Stdin:             ptyHandler,
 		Stdout:            ptyHandler,
 		Stderr:            ptyHandler,
 		TerminalSizeQueue: ptyHandler,
 		Tty:               true,
 	})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // isValidShell checks if the shell is an allowed one
@@ -345,6 +333,9 @@ func (t *terminaler) HandleSession(shell, namespace, podName, containerName stri
 	var err error
 	validShells := []string{"bash", "sh"}
 
+	conn.SetPingHandler(func(_ string) error {
+		return conn.WriteMessage(websocket.PongMessage, []byte("pong"))
+	})
 	session := &TerminalSession{conn: conn, sizeChan: make(chan remotecommand.TerminalSize)}
 
 	defer t.cleanupKubectlPod(namespace, podName)
@@ -372,7 +363,6 @@ func (t *terminaler) HandleSession(shell, namespace, podName, containerName stri
 }
 
 func (t *terminaler) HandleShellAccessToNode(nodename string, conn *websocket.Conn) {
-
 	nodeTerminaler, err := NewNodeTerminaler(nodename, t.options, t.client)
 	if err != nil {
 		klog.Warning("node terminaler init error: ", err)
@@ -384,14 +374,12 @@ func (t *terminaler) HandleShellAccessToNode(nodename string, conn *websocket.Co
 		klog.Warning("get nsenter pod error: ", err)
 		return
 	}
-
-	if err := nodeTerminaler.WatchPodStatusBeRunning(pod); err != nil {
+	if err = nodeTerminaler.WatchPodStatusBeRunning(pod); err != nil {
 		klog.Warning("watching pod status error: ", err)
 		return
-	} else {
-		t.HandleSession(nodeTerminaler.Shell, nodeTerminaler.Namespace, nodeTerminaler.PodName, nodeTerminaler.ContainerName, conn)
-		defer nodeTerminaler.CleanUpNSEnterPod()
 	}
+	t.HandleSession(nodeTerminaler.Shell, nodeTerminaler.Namespace, nodeTerminaler.PodName, nodeTerminaler.ContainerName, conn)
+	defer nodeTerminaler.CleanUpNSEnterPod()
 }
 
 func (n *NodeTerminaler) WatchPodStatusBeRunning(pod *v1.Pod) error {
@@ -407,7 +395,7 @@ func (n *NodeTerminaler) WatchPodStatusBeRunning(pod *v1.Pod) error {
 		return nil
 	}
 
-	return wait.Poll(time.Millisecond*500, time.Second*5, func() (done bool, err error) {
+	return wait.PollUntilContextTimeout(context.Background(), time.Second, time.Minute, false, func(ctx context.Context) (done bool, err error) {
 		pod, err = n.client.CoreV1().Pods(pod.ObjectMeta.Namespace).Get(context.Background(), pod.ObjectMeta.Name, metav1.GetOptions{})
 		if err != nil {
 			klog.Warning(err)

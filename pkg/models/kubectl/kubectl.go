@@ -51,12 +51,10 @@ func NewOperator(cacheClient runtimeclient.Client, kubectlImage string) Interfac
 func (o *operator) GetKubectlPod(username string) (models.PodInfo, error) {
 	pod := &corev1.Pod{}
 	// wait for the pod to be ready
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*1)
-	defer cancel()
-	if err := wait.PollImmediateUntil(time.Second, func() (bool, error) {
+	if err := wait.PollUntilContextTimeout(context.Background(), time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
 		if err := o.client.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: fmt.Sprintf("%s%s", constants.KubectlPodNamePrefix, username)}, pod); err != nil {
 			if errors.IsNotFound(err) {
-				if pod, err = o.createKubectlPod(username); err != nil {
+				if pod, err = o.createKubectlPod(ctx, username); err != nil {
 					return false, err
 				}
 			}
@@ -69,7 +67,7 @@ func (o *operator) GetKubectlPod(username string) (models.PodInfo, error) {
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done()); err != nil {
+	}); err != nil {
 		return models.PodInfo{}, err
 	}
 	if !isPodReady(pod) {
@@ -87,8 +85,8 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func (o *operator) createKubectlPod(username string) (*corev1.Pod, error) {
-	if err := o.client.Get(context.Background(), types.NamespacedName{Name: fmt.Sprintf("kubeconfig-%s", username), Namespace: constants.KubeSphereNamespace}, &corev1.Secret{}); err != nil {
+func (o *operator) createKubectlPod(ctx context.Context, username string) (*corev1.Pod, error) {
+	if err := o.client.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("kubeconfig-%s", username), Namespace: constants.KubeSphereNamespace}, &corev1.Secret{}); err != nil {
 		return nil, err
 	}
 	pod := &corev1.Pod{
@@ -133,7 +131,7 @@ func (o *operator) createKubectlPod(username string) (*corev1.Pod, error) {
 			},
 		},
 	}
-	if err := o.client.Create(context.Background(), pod); err != nil {
+	if err := o.client.Create(ctx, pod); err != nil {
 		return nil, err
 	}
 	return pod, nil
