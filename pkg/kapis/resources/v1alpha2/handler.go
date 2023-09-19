@@ -24,7 +24,6 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/klog/v2"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -39,7 +38,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/server/errors"
 )
 
-type resourceHandler struct {
+type handler struct {
 	componentsGetter    components.Getter
 	resourceQuotaGetter quotas.ResourceQuotaGetter
 	revisionGetter      revisions.RevisionGetter
@@ -50,21 +49,8 @@ type resourceHandler struct {
 	resourceGetter      *resourcev1alpha3.ResourceGetter
 }
 
-func newResourceHandler(cacheClient runtimeclient.Client, masterURL, kubectlImage string) *resourceHandler {
-	return &resourceHandler{
-		resourceGetter:      resourcev1alpha3.NewResourceGetter(cacheClient),
-		componentsGetter:    components.NewComponentsGetter(cacheClient),
-		resourceQuotaGetter: quotas.NewResourceQuotaGetter(cacheClient),
-		revisionGetter:      revisions.NewRevisionGetter(cacheClient),
-		gitVerifier:         git.NewGitVerifier(cacheClient),
-		registryGetter:      registries.NewRegistryGetter(cacheClient),
-		kubeconfigOperator:  kubeconfig.NewReadOnlyOperator(cacheClient, masterURL),
-		kubectlOperator:     kubectl.NewOperator(cacheClient, kubectlImage),
-	}
-}
-
-func (r *resourceHandler) handleGetSystemHealthStatus(_ *restful.Request, response *restful.Response) {
-	result, err := r.componentsGetter.GetSystemHealthStatus()
+func (h *handler) GetSystemHealthStatus(_ *restful.Request, response *restful.Response) {
+	result, err := h.componentsGetter.GetSystemHealthStatus()
 
 	if err != nil {
 		api.HandleInternalError(response, nil, err)
@@ -74,9 +60,9 @@ func (r *resourceHandler) handleGetSystemHealthStatus(_ *restful.Request, respon
 	response.WriteAsJson(result)
 }
 
-func (r *resourceHandler) handleGetComponentStatus(request *restful.Request, response *restful.Response) {
+func (h *handler) GetComponentStatus(request *restful.Request, response *restful.Response) {
 	component := request.PathParameter("component")
-	result, err := r.componentsGetter.GetComponentStatus(component)
+	result, err := h.componentsGetter.GetComponentStatus(component)
 
 	if err != nil {
 		api.HandleInternalError(response, nil, err)
@@ -86,8 +72,8 @@ func (r *resourceHandler) handleGetComponentStatus(request *restful.Request, res
 	response.WriteAsJson(result)
 }
 
-func (r *resourceHandler) handleGetComponents(_ *restful.Request, response *restful.Response) {
-	result, err := r.componentsGetter.GetAllComponentsStatus()
+func (h *handler) GetComponents(_ *restful.Request, response *restful.Response) {
+	result, err := h.componentsGetter.GetAllComponentsStatus()
 
 	if err != nil {
 		api.HandleInternalError(response, nil, err)
@@ -97,8 +83,8 @@ func (r *resourceHandler) handleGetComponents(_ *restful.Request, response *rest
 	response.WriteAsJson(result)
 }
 
-func (r *resourceHandler) handleGetClusterQuotas(_ *restful.Request, response *restful.Response) {
-	result, err := r.resourceQuotaGetter.GetClusterQuota()
+func (h *handler) GetClusterQuotas(_ *restful.Request, response *restful.Response) {
+	result, err := h.resourceQuotaGetter.GetClusterQuota()
 	if err != nil {
 		api.HandleInternalError(response, nil, err)
 		return
@@ -107,9 +93,9 @@ func (r *resourceHandler) handleGetClusterQuotas(_ *restful.Request, response *r
 	response.WriteAsJson(result)
 }
 
-func (r *resourceHandler) handleGetNamespaceQuotas(request *restful.Request, response *restful.Response) {
+func (h *handler) GetNamespaceQuotas(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
-	quota, err := r.resourceQuotaGetter.GetNamespaceQuota(namespace)
+	quota, err := h.resourceQuotaGetter.GetNamespaceQuota(namespace)
 
 	if err != nil {
 		api.HandleInternalError(response, nil, err)
@@ -119,7 +105,7 @@ func (r *resourceHandler) handleGetNamespaceQuotas(request *restful.Request, res
 	response.WriteAsJson(quota)
 }
 
-func (r *resourceHandler) handleGetDaemonSetRevision(request *restful.Request, response *restful.Response) {
+func (h *handler) GetDaemonSetRevision(request *restful.Request, response *restful.Response) {
 	daemonset := request.PathParameter("daemonset")
 	namespace := request.PathParameter("namespace")
 	revision, err := strconv.Atoi(request.PathParameter("revision"))
@@ -129,7 +115,7 @@ func (r *resourceHandler) handleGetDaemonSetRevision(request *restful.Request, r
 		return
 	}
 
-	result, err := r.revisionGetter.GetDaemonSetRevision(namespace, daemonset, revision)
+	result, err := h.revisionGetter.GetDaemonSetRevision(namespace, daemonset, revision)
 
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, errors.Wrap(err))
@@ -139,12 +125,12 @@ func (r *resourceHandler) handleGetDaemonSetRevision(request *restful.Request, r
 	response.WriteAsJson(result)
 }
 
-func (r *resourceHandler) handleGetDeploymentRevision(request *restful.Request, response *restful.Response) {
+func (h *handler) GetDeploymentRevision(request *restful.Request, response *restful.Response) {
 	deploy := request.PathParameter("deployment")
 	namespace := request.PathParameter("namespace")
 	revision := request.PathParameter("revision")
 
-	result, err := r.revisionGetter.GetDeploymentRevision(namespace, deploy, revision)
+	result, err := h.revisionGetter.GetDeploymentRevision(namespace, deploy, revision)
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, errors.Wrap(err))
 		return
@@ -153,7 +139,7 @@ func (r *resourceHandler) handleGetDeploymentRevision(request *restful.Request, 
 	response.WriteAsJson(result)
 }
 
-func (r *resourceHandler) handleGetStatefulSetRevision(request *restful.Request, response *restful.Response) {
+func (h *handler) GetStatefulSetRevision(request *restful.Request, response *restful.Response) {
 	statefulset := request.PathParameter("statefulset")
 	namespace := request.PathParameter("namespace")
 	revision, err := strconv.Atoi(request.PathParameter("revision"))
@@ -162,7 +148,7 @@ func (r *resourceHandler) handleGetStatefulSetRevision(request *restful.Request,
 		return
 	}
 
-	result, err := r.revisionGetter.GetStatefulSetRevision(namespace, statefulset, revision)
+	result, err := h.revisionGetter.GetStatefulSetRevision(namespace, statefulset, revision)
 	if err != nil {
 		api.HandleInternalError(response, nil, err)
 		return
@@ -170,7 +156,7 @@ func (r *resourceHandler) handleGetStatefulSetRevision(request *restful.Request,
 	response.WriteAsJson(result)
 }
 
-func (r *resourceHandler) handleVerifyGitCredential(request *restful.Request, response *restful.Response) {
+func (h *handler) VerifyGitCredential(request *restful.Request, response *restful.Response) {
 	var credential api.GitCredential
 	err := request.ReadEntity(&credential)
 	if err != nil {
@@ -182,7 +168,7 @@ func (r *resourceHandler) handleVerifyGitCredential(request *restful.Request, re
 		namespace = credential.SecretRef.Namespace
 		secretName = credential.SecretRef.Name
 	}
-	err = r.gitVerifier.VerifyGitCredential(credential.RemoteUrl, namespace, secretName)
+	err = h.gitVerifier.VerifyGitCredential(credential.RemoteUrl, namespace, secretName)
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, errors.Wrap(err))
 		return
@@ -190,7 +176,7 @@ func (r *resourceHandler) handleVerifyGitCredential(request *restful.Request, re
 	response.WriteAsJson(errors.None)
 }
 
-func (r *resourceHandler) handleVerifyRegistryCredential(request *restful.Request, response *restful.Response) {
+func (h *handler) VerifyRegistryCredential(request *restful.Request, response *restful.Response) {
 	var credential api.RegistryCredential
 	err := request.ReadEntity(&credential)
 	if err != nil {
@@ -198,7 +184,7 @@ func (r *resourceHandler) handleVerifyRegistryCredential(request *restful.Reques
 		return
 	}
 
-	err = r.registryGetter.VerifyRegistryCredential(credential)
+	err = h.registryGetter.VerifyRegistryCredential(credential)
 	if err != nil {
 		api.HandleBadRequest(response, nil, err)
 		return
@@ -207,13 +193,13 @@ func (r *resourceHandler) handleVerifyRegistryCredential(request *restful.Reques
 	response.WriteHeader(http.StatusOK)
 }
 
-func (r *resourceHandler) handleGetRegistryEntry(request *restful.Request, response *restful.Response) {
+func (h *handler) GetRegistryEntry(request *restful.Request, response *restful.Response) {
 	imageName := request.QueryParameter("image")
 	namespace := request.QueryParameter("namespace")
 	secretName := request.QueryParameter("secret")
 	insecure := request.QueryParameter("insecure") == "true"
 
-	detail, err := r.registryGetter.GetEntry(namespace, secretName, imageName, insecure)
+	detail, err := h.registryGetter.GetEntry(namespace, secretName, imageName, insecure)
 	if err != nil {
 		api.HandleBadRequest(response, nil, err)
 		return
@@ -222,7 +208,7 @@ func (r *resourceHandler) handleGetRegistryEntry(request *restful.Request, respo
 	response.WriteAsJson(detail)
 }
 
-func (r *resourceHandler) handleGetNamespacedAbnormalWorkloads(request *restful.Request, response *restful.Response) {
+func (h *handler) GetNamespacedAbnormalWorkloads(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 
 	result := api.Workloads{
@@ -245,7 +231,7 @@ func (r *resourceHandler) handleGetNamespacedAbnormalWorkloads(request *restful.
 		q := query.New()
 		q.Filters[query.FieldStatus] = query.Value(notReadyStatus)
 
-		res, err := r.resourceGetter.List(workloadType, namespace, q)
+		res, err := h.resourceGetter.List(workloadType, namespace, q)
 		if err != nil {
 			api.HandleInternalError(response, nil, err)
 		}
@@ -256,8 +242,8 @@ func (r *resourceHandler) handleGetNamespacedAbnormalWorkloads(request *restful.
 	response.WriteAsJson(result)
 }
 
-func (r *resourceHandler) GetKubectlPod(request *restful.Request, response *restful.Response) {
-	kubectlPod, err := r.kubectlOperator.GetKubectlPod(request.PathParameter("user"))
+func (h *handler) GetKubectlPod(request *restful.Request, response *restful.Response) {
+	kubectlPod, err := h.kubectlOperator.GetKubectlPod(request.PathParameter("user"))
 	if err != nil {
 		klog.Errorln(err)
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, errors.Wrap(err))
@@ -266,10 +252,10 @@ func (r *resourceHandler) GetKubectlPod(request *restful.Request, response *rest
 	response.WriteEntity(kubectlPod)
 }
 
-func (r *resourceHandler) GetKubeconfig(request *restful.Request, response *restful.Response) {
+func (h *handler) GetKubeconfig(request *restful.Request, response *restful.Response) {
 	user := request.PathParameter("user")
 
-	kubectlConfig, err := r.kubeconfigOperator.GetKubeConfig(user)
+	kubectlConfig, err := h.kubeconfigOperator.GetKubeConfig(user)
 
 	if err != nil {
 		klog.Error(err)

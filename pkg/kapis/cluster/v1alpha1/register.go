@@ -19,15 +19,15 @@ package v1alpha1
 import (
 	"net/http"
 
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
+	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
-	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 const (
@@ -36,26 +36,34 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
 
-func AddToContainer(container *restful.Container, cacheClient runtimeclient.Client) error {
+func NewHandler(cacheClient runtimeclient.Client) rest.Handler {
+	return &handler{
+		client: cacheClient,
+	}
+}
 
+func NewFakeHandler() rest.Handler {
+	return &handler{}
+}
+
+func (h *handler) AddToContainer(container *restful.Container) error {
 	webservice := runtime.NewWebService(GroupVersion)
-	h := newHandler(cacheClient)
-
+	// TODO use validating admission webhook instead
 	webservice.Route(webservice.POST("/clusters/validation").
-		Doc("").
-		Param(webservice.BodyParameter("cluster", "cluster specification")).
 		To(h.validateCluster).
-		Returns(http.StatusOK, api.StatusOK, nil).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.MultiClusterTag}))
+		Deprecate().
+		Doc("Cluster validation").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagMultiCluster}).
+		Reads(clusterv1alpha1.Cluster{}).
+		Returns(http.StatusOK, api.StatusOK, nil))
 
 	webservice.Route(webservice.PUT("/clusters/{cluster}/kubeconfig").
-		Doc("Update cluster kubeconfig.").
-		Param(webservice.PathParameter("cluster", "Name of the cluster.").Required(true)).
 		To(h.updateKubeConfig).
-		Returns(http.StatusOK, api.StatusOK, nil).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.MultiClusterTag}))
+		Doc("Update kubeconfig").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagMultiCluster}).
+		Param(webservice.PathParameter("cluster", "The specified cluster.").Required(true)).
+		Returns(http.StatusOK, api.StatusOK, nil))
 
 	container.Add(webservice)
-
 	return nil
 }

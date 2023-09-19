@@ -21,14 +21,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
-
-	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 const (
-	controllerName = "ks-serviceaccount-controller"
-	finalizer      = "finalizers.kubesphere.io/serviceaccount"
-
+	controllerName                  = "ks-serviceaccount-controller"
+	finalizer                       = "finalizers.kubesphere.io/serviceaccount"
 	messageCreateSecretSuccessfully = "Create token secret successfully"
 	reasonInvalidSecret             = "InvalidSecret"
 )
@@ -43,8 +40,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Logger.WithValues(req.NamespacedName, "ServiceAccount")
 	sa := &corev1alpha1.ServiceAccount{}
-	err := r.Get(ctx, req.NamespacedName, sa)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, sa); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
@@ -56,10 +52,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if !controllerutil.ContainsFinalizer(sa, finalizer) {
 			deepCopy := sa.DeepCopy()
 			deepCopy.Finalizers = append(deepCopy.Finalizers, finalizer)
-			if err != nil {
-				logger.Error(err, "get secret failed")
-				return ctrl.Result{}, err
-			}
 			if len(sa.Secrets) == 0 {
 				secretCreated, err := r.createTokenSecret(ctx, sa)
 				if err != nil {
@@ -74,31 +66,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				})
 				r.EventRecorder.Event(deepCopy, corev1.EventTypeNormal, controller2.Synced, messageCreateSecretSuccessfully)
 			}
-
-			err = r.Update(ctx, deepCopy)
-			if err != nil {
+			if err := r.Update(ctx, deepCopy); err != nil {
 				logger.Error(err, "update serviceaccount failed")
 				return ctrl.Result{}, err
 			}
 		}
 	} else {
 		if controllerutil.ContainsFinalizer(sa, finalizer) {
-			err := r.deleteSecretToken(ctx, sa, logger)
-			if err != nil {
+			if err := r.deleteSecretToken(ctx, sa, logger); err != nil {
 				logger.Error(err, "delete secret failed")
 				return ctrl.Result{}, err
 			}
 			_ = controllerutil.RemoveFinalizer(sa, finalizer)
-			err = r.Update(ctx, sa)
-			if err != nil {
+			if err := r.Update(ctx, sa); err != nil {
 				logger.Error(err, "update serviceaccount failed")
 				return ctrl.Result{}, err
 			}
 		}
 	}
 
-	err = r.checkAllSecret(ctx, sa)
-	if err != nil {
+	if err := r.checkAllSecret(ctx, sa); err != nil {
 		logger.Error(err, "failed check secrets")
 		return ctrl.Result{}, err
 	}
@@ -111,9 +98,9 @@ func (r *Reconciler) createTokenSecret(ctx context.Context, sa *corev1alpha1.Ser
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: fmt.Sprintf("%s-", sa.Name),
 			Namespace:    sa.Namespace,
-			Annotations:  map[string]string{constants.ServiceAccountName: sa.Name},
+			Annotations:  map[string]string{corev1alpha1.ServiceAccountName: sa.Name},
 		},
-		Type: constants.SecretTypeKubesphereServiceAccount,
+		Type: corev1alpha1.SecretTypeServiceAccountToken,
 	}
 
 	return secret, r.Client.Create(ctx, secret)
@@ -122,8 +109,7 @@ func (r *Reconciler) createTokenSecret(ctx context.Context, sa *corev1alpha1.Ser
 func (r *Reconciler) deleteSecretToken(ctx context.Context, sa *corev1alpha1.ServiceAccount, logger logr.Logger) error {
 	for _, secretName := range sa.Secrets {
 		secret := &v1.Secret{}
-		err := r.Get(ctx, client.ObjectKey{Namespace: secretName.Namespace, Name: secretName.Name}, secret)
-		if err != nil {
+		if err := r.Get(ctx, client.ObjectKey{Namespace: secretName.Namespace, Name: secretName.Name}, secret); err != nil {
 			if errors.IsNotFound(err) {
 				continue
 			} else {
@@ -131,8 +117,7 @@ func (r *Reconciler) deleteSecretToken(ctx context.Context, sa *corev1alpha1.Ser
 			}
 		}
 		if err := r.checkSecretToken(secret, sa.Name); err == nil {
-			err = r.Delete(ctx, secret)
-			if err != nil {
+			if err = r.Delete(ctx, secret); err != nil {
 				return err
 			}
 			logger.V(2).WithName(secretName.Name).Info("delete secret successfully")
@@ -143,13 +128,8 @@ func (r *Reconciler) deleteSecretToken(ctx context.Context, sa *corev1alpha1.Ser
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
-	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
-	}
-
-	if r.Logger.GetSink() == nil {
-		r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	}
+	r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
+	r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	return builder.
 		ControllerManagedBy(mgr).
 		For(
@@ -167,8 +147,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *Reconciler) checkAllSecret(ctx context.Context, sa *corev1alpha1.ServiceAccount) error {
 	for _, secretRef := range sa.Secrets {
 		secret := &v1.Secret{}
-		err := r.Get(ctx, client.ObjectKey{Namespace: sa.Namespace, Name: secretRef.Name}, secret)
-		if err != nil {
+		if err := r.Get(ctx, client.ObjectKey{Namespace: sa.Namespace, Name: secretRef.Name}, secret); err != nil {
 			if errors.IsNotFound(err) {
 				r.EventRecorder.Event(sa, corev1.EventTypeWarning, reasonInvalidSecret, err.Error())
 				continue
@@ -184,12 +163,10 @@ func (r *Reconciler) checkAllSecret(ctx context.Context, sa *corev1alpha1.Servic
 
 // checkSecretTokens Check if there has valid token, and the invalid token reference will be deleted
 func (r *Reconciler) checkSecretToken(secret *v1.Secret, subjectName string) error {
-	if secret.Type != constants.SecretTypeKubesphereServiceAccount {
+	if secret.Type != corev1alpha1.SecretTypeServiceAccountToken {
 		return fmt.Errorf("unsupported secret %s type: %s", secret.Name, secret.Type)
 	}
-
-	saName := secret.Annotations[constants.ServiceAccountName]
-	if saName != subjectName {
+	if saName := secret.Annotations[corev1alpha1.ServiceAccountName]; saName != subjectName {
 		return fmt.Errorf("incorrect subject name %s", saName)
 	}
 	return nil

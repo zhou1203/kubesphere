@@ -50,24 +50,14 @@ var (
 	}
 )
 
-type Handler struct {
+type handler struct {
 	resourceGetterV1alpha3 *resourcev1alpha3.ResourceGetter
 	componentsGetter       components.Getter
 	registryHelper         v2.RegistryHelper
 	counter                overview.Counter
 }
 
-func New(resourceGetterV1alpha3 *resourcev1alpha3.ResourceGetter, componentsGetter components.Getter,
-	counter overview.Counter) *Handler {
-	return &Handler{
-		resourceGetterV1alpha3: resourceGetterV1alpha3,
-		componentsGetter:       componentsGetter,
-		registryHelper:         v2.NewRegistryHelper(),
-		counter:                counter,
-	}
-}
-
-func (h *Handler) handleGetResources(request *restful.Request, response *restful.Response) {
+func (h *handler) GetResources(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 	resourceType := request.PathParameter("resources")
 	name := request.PathParameter("name")
@@ -87,8 +77,8 @@ func (h *Handler) handleGetResources(request *restful.Request, response *restful
 	response.WriteEntity(result)
 }
 
-// handleListResources retrieves resources
-func (h *Handler) handleListResources(request *restful.Request, response *restful.Response) {
+// ListResources retrieves resources
+func (h *handler) ListResources(request *restful.Request, response *restful.Response) {
 	query := query.ParseQueryParameter(request)
 	resourceType := request.PathParameter("resources")
 	namespace := request.PathParameter("namespace")
@@ -107,7 +97,7 @@ func (h *Handler) handleListResources(request *restful.Request, response *restfu
 	response.WriteEntity(result)
 }
 
-func (h *Handler) handleGetComponentStatus(request *restful.Request, response *restful.Response) {
+func (h *handler) GetComponentStatus(request *restful.Request, response *restful.Response) {
 	component := request.PathParameter("component")
 	result, err := h.componentsGetter.GetComponentStatus(component)
 	if err != nil {
@@ -118,7 +108,7 @@ func (h *Handler) handleGetComponentStatus(request *restful.Request, response *r
 	response.WriteEntity(result)
 }
 
-func (h *Handler) handleGetSystemHealthStatus(request *restful.Request, response *restful.Response) {
+func (h *handler) GetSystemHealthStatus(request *restful.Request, response *restful.Response) {
 	result, err := h.componentsGetter.GetSystemHealthStatus()
 	if err != nil {
 		klog.Error(err)
@@ -130,7 +120,7 @@ func (h *Handler) handleGetSystemHealthStatus(request *restful.Request, response
 }
 
 // get all componentsHandler
-func (h *Handler) handleGetComponents(request *restful.Request, response *restful.Response) {
+func (h *handler) GetComponents(request *restful.Request, response *restful.Response) {
 	result, err := h.componentsGetter.GetAllComponentsStatus()
 	if err != nil {
 		klog.Error(err)
@@ -141,10 +131,10 @@ func (h *Handler) handleGetComponents(request *restful.Request, response *restfu
 	response.WriteEntity(result)
 }
 
-// handleVerifyImageRepositorySecret verifies image secret against registry, it takes k8s.io/api/core/v1/types.Secret
+// VerifyImageRepositorySecret verifies image secret against registry, it takes k8s.io/api/core/v1/types.Secret
 // as input, and authenticate registry with credential specified. Returns http.StatusOK if authenticate successfully,
 // returns http.StatusUnauthorized if failed.
-func (h *Handler) handleVerifyImageRepositorySecret(request *restful.Request, response *restful.Response) {
+func (h *handler) VerifyImageRepositorySecret(request *restful.Request, response *restful.Response) {
 	secret := &v1.Secret{}
 	err := request.ReadEntity(secret)
 	if err != nil {
@@ -160,8 +150,8 @@ func (h *Handler) handleVerifyImageRepositorySecret(request *restful.Request, re
 	}
 }
 
-// handleGetImageConfig fetches container image spec described in https://github.com/opencontainers/image-spec/blob/main/manifest.md
-func (h *Handler) handleGetImageConfig(request *restful.Request, response *restful.Response) {
+// GetImageConfig fetches container image spec described in https://github.com/opencontainers/image-spec/blob/main/manifest.md
+func (h *handler) GetImageConfig(request *restful.Request, response *restful.Response) {
 	secretName := request.QueryParameter("secret")
 	namespace := request.PathParameter("namespace")
 	image := request.QueryParameter("image")
@@ -185,8 +175,8 @@ func (h *Handler) handleGetImageConfig(request *restful.Request, response *restf
 	response.WriteHeaderAndJson(http.StatusOK, config, restful.MIME_JSON)
 }
 
-// handleGetRepositoryTags fetchs all tags of given repository, no paging.
-func (h *Handler) handleGetRepositoryTags(request *restful.Request, response *restful.Response) {
+// GetRepositoryTags fetchs all tags of given repository, no paging.
+func (h *handler) GetRepositoryTags(request *restful.Request, response *restful.Response) {
 	secretName := request.QueryParameter("secret")
 	namespace := request.PathParameter("namespace")
 	repository := request.QueryParameter("repository")
@@ -214,7 +204,7 @@ func (h *Handler) handleGetRepositoryTags(request *restful.Request, response *re
 	response.WriteHeaderAndJson(http.StatusOK, tags, restful.MIME_JSON)
 }
 
-func (h *Handler) GetClusterOverview(request *restful.Request, response *restful.Response) {
+func (h *handler) GetClusterOverview(request *restful.Request, response *restful.Response) {
 	metrics, err := h.counter.GetMetrics(ClusterMetricNames, "", "", "cluster")
 	if err != nil {
 		api.HandleError(response, request, err)
@@ -223,7 +213,7 @@ func (h *Handler) GetClusterOverview(request *restful.Request, response *restful
 	_ = response.WriteEntity(metrics)
 }
 
-func (h *Handler) GetNamespaceOverview(request *restful.Request, response *restful.Response) {
+func (h *handler) GetNamespaceOverview(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 	metrics, err := h.counter.GetMetrics(NamespaceMetricNames, namespace, "", "namespace")
 	if err != nil {

@@ -19,20 +19,27 @@ package v1alpha2
 import (
 	"net/http"
 
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/api/resource/v1alpha2"
+	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
-	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models"
+	"kubesphere.io/kubesphere/pkg/models/components"
+	"kubesphere.io/kubesphere/pkg/models/git"
 	gitmodel "kubesphere.io/kubesphere/pkg/models/git"
+	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
+	"kubesphere.io/kubesphere/pkg/models/kubectl"
+	"kubesphere.io/kubesphere/pkg/models/quotas"
+	"kubesphere.io/kubesphere/pkg/models/registries"
 	registriesmodel "kubesphere.io/kubesphere/pkg/models/registries"
+	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
+	"kubesphere.io/kubesphere/pkg/models/revisions"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 )
 
@@ -42,129 +49,161 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
 
-func AddToContainer(c *restful.Container, cacheClient runtimeclient.Client, masterURL, kubectlImage string) error {
-	webservice := runtime.NewWebService(GroupVersion)
-	handler := newResourceHandler(cacheClient, masterURL, kubectlImage)
+func NewHandler(cacheClient runtimeclient.Client, masterURL, kubectlImage string) rest.Handler {
+	return &handler{
+		resourceGetter:      resourcev1alpha3.NewResourceGetter(cacheClient),
+		componentsGetter:    components.NewComponentsGetter(cacheClient),
+		resourceQuotaGetter: quotas.NewResourceQuotaGetter(cacheClient),
+		revisionGetter:      revisions.NewRevisionGetter(cacheClient),
+		gitVerifier:         git.NewGitVerifier(cacheClient),
+		registryGetter:      registries.NewRegistryGetter(cacheClient),
+		kubeconfigOperator:  kubeconfig.NewReadOnlyOperator(cacheClient, masterURL),
+		kubectlOperator:     kubectl.NewOperator(cacheClient, kubectlImage),
+	}
+}
 
-	webservice.Route(webservice.GET("/users/{user}/kubectl").
-		To(handler.GetKubectlPod).
-		Doc("get user's kubectl pod").
-		Param(webservice.PathParameter("user", "username")).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ToolboxTag}).
+func NewFakeHandler() rest.Handler {
+	return &handler{}
+}
+
+func (h *handler) AddToContainer(c *restful.Container) error {
+	ws := runtime.NewWebService(GroupVersion)
+
+	ws.Route(ws.GET("/users/{user}/kubectl").
+		To(h.GetKubectlPod).
+		Deprecate().
+		Doc("Get user's kubectl pod").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Param(ws.PathParameter("user", "username")).
 		Returns(http.StatusOK, api.StatusOK, models.PodInfo{}))
 
-	webservice.Route(webservice.GET("/users/{user}/kubeconfig").
+	ws.Route(ws.GET("/users/{user}/kubeconfig").
 		Produces("text/plain", restful.MIME_JSON).
-		To(handler.GetKubeconfig).
-		Doc("get users' kubeconfig").
-		Param(webservice.PathParameter("user", "username")).
-		Returns(http.StatusOK, api.StatusOK, "").
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ToolboxTag}))
+		To(h.GetKubeconfig).
+		Deprecate().
+		Doc("Get users' kubeconfig").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Param(ws.PathParameter("user", "username")).
+		Returns(http.StatusOK, api.StatusOK, ""))
 
-	webservice.Route(webservice.GET("/components").
-		To(handler.handleGetComponents).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ComponentStatusTag}).
-		Doc("List the system components.").
+	ws.Route(ws.GET("/components").
+		To(h.GetComponents).
+		Deprecate().
+		Doc("List the system components").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagComponentStatus}).
+		Operation("get-components-v1alpha2").
 		Returns(http.StatusOK, api.StatusOK, []v1alpha2.ComponentStatus{}))
 
-	webservice.Route(webservice.GET("/components/{component}").
-		To(handler.handleGetComponentStatus).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ComponentStatusTag}).
-		Doc("Describe the specified system component.").
-		Param(webservice.PathParameter("component", "component name")).
+	ws.Route(ws.GET("/components/{component}").
+		To(h.GetComponentStatus).
+		Deprecate().
+		Doc("Describe the specified system component").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagComponentStatus}).
+		Operation("get-components-status-v1alpha2").
+		Param(ws.PathParameter("component", "component name")).
 		Returns(http.StatusOK, api.StatusOK, v1alpha2.ComponentStatus{}))
-	webservice.Route(webservice.GET("/componenthealth").
-		To(handler.handleGetSystemHealthStatus).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ComponentStatusTag}).
-		Doc("Get the health status of system components.").
+	ws.Route(ws.GET("/componenthealth").
+		To(h.GetSystemHealthStatus).
+		Deprecate().
+		Doc("Get the health status of system components").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagComponentStatus}).
+		Operation("get-system-health-status-v1alpha2").
 		Returns(http.StatusOK, api.StatusOK, v1alpha2.HealthStatus{}))
 
-	webservice.Route(webservice.GET("/quotas").
-		To(handler.handleGetClusterQuotas).
-		Doc("get whole cluster's resource usage").
-		Returns(http.StatusOK, api.StatusOK, api.ResourceQuota{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ClusterResourcesTag}))
-
-	webservice.Route(webservice.GET("/namespaces/{namespace}/quotas").
-		Doc("get specified namespace's resource quota and usage").
-		Param(webservice.PathParameter("namespace", "the name of the project")).
-		Returns(http.StatusOK, api.StatusOK, api.ResourceQuota{}).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		To(handler.handleGetNamespaceQuotas))
-
-	webservice.Route(webservice.POST("registry/verify").
+	ws.Route(ws.GET("/quotas").
+		To(h.GetClusterQuotas).
 		Deprecate().
-		To(handler.handleVerifyRegistryCredential).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.RegistryTag}).
-		Doc("verify if a user has access to the docker registry").
+		Doc("Get whole cluster's resource usage").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagClusterResources}).
+		Returns(http.StatusOK, api.StatusOK, api.ResourceQuota{}))
+
+	ws.Route(ws.GET("/namespaces/{namespace}/quotas").
+		To(h.GetNamespaceQuotas).
+		Deprecate().
+		Doc("get specified namespace's resource quota and usage").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagNamespacedResources}).
+		Param(ws.PathParameter("namespace", "The specified namespace.")).
+		Returns(http.StatusOK, api.StatusOK, api.ResourceQuota{}))
+
+	ws.Route(ws.POST("registry/verify").
+		To(h.VerifyRegistryCredential).
+		Deprecate().
+		Doc("Verify registry credential").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAdvancedOperations}).
 		Reads(api.RegistryCredential{}).
 		Returns(http.StatusOK, api.StatusOK, errors.Error{}))
-	webservice.Route(webservice.GET("/registry/blob").
+	ws.Route(ws.GET("/registry/blob").
+		To(h.GetRegistryEntry).
 		Deprecate().
-		To(handler.handleGetRegistryEntry).
-		Param(webservice.QueryParameter("image", "query image, condition for filtering.").
+		Doc("Retrieve the blob from the registry").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAdvancedOperations}).
+		Param(ws.QueryParameter("image", "query image, condition for filtering.").
 			Required(true).
 			DataFormat("image=%s")).
-		Param(webservice.QueryParameter("namespace", "namespace which secret in.").
+		Param(ws.QueryParameter("namespace", "namespace which secret in.").
 			Required(false).
 			DataFormat("namespace=%s")).
-		Param(webservice.QueryParameter("secret", "secret name").
+		Param(ws.QueryParameter("secret", "secret name").
 			Required(false).
 			DataFormat("secret=%s")).
-		Param(webservice.QueryParameter("insecure", "whether verify cert if using https repo").
+		Param(ws.QueryParameter("insecure", "whether verify cert if using https repo").
 			Required(false).
 			DataFormat("insecure=%s")).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.RegistryTag}).
-		Doc("Retrieve the blob from the registry identified").
 		Writes(registriesmodel.ImageDetails{}).
-		Returns(http.StatusOK, api.StatusOK, registriesmodel.ImageDetails{}),
-	)
-	webservice.Route(webservice.POST("git/verify").
-		To(handler.handleVerifyGitCredential).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.GitTag}).
-		Doc("Verify if the kubernetes secret has read access to the git repository").
+		Returns(http.StatusOK, api.StatusOK, registriesmodel.ImageDetails{}))
+	ws.Route(ws.POST("git/verify").
+		To(h.VerifyGitCredential).
+		Deprecate().
+		Doc("Verify the git credential").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAdvancedOperations}).
 		Reads(gitmodel.AuthInfo{}).
 		Returns(http.StatusOK, api.StatusOK, errors.Error{}),
 	)
 
-	webservice.Route(webservice.GET("/namespaces/{namespace}/daemonsets/{daemonset}/revisions/{revision}").
-		To(handler.handleGetDaemonSetRevision).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Doc("Get the specified daemonset revision").
-		Param(webservice.PathParameter("daemonset", "the name of the daemonset")).
-		Param(webservice.PathParameter("namespace", "the namespace of the daemonset")).
-		Param(webservice.PathParameter("revision", "the revision of the daemonset")).
+	ws.Route(ws.GET("/namespaces/{namespace}/daemonsets/{daemonset}/revisions/{revision}").
+		To(h.GetDaemonSetRevision).
+		Deprecate().
+		Doc("Get the specified daemonSet revision").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagNamespacedResources}).
+		Param(ws.PathParameter("daemonset", "the name of the daemonset")).
+		Param(ws.PathParameter("namespace", "The specified namespace.")).
+		Param(ws.PathParameter("revision", "the revision of the daemonset")).
 		Returns(http.StatusOK, api.StatusOK, appsv1.DaemonSet{}))
-	webservice.Route(webservice.GET("/namespaces/{namespace}/deployments/{deployment}/revisions/{revision}").
-		To(handler.handleGetDeploymentRevision).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
+	ws.Route(ws.GET("/namespaces/{namespace}/deployments/{deployment}/revisions/{revision}").
+		To(h.GetDeploymentRevision).
+		Deprecate().
 		Doc("Get the specified deployment revision").
-		Param(webservice.PathParameter("deployment", "the name of deployment")).
-		Param(webservice.PathParameter("namespace", "the namespace of the deployment")).
-		Param(webservice.PathParameter("revision", "the revision of the deployment")).
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagNamespacedResources}).
+		Param(ws.PathParameter("deployment", "the name of deployment")).
+		Param(ws.PathParameter("namespace", "The specified namespace.")).
+		Param(ws.PathParameter("revision", "the revision of the deployment")).
 		Returns(http.StatusOK, api.StatusOK, appsv1.ReplicaSet{}))
-	webservice.Route(webservice.GET("/namespaces/{namespace}/statefulsets/{statefulset}/revisions/{revision}").
-		To(handler.handleGetStatefulSetRevision).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Doc("Get the specified statefulset revision").
-		Param(webservice.PathParameter("statefulset", "the name of the statefulset")).
-		Param(webservice.PathParameter("namespace", "the namespace of the statefulset")).
-		Param(webservice.PathParameter("revision", "the revision of the statefulset")).
+	ws.Route(ws.GET("/namespaces/{namespace}/statefulsets/{statefulset}/revisions/{revision}").
+		To(h.GetStatefulSetRevision).
+		Deprecate().
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagNamespacedResources}).
+		Doc("Get the specified statefulSet revision").
+		Param(ws.PathParameter("statefulset", "the name of the statefulset")).
+		Param(ws.PathParameter("namespace", "The specified namespace.")).
+		Param(ws.PathParameter("revision", "the revision of the statefulset")).
 		Returns(http.StatusOK, api.StatusOK, appsv1.StatefulSet{}))
 
-	webservice.Route(webservice.GET("/abnormalworkloads").
-		Doc("get abnormal workloads' count of whole cluster").
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.ClusterResourcesTag}).
-		Returns(http.StatusOK, api.StatusOK, api.Workloads{}).
-		To(handler.handleGetNamespacedAbnormalWorkloads))
-	webservice.Route(webservice.GET("/namespaces/{namespace}/abnormalworkloads").
-		Doc("get abnormal workloads' count of specified namespace").
-		Param(webservice.PathParameter("namespace", "the name of the project")).
-		Metadata(restfulspec.KeyOpenAPITags, []string{constants.NamespaceResourcesTag}).
-		Returns(http.StatusOK, api.StatusOK, api.Workloads{}).
-		To(handler.handleGetNamespacedAbnormalWorkloads))
+	ws.Route(ws.GET("/abnormalworkloads").
+		To(h.GetNamespacedAbnormalWorkloads).
+		Deprecate().
+		Doc("Get abnormal workloads").
+		Operation("get-cluster-abnormal-workloads").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagClusterResources}).
+		Returns(http.StatusOK, api.StatusOK, api.Workloads{}))
+	ws.Route(ws.GET("/namespaces/{namespace}/abnormalworkloads").
+		To(h.GetNamespacedAbnormalWorkloads).
+		Deprecate().
+		Doc("Get abnormal workloads").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagNamespacedResources}).
+		Operation("get-namespaced-abnormal-workloads").
+		Param(ws.PathParameter("namespace", "The specified namespace.")).
+		Returns(http.StatusOK, api.StatusOK, api.Workloads{}))
 
-	c.Add(webservice)
-
+	c.Add(ws)
 	return nil
 }

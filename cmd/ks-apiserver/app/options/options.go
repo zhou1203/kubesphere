@@ -23,12 +23,9 @@ import (
 	"net/http"
 	"strings"
 
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
-
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 
 	"kubesphere.io/kubesphere/pkg/apiserver"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
@@ -36,9 +33,9 @@ import (
 	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	genericoptions "kubesphere.io/kubesphere/pkg/server/options"
-	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing/elasticsearch"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 type ServerRunOptions struct {
@@ -92,30 +89,31 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		return nil, fmt.Errorf("failed to create cache, error: %v", err)
 	}
 
-	if s.AuditingOptions.Host != "" {
-		if apiServer.AuditingClient, err = auditingclient.NewClient(s.AuditingOptions); err != nil {
-			return nil, fmt.Errorf("failed to connect to elasticsearch, please check elasticsearch status, error: %v", err)
-		}
-	}
-
 	if c, err := cluster.New(apiServer.KubernetesClient.Config(), func(options *cluster.Options) {
 		options.Scheme = scheme.Scheme
 	}); err != nil {
-		klog.Fatalf("unable to create controller runtime cluster: %v", err)
+		return nil, fmt.Errorf("unable to create controller runtime cluster: %v", err)
 	} else {
 		apiServer.RuntimeCache = c.GetCache()
 		apiServer.RuntimeClient = c.GetClient()
 	}
 
+	apiServer.ResourceManager = resourcev1beta1.New(apiServer.RuntimeClient)
+
 	if apiServer.ClusterClient, err = clusterclient.NewClusterClientSet(apiServer.RuntimeCache); err != nil {
-		klog.Fatalf("unable to create cluster client: %v", err)
+		return nil, fmt.Errorf("unable to create cluster client: %v", err)
 	}
 
 	if apiServer.Issuer, err = token.NewIssuer(s.AuthenticationOptions); err != nil {
-		klog.Fatalf("unable to create issuer: %v", err)
+		return nil, fmt.Errorf("unable to create issuer: %v", err)
 	}
 
-	apiServer.ResourceManager = resourcev1beta1.New(apiServer.RuntimeClient)
+	k8sVersionInfo, err := apiServer.KubernetesClient.Kubernetes().Discovery().ServerVersion()
+	if err != nil {
+		return nil, fmt.Errorf("unable to fetch k8s version info: %v", err)
+	}
+
+	apiServer.K8sVersionInfo = k8sVersionInfo
 
 	server := &http.Server{
 		Addr: fmt.Sprintf(":%d", s.GenericServerRunOptions.InsecurePort),

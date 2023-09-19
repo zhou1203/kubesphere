@@ -26,44 +26,28 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	auditingv1alpha1 "kubesphere.io/kubesphere/pkg/api/auditing/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
-	"kubesphere.io/kubesphere/pkg/models/iam/am"
-	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/models/tenant"
 	servererr "kubesphere.io/kubesphere/pkg/server/errors"
-	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/overview"
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
-type tenantHandler struct {
+type handler struct {
 	tenant  tenant.Interface
 	auth    authorizer.Authorizer
 	counter overview.Counter
 	client  runtimeclient.Client
 }
 
-func NewTenantHandler(client runtimeclient.Client, auditingClient auditingclient.Client, clusterClient clusterclient.Interface,
-	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer, counter overview.Counter) *tenantHandler {
-	return &tenantHandler{
-		tenant:  tenant.New(client, auditingClient, clusterClient, am, im, authorizer),
-		client:  client,
-		auth:    authorizer,
-		counter: counter,
-	}
-}
-
-func (h *tenantHandler) ListWorkspaceTemplates(req *restful.Request, resp *restful.Response) {
+func (h *handler) ListWorkspaceTemplates(req *restful.Request, resp *restful.Response) {
 	user, ok := request.UserFrom(req.Request.Context())
 	queryParam := query.ParseQueryParameter(req)
 
@@ -84,7 +68,7 @@ func (h *tenantHandler) ListWorkspaceTemplates(req *restful.Request, resp *restf
 	resp.WriteEntity(result)
 }
 
-func (h *tenantHandler) ListNamespaces(req *restful.Request, resp *restful.Response) {
+func (h *handler) ListNamespaces(req *restful.Request, resp *restful.Response) {
 	workspace := req.PathParameter("workspace")
 	queryParam := query.ParseQueryParameter(req)
 
@@ -113,7 +97,7 @@ func (h *tenantHandler) ListNamespaces(req *restful.Request, resp *restful.Respo
 	resp.WriteEntity(result)
 }
 
-func (h *tenantHandler) CreateNamespace(request *restful.Request, response *restful.Response) {
+func (h *handler) CreateNamespace(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 	var namespace corev1.Namespace
 
@@ -140,7 +124,7 @@ func (h *tenantHandler) CreateNamespace(request *restful.Request, response *rest
 	response.WriteEntity(created)
 }
 
-func (h *tenantHandler) CreateWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
+func (h *handler) CreateWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
 	var workspace tenantv1alpha2.WorkspaceTemplate
 
 	err := req.ReadEntity(&workspace)
@@ -176,7 +160,7 @@ func (h *tenantHandler) CreateWorkspaceTemplate(req *restful.Request, resp *rest
 	resp.WriteEntity(created)
 }
 
-func (h *tenantHandler) DeleteWorkspaceTemplate(request *restful.Request, response *restful.Response) {
+func (h *handler) DeleteWorkspaceTemplate(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 
 	opts := metav1.DeleteOptions{}
@@ -201,7 +185,7 @@ func (h *tenantHandler) DeleteWorkspaceTemplate(request *restful.Request, respon
 	response.WriteEntity(servererr.None)
 }
 
-func (h *tenantHandler) UpdateWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
+func (h *handler) UpdateWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
 	workspaceName := req.PathParameter("workspace")
 	var workspace tenantv1alpha2.WorkspaceTemplate
 
@@ -250,7 +234,7 @@ func (h *tenantHandler) UpdateWorkspaceTemplate(req *restful.Request, resp *rest
 	resp.WriteEntity(updated)
 }
 
-func (h *tenantHandler) DescribeWorkspaceTemplate(request *restful.Request, response *restful.Response) {
+func (h *handler) DescribeWorkspaceTemplate(request *restful.Request, response *restful.Response) {
 	workspaceName := request.PathParameter("workspace")
 	workspace, err := h.tenant.DescribeWorkspaceTemplate(workspaceName)
 	if err != nil {
@@ -264,7 +248,7 @@ func (h *tenantHandler) DescribeWorkspaceTemplate(request *restful.Request, resp
 	response.WriteEntity(workspace)
 }
 
-func (h *tenantHandler) ListWorkspaceClusters(request *restful.Request, response *restful.Response) {
+func (h *handler) ListWorkspaceClusters(request *restful.Request, response *restful.Response) {
 	workspaceName := request.PathParameter("workspace")
 
 	result, err := h.tenant.ListWorkspaceClusters(workspaceName)
@@ -282,33 +266,7 @@ func (h *tenantHandler) ListWorkspaceClusters(request *restful.Request, response
 	response.WriteEntity(result)
 }
 
-func (h *tenantHandler) Auditing(req *restful.Request, resp *restful.Response) {
-	user, ok := request.UserFrom(req.Request.Context())
-	if !ok {
-		err := fmt.Errorf("cannot obtain user info")
-		klog.Errorln(err)
-		api.HandleForbidden(resp, req, err)
-		return
-	}
-	queryParam, err := auditingv1alpha1.ParseQueryParameter(req)
-	if err != nil {
-		klog.Errorln(err)
-		api.HandleInternalError(resp, req, err)
-		return
-	}
-
-	result, err := h.tenant.Auditing(user, queryParam)
-	if err != nil {
-		klog.Errorln(err)
-		api.HandleInternalError(resp, req, err)
-		return
-	}
-
-	_ = resp.WriteEntity(result)
-
-}
-
-func (h *tenantHandler) DescribeNamespace(request *restful.Request, response *restful.Response) {
+func (h *handler) DescribeNamespace(request *restful.Request, response *restful.Response) {
 	workspaceName := request.PathParameter("workspace")
 	namespaceName := request.PathParameter("namespace")
 	ns, err := h.tenant.DescribeNamespace(workspaceName, namespaceName)
@@ -325,7 +283,7 @@ func (h *tenantHandler) DescribeNamespace(request *restful.Request, response *re
 	response.WriteEntity(ns)
 }
 
-func (h *tenantHandler) DeleteNamespace(request *restful.Request, response *restful.Response) {
+func (h *handler) DeleteNamespace(request *restful.Request, response *restful.Response) {
 	workspaceName := request.PathParameter("workspace")
 	namespaceName := request.PathParameter("namespace")
 
@@ -343,7 +301,7 @@ func (h *tenantHandler) DeleteNamespace(request *restful.Request, response *rest
 	response.WriteEntity(servererr.None)
 }
 
-func (h *tenantHandler) UpdateNamespace(request *restful.Request, response *restful.Response) {
+func (h *handler) UpdateNamespace(request *restful.Request, response *restful.Response) {
 	workspaceName := request.PathParameter("workspace")
 	namespaceName := request.PathParameter("namespace")
 
@@ -381,7 +339,7 @@ func (h *tenantHandler) UpdateNamespace(request *restful.Request, response *rest
 	response.WriteEntity(updated)
 }
 
-func (h *tenantHandler) PatchNamespace(request *restful.Request, response *restful.Response) {
+func (h *handler) PatchNamespace(request *restful.Request, response *restful.Response) {
 	workspaceName := request.PathParameter("workspace")
 	namespaceName := request.PathParameter("namespace")
 
@@ -414,7 +372,7 @@ func (h *tenantHandler) PatchNamespace(request *restful.Request, response *restf
 	response.WriteEntity(patched)
 }
 
-func (h *tenantHandler) PatchWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
+func (h *handler) PatchWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
 	workspaceName := req.PathParameter("workspace")
 	var data json.RawMessage
 	err := req.ReadEntity(&data)
@@ -454,7 +412,7 @@ func (h *tenantHandler) PatchWorkspaceTemplate(req *restful.Request, resp *restf
 	resp.WriteEntity(patched)
 }
 
-func (h *tenantHandler) ListClusters(r *restful.Request, response *restful.Response) {
+func (h *handler) ListClusters(r *restful.Request, response *restful.Response) {
 	user, ok := request.UserFrom(r.Request.Context())
 
 	if !ok {
@@ -477,7 +435,7 @@ func (h *tenantHandler) ListClusters(r *restful.Request, response *restful.Respo
 	response.WriteEntity(result)
 }
 
-func (h *tenantHandler) CreateWorkspaceResourceQuota(r *restful.Request, response *restful.Response) {
+func (h *handler) CreateWorkspaceResourceQuota(r *restful.Request, response *restful.Response) {
 	workspaceName := r.PathParameter("workspace")
 	resourceQuota := &quotav1alpha2.ResourceQuota{}
 	err := r.ReadEntity(resourceQuota)
@@ -493,7 +451,7 @@ func (h *tenantHandler) CreateWorkspaceResourceQuota(r *restful.Request, respons
 	response.WriteEntity(result)
 }
 
-func (h *tenantHandler) DeleteWorkspaceResourceQuota(r *restful.Request, response *restful.Response) {
+func (h *handler) DeleteWorkspaceResourceQuota(r *restful.Request, response *restful.Response) {
 	workspace := r.PathParameter("workspace")
 	resourceQuota := r.PathParameter("resourcequota")
 
@@ -509,7 +467,7 @@ func (h *tenantHandler) DeleteWorkspaceResourceQuota(r *restful.Request, respons
 	response.WriteEntity(servererr.None)
 }
 
-func (h *tenantHandler) UpdateWorkspaceResourceQuota(r *restful.Request, response *restful.Response) {
+func (h *handler) UpdateWorkspaceResourceQuota(r *restful.Request, response *restful.Response) {
 	workspaceName := r.PathParameter("workspace")
 	resourceQuotaName := r.PathParameter("resourcequota")
 	resourceQuota := &quotav1alpha2.ResourceQuota{}
@@ -535,7 +493,7 @@ func (h *tenantHandler) UpdateWorkspaceResourceQuota(r *restful.Request, respons
 	response.WriteEntity(result)
 }
 
-func (h *tenantHandler) DescribeWorkspaceResourceQuota(r *restful.Request, response *restful.Response) {
+func (h *handler) DescribeWorkspaceResourceQuota(r *restful.Request, response *restful.Response) {
 	workspaceName := r.PathParameter("workspace")
 	resourceQuotaName := r.PathParameter("resourcequota")
 
@@ -552,7 +510,7 @@ func (h *tenantHandler) DescribeWorkspaceResourceQuota(r *restful.Request, respo
 	response.WriteEntity(resourceQuota)
 }
 
-func (h *tenantHandler) GetWorkspaceMetrics(req *restful.Request, resp *restful.Response) {
+func (h *handler) GetWorkspaceMetrics(req *restful.Request, resp *restful.Response) {
 	workspace := req.PathParameter("workspace")
 
 	user, ok := request.UserFrom(req.Request.Context())
@@ -584,7 +542,7 @@ func (h *tenantHandler) GetWorkspaceMetrics(req *restful.Request, resp *restful.
 
 }
 
-func (h *tenantHandler) GetPlatformMetrics(req *restful.Request, resp *restful.Response) {
+func (h *handler) GetPlatformMetrics(req *restful.Request, resp *restful.Response) {
 	user, ok := request.UserFrom(req.Request.Context())
 	if !ok {
 		err := fmt.Errorf("cannot obtain user info")

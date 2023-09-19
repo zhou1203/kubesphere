@@ -20,16 +20,13 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/emicklei/go-restful/v3"
+	"github.com/gorilla/websocket"
+	"k8s.io/klog/v2"
+
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	requestctx "kubesphere.io/kubesphere/pkg/apiserver/request"
-
-	"github.com/emicklei/go-restful/v3"
-	"github.com/gorilla/websocket"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/klog/v2"
-
 	"kubesphere.io/kubesphere/pkg/models/terminal"
 )
 
@@ -40,19 +37,12 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-type terminalHandler struct {
+type handler struct {
 	terminaler terminal.Interface
 	authorizer authorizer.Authorizer
 }
 
-func newTerminalHandler(client kubernetes.Interface, authorizer authorizer.Authorizer, config *rest.Config, options *terminal.Options) *terminalHandler {
-	return &terminalHandler{
-		authorizer: authorizer,
-		terminaler: terminal.NewTerminaler(client, config, options),
-	}
-}
-
-func (t *terminalHandler) handleTerminalSession(request *restful.Request, response *restful.Response) {
+func (h *handler) HandleTerminalSession(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 	podName := request.PathParameter("pod")
 	containerName := request.QueryParameter("container")
@@ -70,7 +60,7 @@ func (t *terminalHandler) handleTerminalSession(request *restful.Request, respon
 		ResourceScope:   requestctx.NamespaceScope,
 	}
 
-	decision, reason, err := t.authorizer.Authorize(createPodsExec)
+	decision, reason, err := h.authorizer.Authorize(createPodsExec)
 	if err != nil {
 		api.HandleInternalError(response, request, err)
 		return
@@ -87,10 +77,10 @@ func (t *terminalHandler) handleTerminalSession(request *restful.Request, respon
 		return
 	}
 
-	t.terminaler.HandleSession(shell, namespace, podName, containerName, conn)
+	h.terminaler.HandleSession(shell, namespace, podName, containerName, conn)
 }
 
-func (t *terminalHandler) handleShellAccessToNode(request *restful.Request, response *restful.Response) {
+func (h *handler) HandleShellAccessToNode(request *restful.Request, response *restful.Response) {
 	nodename := request.PathParameter("nodename")
 
 	user, _ := requestctx.UserFrom(request.Request.Context())
@@ -104,7 +94,7 @@ func (t *terminalHandler) handleShellAccessToNode(request *restful.Request, resp
 		ResourceScope:   requestctx.ClusterScope,
 	}
 
-	decision, reason, err := t.authorizer.Authorize(createNodesExec)
+	decision, reason, err := h.authorizer.Authorize(createNodesExec)
 	if err != nil {
 		api.HandleInternalError(response, request, err)
 		return
@@ -121,5 +111,5 @@ func (t *terminalHandler) handleShellAccessToNode(request *restful.Request, resp
 		return
 	}
 
-	t.terminaler.HandleShellAccessToNode(nodename, conn)
+	h.terminaler.HandleShellAccessToNode(nodename, conn)
 }

@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-
 	"net/http"
 	rt "runtime"
 	"strconv"
@@ -31,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	urlruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8sversion "k8s.io/apimachinery/pkg/version"
 	unionauth "k8s.io/apiserver/pkg/authentication/request/union"
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
@@ -56,6 +56,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/filters"
 	"kubesphere.io/kubesphere/pkg/apiserver/metrics"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
+	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
 	gatewayv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha2"
@@ -76,7 +77,6 @@ import (
 	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/server/healthz"
-	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	overviewclient "kubesphere.io/kubesphere/pkg/simple/client/overview"
@@ -87,9 +87,6 @@ import (
 var initMetrics sync.Once
 
 type APIServer struct {
-	// number of kubesphere apiserver
-	ServerCount int
-
 	Server *http.Server
 
 	Config *apiserverconfig.Config
@@ -103,8 +100,6 @@ type APIServer struct {
 	// cache is used for short-lived objects, like session
 	CacheClient cache.Interface
 
-	AuditingClient auditing.Client
-
 	// controller-runtime cache
 	RuntimeCache runtimecache.Cache
 
@@ -117,6 +112,8 @@ type APIServer struct {
 	ClusterClient clusterclient.Interface
 
 	ResourceManager resourcev1beta1.ResourceManager
+
+	K8sVersionInfo *k8sversion.Info
 }
 
 func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
@@ -141,7 +138,6 @@ func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
 	if err := s.buildHandlerChain(stopCh); err != nil {
 		return fmt.Errorf("failed to build handler chain: %v", err)
 	}
-
 	return nil
 }
 
@@ -168,31 +164,31 @@ func (s *APIServer) installKubeSphereAPIs() {
 	imOperator := im.NewOperator(s.RuntimeClient, s.Config.AuthenticationOptions)
 	amOperator := am.NewOperator(s.ResourceManager)
 	rbacAuthorizer := rbac.NewRBACAuthorizer(amOperator)
-
 	counter := overviewclient.New(s.RuntimeClient)
 	counter.RegisterResource(overviewclient.NewDefaultRegisterOptions()...)
-	urlruntime.Must(configv1alpha2.AddToContainer(s.container, s.Config, s.RuntimeClient))
-	urlruntime.Must(resourcev1alpha3.AddToContainer(s.container, s.RuntimeCache, counter))
-	urlruntime.Must(operationsv1alpha2.AddToContainer(s.container, s.RuntimeClient))
-	urlruntime.Must(resourcesv1alpha2.AddToContainer(s.container, s.RuntimeClient,
-		s.KubernetesClient.Master(), s.Config.AuthenticationOptions.KubectlImage))
-	urlruntime.Must(tenantv1alpha2.AddToContainer(s.container, s.RuntimeClient,
-		s.AuditingClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer, counter))
-	urlruntime.Must(tenantv1alpha3.AddToContainer(s.container, s.RuntimeClient,
-		s.AuditingClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer))
-	urlruntime.Must(terminalv1alpha2.AddToContainer(s.container, s.KubernetesClient.Kubernetes(),
-		rbacAuthorizer, s.KubernetesClient.Config(), s.Config.TerminalOptions))
-	urlruntime.Must(clusterkapisv1alpha1.AddToContainer(s.container, s.RuntimeClient))
-	urlruntime.Must(iamapiv1beta1.AddToContainer(s.container, imOperator, amOperator))
 
-	urlruntime.Must(oauth.AddToContainer(s.container, imOperator,
-		auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions),
-		auth.NewPasswordAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
-		auth.NewOAuthAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
-		auth.NewLoginRecorder(s.RuntimeClient), s.Config.AuthenticationOptions))
-	urlruntime.Must(version.AddToContainer(s.container, s.KubernetesClient.Kubernetes().Discovery()))
-	urlruntime.Must(packagev1alpha1.AddToContainer(s.container, s.RuntimeCache))
-	urlruntime.Must(gatewayv1alpha2.AddToContainer(s.container, s.RuntimeCache))
+	handlers := []rest.Handler{
+		configv1alpha2.NewHandler(s.Config, s.RuntimeClient),
+		resourcev1alpha3.NewHandler(s.RuntimeCache, counter),
+		operationsv1alpha2.NewHandler(s.RuntimeClient),
+		resourcesv1alpha2.NewHandler(s.RuntimeClient, s.KubernetesClient.Master(), s.Config.AuthenticationOptions.KubectlImage),
+		tenantv1alpha2.NewHandler(s.RuntimeClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer, counter),
+		tenantv1alpha3.NewHandler(s.RuntimeClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer),
+		terminalv1alpha2.NewHandler(s.KubernetesClient.Kubernetes(), rbacAuthorizer, s.KubernetesClient.Config(), s.Config.TerminalOptions),
+		clusterkapisv1alpha1.NewHandler(s.RuntimeClient),
+		iamapiv1beta1.NewHandler(imOperator, amOperator),
+		oauth.NewHandler(imOperator, auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions),
+			auth.NewPasswordAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
+			auth.NewOAuthAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
+			auth.NewLoginRecorder(s.RuntimeClient), s.Config.AuthenticationOptions),
+		version.NewHandler(s.K8sVersionInfo),
+		packagev1alpha1.NewHandler(s.RuntimeCache),
+		gatewayv1alpha2.NewHandler(s.RuntimeCache),
+	}
+
+	for _, handler := range handlers {
+		urlruntime.Must(handler.AddToContainer(s.container))
+	}
 
 	if s.Config.MultiClusterOptions.ClusterRole == multicluster.ClusterRoleHost {
 		urlruntime.Must(marketplace.AddToContainer(s.container, s.RuntimeClient))
