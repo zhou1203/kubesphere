@@ -81,7 +81,7 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	if clusterutils.IsClusterReady(cluster) {
+	if !clusterutils.IsClusterReady(cluster) {
 		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(fmt.Sprintf("cluster %s is not ready", cluster.Name)), w)
 		return
 	}
