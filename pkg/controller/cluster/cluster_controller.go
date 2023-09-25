@@ -49,6 +49,7 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
+	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/version"
@@ -94,14 +95,20 @@ type Reconciler struct {
 	resyncPeriod     time.Duration
 	installLock      sync.Map
 	clusterClientSet clusterclient.Interface
+	clusterUID       types.UID
 }
 
-func NewReconciler(hostConfig *rest.Config, clusterClientSet clusterclient.Interface, hostClusterName string, resyncPeriod time.Duration) (*Reconciler, error) {
+func NewReconciler(client k8s.Client, clusterClientSet clusterclient.Interface, hostClusterName string, resyncPeriod time.Duration) (*Reconciler, error) {
+	kubeSystem, err := client.Kubernetes().CoreV1().Namespaces().Get(context.Background(), metav1.NamespaceSystem, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
 	return &Reconciler{
-		hostConfig:       hostConfig,
+		hostConfig:       client.Config(),
 		clusterClientSet: clusterClientSet,
 		hostClusterName:  hostClusterName,
 		resyncPeriod:     resyncPeriod,
+		clusterUID:       kubeSystem.UID,
 	}, nil
 }
 
@@ -261,11 +268,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	cluster.Status.UID = kubeSystem.UID
 
-	isHost, err := r.checkIfClusterIsHostCluster(ctx, kubeSystem.UID)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if isHost {
+	if r.checkIfClusterIsHostCluster(kubeSystem.UID) {
 		return r.reconcileHostCluster(ctx, cluster, clusterClient.KubernetesClient)
 	}
 	return r.reconcileMemberCluster(ctx, cluster, clusterClient.KubernetesClient)
@@ -388,12 +391,8 @@ func (r *Reconciler) setClusterNameInNamespace(ctx context.Context, cluster *clu
 	})
 }
 
-func (r *Reconciler) checkIfClusterIsHostCluster(ctx context.Context, clusterKubeSystemUID types.UID) (bool, error) {
-	kubeSystem := &corev1.Namespace{}
-	if err := r.Get(ctx, client.ObjectKey{Name: metav1.NamespaceSystem}, kubeSystem); err != nil {
-		return false, err
-	}
-	return kubeSystem.UID == clusterKubeSystemUID, nil
+func (r *Reconciler) checkIfClusterIsHostCluster(clusterKubeSystemUID types.UID) bool {
+	return r.clusterUID == clusterKubeSystemUID
 }
 
 func (r *Reconciler) tryFetchKubeSphereVersion(ctx context.Context, clusterClient kubernetes.Interface) (string, error) {
