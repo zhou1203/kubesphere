@@ -65,15 +65,25 @@ type Workloads struct {
 	Items     map[string]interface{} `json:"items,omitempty" description:"unhealthy workloads"`
 }
 
-const StatusOK = "ok"
-
 const (
 	ResourceKindDaemonSet             = "daemonsets"
 	ResourceKindDeployment            = "deployments"
 	ResourceKindJob                   = "jobs"
 	ResourceKindPersistentVolumeClaim = "persistentvolumeclaims"
 	ResourceKindStatefulSet           = "statefulsets"
-
-	WorkspaceNone = ""
-	ClusterNone   = ""
+	StatusOK                          = "ok"
+	WorkspaceNone                     = ""
+	ClusterNone                       = ""
+	TagNonResourceAPI                 = "NonResource APIs"
+	TagAuthentication                 = "Authentication"
+	TagMultiCluster                   = "Multi-cluster"
+	TagIdentityManagement             = "Identity Management"
+	TagAccessManagement               = "Access Management"
+	TagAdvancedOperations             = "Advanced Operations"
+	TagTerminal                       = "Web Terminal"
+	TagNamespacedResources            = "Namespaced Resources"
+	TagClusterResources               = "Cluster Resources"
+	TagComponentStatus                = "Component Status"
+	TagUserRelatedResources           = "User Related Resources"
+	TagPlatformConfigurations         = "Platform Configurations"
 )

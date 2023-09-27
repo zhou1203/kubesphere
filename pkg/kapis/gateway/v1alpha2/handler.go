@@ -26,9 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	"kubesphere.io/api/gateway/v1alpha2"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 )
@@ -42,13 +41,7 @@ type handler struct {
 	cache runtimeclient.Reader
 }
 
-func newHandler(cache runtimeclient.Reader) *handler {
-	return &handler{
-		cache: cache,
-	}
-}
-
-func (h *handler) ingressClassScopeList(request *restful.Request, response *restful.Response) {
+func (h *handler) ListIngressClassScopes(request *restful.Request, response *restful.Response) {
 	currentNs := request.PathParameter("namespace")
 
 	ingressClassScopeList := v1alpha2.IngressClassScopeList{}

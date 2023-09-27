@@ -25,23 +25,23 @@ import (
 	"testing"
 	"unsafe"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	"kubesphere.io/kubesphere/pkg/scheme"
+	v2 "kubesphere.io/kubesphere/pkg/models/registries/v2"
+	"kubesphere.io/kubesphere/pkg/simple/client/overview"
 
 	"github.com/emicklei/go-restful/v3"
-	"k8s.io/klog/v2"
-
 	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
+	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/models/components"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 func TestResourceV1alpha3(t *testing.T) {
@@ -109,7 +109,7 @@ func TestResourceV1alpha3(t *testing.T) {
 	}
 }
 
-func listResources(namespace, resourceType string, query *query.Query, h *Handler) (*api.ListResult, error) {
+func listResources(namespace, resourceType string, query *query.Query, h *handler) (*api.ListResult, error) {
 	result, err := h.resourceGetterV1alpha3.List(resourceType, namespace, query)
 	if err != nil {
 		return nil, err
@@ -194,7 +194,7 @@ var (
 	services    = []runtime.Object{apiServerService, ksControllerService}
 )
 
-func prepare() (*Handler, error) {
+func prepare() (*handler, error) {
 	client := runtimefakeclient.NewClientBuilder().
 		WithScheme(scheme.Scheme).
 		WithRuntimeObjects(namespaces...).
@@ -203,7 +203,12 @@ func prepare() (*Handler, error) {
 		WithRuntimeObjects(services...).
 		Build()
 
-	handler := New(resourcev1alpha3.NewResourceGetter(client), components.NewComponentsGetter(client), nil)
+	handler := &handler{
+		resourceGetterV1alpha3: resourcev1alpha3.NewResourceGetter(client),
+		componentsGetter:       components.NewComponentsGetter(client),
+		registryHelper:         v2.NewRegistryHelper(),
+		counter:                overview.New(client),
+	}
 	return handler, nil
 }
 
@@ -220,7 +225,7 @@ func TestHandleGetComponentStatus(t *testing.T) {
 		t.Fatal("init handler failed")
 	}
 
-	handler.handleGetComponentStatus(request, response)
+	handler.GetComponentStatus(request, response)
 	if status := response.StatusCode(); status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusOK)
@@ -236,7 +241,7 @@ func TestHandleGetComponents(t *testing.T) {
 	if err != nil {
 		t.Fatal("init handler failed")
 	}
-	handler.handleGetComponents(request, response)
+	handler.GetComponents(request, response)
 	if status := response.StatusCode(); status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusOK)

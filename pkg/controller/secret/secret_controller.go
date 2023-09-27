@@ -19,11 +19,11 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
-	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 const (
-	controllerName = "secrets-controller"
+	controllerName               = "secrets-controller"
+	serviceAccountUsernameFormat = "kubesphere:serviceaccount:%s:%s"
 )
 
 type Reconciler struct {
@@ -36,8 +36,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Logger.WithValues(req.NamespacedName, "Secret")
 	secret := &v1.Secret{}
-	err := r.Get(ctx, req.NamespacedName, secret)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, secret); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
@@ -45,13 +44,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	saName := secret.Annotations[constants.ServiceAccountName]
-
-	if secret.Type == constants.SecretTypeKubesphereServiceAccount && secret.Data[constants.SecretTokenKey] == nil &&
+	saName := secret.Annotations[corev1alpha1.ServiceAccountName]
+	if secret.Type == corev1alpha1.SecretTypeServiceAccountToken && secret.Data[corev1alpha1.ServiceAccountToken] == nil &&
 		saName != "" {
 		sa := &corev1alpha1.ServiceAccount{}
-		err := r.Get(ctx, client.ObjectKey{Namespace: req.Namespace, Name: saName}, sa)
-		if err != nil {
+
+		if err := r.Get(ctx, client.ObjectKey{Namespace: req.Namespace, Name: saName}, sa); err != nil {
 			if errors.IsNotFound(err) {
 				return ctrl.Result{}, client.IgnoreNotFound(err)
 			}
@@ -67,9 +65,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if secret.Data == nil {
 			secret.Data = make(map[string][]byte, 0)
 		}
-		secret.Data[constants.SecretTokenKey] = []byte(tokenTo.AccessToken)
-		err = r.Update(ctx, secret)
-		if err != nil {
+		secret.Data[corev1alpha1.ServiceAccountToken] = []byte(tokenTo.AccessToken)
+		if err = r.Update(ctx, secret); err != nil {
 			logger.Error(err, "update secret failed")
 			return ctrl.Result{}, err
 		}
@@ -80,13 +77,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
-	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
-	}
-
-	if r.Logger.GetSink() == nil {
-		r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	}
+	r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
+	r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	return builder.
 		ControllerManagedBy(mgr).
 		For(
@@ -102,7 +94,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *Reconciler) issueTokenTo(sa *corev1alpha1.ServiceAccount) (*oauth.Token, error) {
-	name := fmt.Sprintf(constants.ServiceAccountTokenSubFormat, sa.Namespace, sa.Name)
+	name := fmt.Sprintf(serviceAccountUsernameFormat, sa.Namespace, sa.Name)
 	accessToken, err := r.TokenIssuer.IssueTo(&token.IssueRequest{
 		User: &user.DefaultInfo{
 			Name:   name,

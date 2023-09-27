@@ -29,35 +29,6 @@ const (
 	CreatorAnnotationKey     = "kubesphere.io/creator"
 	UsernameLabelKey         = "kubesphere.io/username"
 	KubefedManagedLabel      = "kubefed.io/managed"
-
-	ServiceAccountName                 = "kubesphere.io/service-account.name"
-	ServiceAccountUid                  = "kubesphere.io/service-account.uid"
-	SecretTypeKubesphereServiceAccount = "kubesphere.io/service-account-token"
-	SecretTokenKey                     = "token"
-
-	ServiceAccountTokenSubFormat = "kubesphere:serviceaccount:%s:%s"
-
-	AuthenticationTag = "Authentication"
-
-	ToolboxTag      = "Toolbox"
-	RegistryTag     = "Docker Registry"
-	GitTag          = "Git"
-	TerminalTag     = "Terminal"
-	MultiClusterTag = "Multi-cluster"
-
-	WorkspaceTag    = "Workspace"
-	NamespaceTag    = "Namespace"
-	UserResourceTag = "User's Resources"
-
-	NamespaceResourcesTag = "Namespace Resources"
-	ClusterResourcesTag   = "Cluster Resources"
-	ComponentStatusTag    = "Component Status"
-
-	NetworkTopologyTag = "Network Topology"
-
-	LogQueryTag      = "Log Query"
-	EventsQueryTag   = "Events Query"
-	AuditingQueryTag = "Auditing Query"
 )
 
 var (

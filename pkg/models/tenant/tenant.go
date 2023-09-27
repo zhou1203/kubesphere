@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mitchellh/mapstructure"
 	corev1 "k8s.io/api/core/v1"
@@ -42,19 +41,15 @@ import (
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	auditingv1alpha1 "kubesphere.io/kubesphere/pkg/api/auditing/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
-	"kubesphere.io/kubesphere/pkg/models/auditing"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	resources "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3"
 	resourcesv1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
-	auditingclient "kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	jsonpatchutil "kubesphere.io/kubesphere/pkg/utils/josnpatchutil"
-	"kubesphere.io/kubesphere/pkg/utils/stringutils"
 )
 
 const orphanFinalizer = "orphan.finalizers.kubesphere.io"
@@ -71,7 +66,6 @@ type Interface interface {
 	ListNamespaces(user user.Info, workspace string, query *query.Query) (*api.ListResult, error)
 	CreateNamespace(workspace string, namespace *corev1.Namespace) (*corev1.Namespace, error)
 	ListWorkspaceClusters(workspace string) (*api.ListResult, error)
-	Auditing(user user.Info, queryParam *auditingv1alpha1.Query) (*auditingv1alpha1.APIResponse, error)
 	DescribeNamespace(workspace, namespace string) (*corev1.Namespace, error)
 	DeleteNamespace(workspace, namespace string) error
 	UpdateNamespace(workspace string, namespace *corev1.Namespace) (*corev1.Namespace, error)
@@ -87,13 +81,12 @@ type tenantOperator struct {
 	am             am.AccessManagementInterface
 	im             im.IdentityManagementInterface
 	authorizer     authorizer.Authorizer
-	auditing       auditing.Interface
 	resourceGetter *resourcesv1alpha3.ResourceGetter
 	clusterClient  clusterclient.Interface
 	client         runtimeclient.Client
 }
 
-func New(cacheClient runtimeclient.Client, auditingClient auditingclient.Client, clusterClient clusterclient.Interface,
+func New(cacheClient runtimeclient.Client, clusterClient clusterclient.Interface,
 	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer) Interface {
 	return &tenantOperator{
 		am:             am,
@@ -101,7 +94,6 @@ func New(cacheClient runtimeclient.Client, auditingClient auditingclient.Client,
 		authorizer:     authorizer,
 		resourceGetter: resourcesv1alpha3.NewResourceGetter(cacheClient),
 		client:         cacheClient,
-		auditing:       auditing.NewEventsOperator(auditingClient),
 		clusterClient:  clusterClient,
 	}
 }
@@ -595,7 +587,7 @@ func (t *tenantOperator) DeleteWorkspaceTemplate(workspaceName string, opts meta
 // 2. If `workspaceSubstrs` is not empty, the namespace SHOULD belong to a workspace whose name contains one of the specified substrings.
 // 3. If `namespaces` is not empty, the namespace SHOULD be one of the specified namespacs.
 // 4. If `namespaceSubstrs` is not empty, the namespace's name SHOULD contain one of the specified substrings.
-// 5. If ALL of the filters above are empty, returns all namespaces.
+// 5. If All the filters above are empty, returns all namespaces.
 func (t *tenantOperator) listIntersectedNamespaces(workspaces, workspaceSubstrs,
 	namespaces, namespaceSubstrs []string) ([]*corev1.Namespace, error) {
 	var (
@@ -672,99 +664,6 @@ func (t *tenantOperator) listIntersectedWorkspaces(workspaces, workspaceSubstrs 
 		iWorkspaces = append(iWorkspaces, ws)
 	}
 	return iWorkspaces, nil
-}
-
-func (t *tenantOperator) Auditing(user user.Info, queryParam *auditingv1alpha1.Query) (*auditingv1alpha1.APIResponse, error) {
-	iNamespaces, err := t.listIntersectedNamespaces(
-		stringutils.Split(queryParam.WorkspaceFilter, ","),
-		stringutils.Split(queryParam.WorkspaceSearch, ","),
-		stringutils.Split(queryParam.ObjectRefNamespaceFilter, ","),
-		stringutils.Split(queryParam.ObjectRefNamespaceSearch, ","))
-	if err != nil {
-		return nil, err
-	}
-
-	iWorkspaces, err := t.listIntersectedWorkspaces(
-		stringutils.Split(queryParam.WorkspaceFilter, ","),
-		stringutils.Split(queryParam.WorkspaceSearch, ","))
-	if err != nil {
-		return nil, err
-	}
-
-	namespaceCreateTimeMap := make(map[string]time.Time)
-	workspaceCreateTimeMap := make(map[string]time.Time)
-
-	// Now auditing and event have the same authorization mechanism, so we can determine whether the user
-	// has permission to view the auditing log in ns by judging whether the user has the permission to view the event in ns.
-	for _, ns := range iNamespaces {
-		listEvts := authorizer.AttributesRecord{
-			User:            user,
-			Verb:            "list",
-			APIGroup:        "",
-			APIVersion:      "v1",
-			Namespace:       ns.Name,
-			Resource:        "events",
-			ResourceRequest: true,
-			ResourceScope:   request.NamespaceScope,
-		}
-		decision, _, err := t.authorizer.Authorize(listEvts)
-		if err != nil {
-			return nil, err
-		}
-		if decision == authorizer.DecisionAllow {
-			namespaceCreateTimeMap[ns.Name] = ns.CreationTimestamp.Time
-		}
-	}
-
-	// Now auditing and event have the same authorization mechanism, so we can determine whether the user
-	// has permission to view the auditing log in ws by judging whether the user has the permission to view the event in ws.
-	for _, ws := range iWorkspaces {
-		listEvts := authorizer.AttributesRecord{
-			User:            user,
-			Verb:            "list",
-			APIGroup:        "",
-			APIVersion:      "v1",
-			Workspace:       ws.Name,
-			Resource:        "events",
-			ResourceRequest: true,
-			ResourceScope:   request.WorkspaceScope,
-		}
-		decision, _, err := t.authorizer.Authorize(listEvts)
-		if err != nil {
-			return nil, err
-		}
-		if decision == authorizer.DecisionAllow {
-			workspaceCreateTimeMap[ws.Name] = ws.CreationTimestamp.Time
-		}
-	}
-
-	// If there are no ns and ws query conditions,
-	// those events with empty `objectRef.namespace` will also be listed when user can list all events
-	if len(queryParam.WorkspaceFilter) == 0 && len(queryParam.ObjectRefNamespaceFilter) == 0 &&
-		len(queryParam.WorkspaceSearch) == 0 && len(queryParam.ObjectRefNamespaceSearch) == 0 {
-		listEvts := authorizer.AttributesRecord{
-			User:            user,
-			Verb:            "list",
-			APIGroup:        "",
-			APIVersion:      "v1",
-			Resource:        "events",
-			ResourceRequest: true,
-			ResourceScope:   request.ClusterScope,
-		}
-		decision, _, err := t.authorizer.Authorize(listEvts)
-		if err != nil {
-			return nil, err
-		}
-		if decision == authorizer.DecisionAllow {
-			namespaceCreateTimeMap[""] = time.Time{}
-			workspaceCreateTimeMap[""] = time.Time{}
-		}
-	}
-
-	return t.auditing.Events(queryParam, func(filter *auditingclient.Filter) {
-		filter.ObjectRefNamespaceMap = namespaceCreateTimeMap
-		filter.WorkspaceMap = workspaceCreateTimeMap
-	})
 }
 
 func (t *tenantOperator) getClusterRoleBindingsByUser(clusterName, username string) (*iamv1beta1.ClusterRoleBindingList, error) {

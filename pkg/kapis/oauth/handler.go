@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
-
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/api"
@@ -81,8 +80,8 @@ func (request *TokenReview) Validate() error {
 	return nil
 }
 
-// https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata
-type discovery struct {
+// ProviderMetadata https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata
+type ProviderMetadata struct {
 	// URL using the https scheme with no query or fragment component that the OP
 	// asserts as its Issuer Identifier.
 	Issuer string `json:"issuer"`
@@ -124,20 +123,6 @@ type handler struct {
 	loginRecorder         auth.LoginRecorder
 }
 
-func newHandler(im im.IdentityManagementInterface,
-	tokenOperator auth.TokenManagementInterface,
-	passwordAuthenticator auth.PasswordAuthenticator,
-	oauthAuthenticator auth.OAuthAuthenticator,
-	loginRecorder auth.LoginRecorder,
-	options *authentication.Options) *handler {
-	return &handler{im: im,
-		tokenOperator:         tokenOperator,
-		passwordAuthenticator: passwordAuthenticator,
-		oauthAuthenticator:    oauthAuthenticator,
-		loginRecorder:         loginRecorder,
-		options:               options}
-}
-
 // tokenReview Implement webhook authentication interface
 // https://kubernetes.io/docs/reference/access-authn-authz/authentication/#webhook-token-authentication
 func (h *handler) tokenReview(req *restful.Request, resp *restful.Response) {
@@ -173,7 +158,7 @@ func (h *handler) tokenReview(req *restful.Request, resp *restful.Response) {
 }
 
 func (h *handler) discovery(req *restful.Request, response *restful.Response) {
-	result := discovery{
+	result := ProviderMetadata{
 		Issuer:            h.options.OAuthOptions.Issuer,
 		Auth:              h.options.OAuthOptions.Issuer + "/authorize",
 		Token:             h.options.OAuthOptions.Issuer + "/token",
@@ -278,11 +263,11 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 	// Other scope values MAY be present.
 	// Scope values used that are not understood by an implementation SHOULD be ignored.
 	if !oauth.IsValidScopes(scopes) {
-		klog.Warningf("Some requested scopes were invalid: %v", scopes)
+		klog.Warningf("some requested scopes were invalid: %v", scopes)
 	}
 
 	if !oauth.IsValidResponseTypes(responseTypes) {
-		err := fmt.Errorf("Some requested response types were invalid")
+		err := fmt.Errorf("some requested response types were invalid: %v", responseTypes)
 		informsError(oauth.NewInvalidRequest(err))
 		return
 	}

@@ -28,9 +28,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	apiv1alpha1 "kubesphere.io/kubesphere/pkg/api/cluster/v1alpha1"
@@ -44,12 +43,6 @@ const defaultTimeout = 10 * time.Second
 
 type handler struct {
 	client runtimeclient.Client
-}
-
-func newHandler(cacheClient runtimeclient.Client) *handler {
-	return &handler{
-		client: cacheClient,
-	}
 }
 
 // updateKubeConfig updates the kubeconfig of the specific cluster, this API is used to update expired kubeconfig.

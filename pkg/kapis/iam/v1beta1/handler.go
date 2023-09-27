@@ -3,27 +3,23 @@ package v1beta1
 import (
 	"fmt"
 
-	authuser "k8s.io/apiserver/pkg/authentication/user"
-	"k8s.io/apiserver/pkg/endpoints/request"
-
 	"github.com/emicklei/go-restful/v3"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	authuser "k8s.io/apiserver/pkg/authentication/user"
+	"k8s.io/apiserver/pkg/endpoints/request"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/query"
-	"kubesphere.io/kubesphere/pkg/models/auth"
-	servererr "kubesphere.io/kubesphere/pkg/server/errors"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
-	"kubesphere.io/kubesphere/pkg/apiserver/authorization/rbac"
-	apirequest "kubesphere.io/kubesphere/pkg/apiserver/request"
-
 	"kubesphere.io/kubesphere/pkg/api"
+	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
+	"kubesphere.io/kubesphere/pkg/apiserver/query"
+	apirequest "kubesphere.io/kubesphere/pkg/apiserver/request"
+	"kubesphere.io/kubesphere/pkg/models/auth"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	resv1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
+	servererr "kubesphere.io/kubesphere/pkg/server/errors"
 )
 
 type Member struct {
@@ -41,21 +37,13 @@ type PasswordReset struct {
 	Password        string `json:"password"`
 }
 
-type iamHandler struct {
+type handler struct {
 	im         im.IdentityManagementInterface
 	am         am.AccessManagementInterface
 	authorizer authorizer.Authorizer
 }
 
-func newIAMHandler(im im.IdentityManagementInterface, am am.AccessManagementInterface) *iamHandler {
-	return &iamHandler{
-		im:         im,
-		am:         am,
-		authorizer: rbac.NewRBACAuthorizer(am),
-	}
-}
-
-func (h *iamHandler) DescribeUser(request *restful.Request, response *restful.Response) {
+func (h *handler) DescribeUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("user")
 	user, err := h.im.DescribeUser(username)
 	if err != nil {
@@ -70,7 +58,7 @@ func (h *iamHandler) DescribeUser(request *restful.Request, response *restful.Re
 	response.WriteEntity(user)
 }
 
-func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Response) {
+func (h *handler) ListUsers(request *restful.Request, response *restful.Response) {
 	globalRole := request.QueryParameter("globalrole")
 	if globalRole != "" {
 		result, err := h.listUserByGlobalRole(globalRole)
@@ -91,7 +79,7 @@ func (h *iamHandler) ListUsers(request *restful.Request, response *restful.Respo
 	response.WriteEntity(result)
 }
 
-func (h *iamHandler) listUserByGlobalRole(roleName string) (*api.ListResult, error) {
+func (h *handler) listUserByGlobalRole(roleName string) (*api.ListResult, error) {
 	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	bindings, err := h.am.ListGlobalRoleBindings("", roleName)
 	if err != nil {
@@ -112,7 +100,7 @@ func (h *iamHandler) listUserByGlobalRole(roleName string) (*api.ListResult, err
 	return result, nil
 }
 
-func (h *iamHandler) CreateUser(req *restful.Request, resp *restful.Response) {
+func (h *handler) CreateUser(req *restful.Request, resp *restful.Response) {
 	var user iamv1beta1.User
 	err := req.ReadEntity(&user)
 	if err != nil {
@@ -162,7 +150,7 @@ func (h *iamHandler) CreateUser(req *restful.Request, resp *restful.Response) {
 	resp.WriteEntity(created)
 }
 
-func (h *iamHandler) UpdateUser(request *restful.Request, response *restful.Response) {
+func (h *handler) UpdateUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("user")
 	var user iamv1beta1.User
 	err := request.ReadEntity(&user)
@@ -196,7 +184,7 @@ func (h *iamHandler) UpdateUser(request *restful.Request, response *restful.Resp
 	response.WriteEntity(updated)
 }
 
-func (h *iamHandler) updateGlobalRoleBinding(operator authuser.Info, user *iamv1beta1.User, globalRole string) error {
+func (h *handler) updateGlobalRoleBinding(operator authuser.Info, user *iamv1beta1.User, globalRole string) error {
 	oldGlobalRole, err := h.am.GetGlobalRoleOfUser(user.Name)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
@@ -225,7 +213,7 @@ func (h *iamHandler) updateGlobalRoleBinding(operator authuser.Info, user *iamv1
 	return nil
 }
 
-func (h *iamHandler) ModifyPassword(request *restful.Request, response *restful.Response) {
+func (h *handler) ModifyPassword(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("user")
 	var passwordReset PasswordReset
 	err := request.ReadEntity(&passwordReset)
@@ -277,7 +265,7 @@ func (h *iamHandler) ModifyPassword(request *restful.Request, response *restful.
 	response.WriteEntity(servererr.None)
 }
 
-func (h *iamHandler) DeleteUser(request *restful.Request, response *restful.Response) {
+func (h *handler) DeleteUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("user")
 
 	err := h.im.DeleteUser(username)
@@ -289,7 +277,7 @@ func (h *iamHandler) DeleteUser(request *restful.Request, response *restful.Resp
 	response.WriteEntity(servererr.None)
 }
 
-func (h *iamHandler) ListUserLoginRecords(request *restful.Request, response *restful.Response) {
+func (h *handler) ListUserLoginRecords(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("user")
 	queryParam := query.ParseQueryParameter(request)
 	result, err := h.im.ListLoginRecords(username, queryParam)
@@ -300,7 +288,7 @@ func (h *iamHandler) ListUserLoginRecords(request *restful.Request, response *re
 	response.WriteEntity(result)
 }
 
-func (h *iamHandler) ListClusterMembers(request *restful.Request, response *restful.Response) {
+func (h *handler) ListClusterMembers(request *restful.Request, response *restful.Response) {
 	roleName := request.QueryParameter("clusterrole")
 	result := &api.ListResult{Items: make([]runtime.Object, 0)}
 	bindings, err := h.am.ListClusterRoleBindings("", roleName)
@@ -334,7 +322,7 @@ func (h *iamHandler) ListClusterMembers(request *restful.Request, response *rest
 	_ = response.WriteEntity(result)
 }
 
-func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *restful.Response) {
+func (h *handler) ListWorkspaceMembers(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 	roleName := request.QueryParameter("workspacerole")
 	bindings, err := h.am.ListWorkspaceRoleBindings("", roleName, nil, workspace)
@@ -368,7 +356,7 @@ func (h *iamHandler) ListWorkspaceMembers(request *restful.Request, response *re
 	_ = response.WriteEntity(result)
 }
 
-func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *restful.Response) {
+func (h *handler) ListNamespaceMembers(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 	roleName := request.QueryParameter("role")
 	bindings, err := h.am.ListRoleBindings("", roleName, nil, namespace)
@@ -404,7 +392,7 @@ func (h *iamHandler) ListNamespaceMembers(request *restful.Request, response *re
 	_ = response.WriteEntity(result)
 }
 
-func (h *iamHandler) CreateClusterMembers(request *restful.Request, response *restful.Response) {
+func (h *handler) CreateClusterMembers(request *restful.Request, response *restful.Response) {
 	var members []Member
 	err := request.ReadEntity(&members)
 	if err != nil {
@@ -423,7 +411,7 @@ func (h *iamHandler) CreateClusterMembers(request *restful.Request, response *re
 	response.WriteEntity(members)
 }
 
-func (h *iamHandler) RemoveClusterMember(request *restful.Request, response *restful.Response) {
+func (h *handler) RemoveClusterMember(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("clustermember")
 
 	err := h.am.RemoveUserFromCluster(username)
@@ -435,7 +423,7 @@ func (h *iamHandler) RemoveClusterMember(request *restful.Request, response *res
 	response.WriteEntity(servererr.None)
 }
 
-func (h *iamHandler) CreateNamespaceMembers(request *restful.Request, response *restful.Response) {
+func (h *handler) CreateNamespaceMembers(request *restful.Request, response *restful.Response) {
 
 	namespace := request.PathParameter("namespace")
 
@@ -457,7 +445,7 @@ func (h *iamHandler) CreateNamespaceMembers(request *restful.Request, response *
 	response.WriteEntity(members)
 }
 
-func (h *iamHandler) RemoveNamespaceMember(request *restful.Request, response *restful.Response) {
+func (h *handler) RemoveNamespaceMember(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("member")
 	namespace := request.PathParameter("namespace")
 
@@ -470,7 +458,7 @@ func (h *iamHandler) RemoveNamespaceMember(request *restful.Request, response *r
 	response.WriteEntity(servererr.None)
 }
 
-func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *restful.Response) {
+func (h *handler) ListRoleTemplateOfUser(request *restful.Request, response *restful.Response) {
 	username := request.PathParameter("username")
 	scope := request.QueryParameter("scope")
 	namespace := request.QueryParameter("namespace")
@@ -568,7 +556,7 @@ func (h *iamHandler) ListRoleTemplateOfUser(request *restful.Request, response *
 	_ = response.WriteEntity(result)
 }
 
-func (h *iamHandler) CreateSubjectAccessReview(request *restful.Request, response *restful.Response) {
+func (h *handler) CreateSubjectAccessReview(request *restful.Request, response *restful.Response) {
 	subjectAccessReview := iamv1beta1.SubjectAccessReview{}
 	if err := request.ReadEntity(&subjectAccessReview); err != nil {
 		api.HandleBadRequest(response, request, err)
@@ -630,7 +618,7 @@ func (h *iamHandler) CreateSubjectAccessReview(request *restful.Request, respons
 	_ = response.WriteEntity(subjectAccessReview)
 }
 
-func (h *iamHandler) CreateWorkspaceMembers(request *restful.Request, response *restful.Response) {
+func (h *handler) CreateWorkspaceMembers(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 
 	var members []Member
@@ -651,7 +639,7 @@ func (h *iamHandler) CreateWorkspaceMembers(request *restful.Request, response *
 	response.WriteEntity(members)
 }
 
-func (h *iamHandler) RemoveWorkspaceMember(request *restful.Request, response *restful.Response) {
+func (h *handler) RemoveWorkspaceMember(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 	username := request.PathParameter("workspacemember")
 
@@ -664,7 +652,7 @@ func (h *iamHandler) RemoveWorkspaceMember(request *restful.Request, response *r
 	response.WriteEntity(servererr.None)
 }
 
-func (h *iamHandler) DescribeWorkspaceMember(request *restful.Request, response *restful.Response) {
+func (h *handler) DescribeWorkspaceMember(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 	memberName := request.PathParameter("workspacemember")
 	bindings, err := h.am.ListWorkspaceRoleBindings(memberName, "", nil, workspace)
@@ -686,7 +674,7 @@ func (h *iamHandler) DescribeWorkspaceMember(request *restful.Request, response 
 	_ = response.WriteEntity(user)
 }
 
-func (h *iamHandler) UpdateWorkspaceMember(request *restful.Request, response *restful.Response) {
+func (h *handler) UpdateWorkspaceMember(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 	memberName := request.PathParameter("workspacemember")
 
@@ -720,7 +708,7 @@ func (h *iamHandler) UpdateWorkspaceMember(request *restful.Request, response *r
 	response.WriteEntity(servererr.None)
 }
 
-func (h *iamHandler) UpdateClusterMember(request *restful.Request, response *restful.Response) {
+func (h *handler) UpdateClusterMember(request *restful.Request, response *restful.Response) {
 	memberName := request.PathParameter("clustermember")
 
 	var member Member
@@ -754,7 +742,7 @@ func (h *iamHandler) UpdateClusterMember(request *restful.Request, response *res
 	response.WriteEntity(servererr.None)
 }
 
-func (h *iamHandler) UpdateNamespaceMember(request *restful.Request, response *restful.Response) {
+func (h *handler) UpdateNamespaceMember(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 	memberName := request.PathParameter("namespacemember")
 

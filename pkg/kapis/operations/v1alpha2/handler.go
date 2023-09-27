@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"net/http"
 
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/emicklei/go-restful/v3"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 
@@ -29,17 +27,11 @@ import (
 	"kubesphere.io/kubesphere/pkg/server/errors"
 )
 
-type operationHandler struct {
+type handler struct {
 	jobRunner workloads.JobRunner
 }
 
-func newOperationHandler(client runtimeclient.Client) *operationHandler {
-	return &operationHandler{
-		jobRunner: workloads.NewJobRunner(client),
-	}
-}
-
-func (r *operationHandler) handleJobReRun(request *restful.Request, response *restful.Response) {
+func (h *handler) JobReRun(request *restful.Request, response *restful.Response) {
 	var err error
 
 	job := request.PathParameter("job")
@@ -49,7 +41,7 @@ func (r *operationHandler) handleJobReRun(request *restful.Request, response *re
 
 	switch action {
 	case "rerun":
-		err = r.jobRunner.JobReRun(namespace, job, resourceVersion)
+		err = h.jobRunner.JobReRun(namespace, job, resourceVersion)
 	default:
 		response.WriteHeaderAndEntity(http.StatusBadRequest, errors.Wrap(fmt.Errorf("invalid operation %s", action)))
 		return

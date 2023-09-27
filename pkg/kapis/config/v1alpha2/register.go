@@ -19,15 +19,16 @@ package v1alpha2
 import (
 	"time"
 
+	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"kubesphere.io/kubesphere/pkg/models/marketplace"
-
 	"kubesphere.io/kubesphere/pkg/api"
-	kubesphereconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
+	"kubesphere.io/kubesphere/pkg/apiserver/config"
+	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
+	"kubesphere.io/kubesphere/pkg/models/marketplace"
 )
 
 const (
@@ -36,25 +37,48 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
 
-func AddToContainer(c *restful.Container, config *kubesphereconfig.Config, client client.Client) error {
+func NewHandler(config *config.Config, client client.Client) rest.Handler {
+	return &handler{config: config, client: client}
+}
+
+func NewFakeHandler() rest.Handler {
+	return &handler{}
+}
+
+type handler struct {
+	config *config.Config
+	client client.Client
+}
+
+func (h *handler) AddToContainer(c *restful.Container) error {
 	webservice := runtime.NewWebService(GroupVersion)
 
 	webservice.Route(webservice.GET("/configs/oauth").
-		Doc("Information about the authorization server are published.").
+		Doc("OAuth configurations").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagPlatformConfigurations}).
+		Notes("Information about the authorization server are published.").
+		Operation("oauth-config").
 		To(func(request *restful.Request, response *restful.Response) {
-			_ = response.WriteEntity(config.AuthenticationOptions.OAuthOptions)
+			_ = response.WriteEntity(h.config.AuthenticationOptions.OAuthOptions)
 		}))
 
 	webservice.Route(webservice.GET("/configs/configz").
-		Doc("Information about the server configuration").
+		Deprecate().
+		Doc("Component configurations").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagPlatformConfigurations}).
+		Notes("Information about the components configuration").
+		Operation("component-config").
 		To(func(request *restful.Request, response *restful.Response) {
-			_ = response.WriteAsJson(config)
+			_ = response.WriteAsJson(h.config)
 		}))
 
 	webservice.Route(webservice.GET("/configs/marketplace").
-		Doc("Retrieve marketplace configuration").
+		Doc("Marketplace configurations").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagPlatformConfigurations}).
+		Notes("Retrieve marketplace configuration.").
+		Operation("marketplace-config").
 		To(func(request *restful.Request, response *restful.Response) {
-			options, err := marketplace.LoadOptions(request.Request.Context(), client)
+			options, err := marketplace.LoadOptions(request.Request.Context(), h.client)
 			if err != nil {
 				api.HandleError(response, request, err)
 				return
@@ -62,7 +86,7 @@ func AddToContainer(c *restful.Container, config *kubesphereconfig.Config, clien
 
 			if options.Account != nil && time.Now().After(options.Account.ExpiresAt) {
 				options.Account = nil
-				if err := marketplace.SaveOptions(request.Request.Context(), client, options); err != nil {
+				if err := marketplace.SaveOptions(request.Request.Context(), h.client, options); err != nil {
 					api.HandleError(response, request, err)
 					return
 				}

@@ -20,13 +20,12 @@ import (
 	"bytes"
 	"net/http"
 
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/emicklei/go-restful/v3"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 )
@@ -35,13 +34,7 @@ type handler struct {
 	cache runtimeclient.Reader
 }
 
-func newHandler(cache runtimeclient.Reader) *handler {
-	return &handler{
-		cache: cache,
-	}
-}
-
-func (h *handler) handleFiles(request *restful.Request, response *restful.Response) {
+func (h *handler) ListFiles(request *restful.Request, response *restful.Response) {
 	extensionVersion := corev1alpha1.ExtensionVersion{}
 	if err := h.cache.Get(request.Request.Context(), types.NamespacedName{Name: request.PathParameter("version")}, &extensionVersion); err != nil {
 		api.HandleError(response, request, err)
