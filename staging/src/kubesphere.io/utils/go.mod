@@ -41,7 +41,7 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/emicklei/go-restful/v3 v3.10.2 // indirect
+	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/fatih/color v1.15.0 // indirect
@@ -153,6 +153,7 @@ replace (
 	github.com/coreos/go-oidc => github.com/coreos/go-oidc v2.1.0+incompatible
 	github.com/docker/cli => github.com/docker/cli v20.10.22+incompatible
 	github.com/docker/docker => github.com/docker/docker v20.10.24+incompatible
+	github.com/emicklei/go-restful/v3 => github.com/emicklei/go-restful/v3 v3.10.2
 	github.com/fatih/color => github.com/fatih/color v1.13.0
 	github.com/go-gorp/gorp/v3 => github.com/go-gorp/gorp/v3 v3.0.2
 	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.2.0

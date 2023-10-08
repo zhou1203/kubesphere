@@ -19,7 +19,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/emicklei/go-restful/v3 v3.10.2 // indirect
+	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
@@ -52,6 +52,7 @@ require (
 
 replace (
 	github.com/asaskevich/govalidator => github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d
+	github.com/emicklei/go-restful/v3 => github.com/emicklei/go-restful/v3 v3.10.2
 	github.com/imdario/mergo => github.com/imdario/mergo v0.3.12
 	github.com/inconshreveable/mousetrap => github.com/inconshreveable/mousetrap v1.0.1
 	github.com/onsi/gomega => github.com/onsi/gomega v1.27.6

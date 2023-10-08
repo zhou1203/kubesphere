@@ -19,15 +19,15 @@ require (
 	github.com/elastic/go-elasticsearch/v5 v5.6.1
 	github.com/elastic/go-elasticsearch/v6 v6.8.2
 	github.com/elastic/go-elasticsearch/v7 v7.3.0
-	github.com/emicklei/go-restful-openapi/v2 v2.9.1
-	github.com/emicklei/go-restful/v3 v3.10.2
+	github.com/emicklei/go-restful-openapi/v2 v2.9.2-0.20230928201233-d828a4fc267c
+	github.com/emicklei/go-restful/v3 v3.11.0
 	github.com/evanphx/json-patch v5.6.0+incompatible
 	github.com/evanphx/json-patch/v5 v5.6.0
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-ldap/ldap v3.0.3+incompatible
 	github.com/go-logr/logr v1.2.4
 	github.com/go-openapi/loads v0.21.2
-	github.com/go-openapi/spec v0.20.7
+	github.com/go-openapi/spec v0.20.9
 	github.com/go-openapi/strfmt v0.21.3
 	github.com/go-openapi/validate v0.22.0
 	github.com/go-redis/redis v6.15.2+incompatible
@@ -288,7 +288,7 @@ replace (
 	github.com/elastic/go-elasticsearch/v5 => github.com/elastic/go-elasticsearch/v5 v5.6.1
 	github.com/elastic/go-elasticsearch/v6 => github.com/elastic/go-elasticsearch/v6 v6.8.2
 	github.com/elastic/go-elasticsearch/v7 => github.com/elastic/go-elasticsearch/v7 v7.3.0
-	github.com/emicklei/go-restful-openapi/v2 => github.com/emicklei/go-restful-openapi/v2 v2.9.2-0.20230507070325-d6acc08e570c
+	github.com/emicklei/go-restful-openapi/v2 => github.com/emicklei/go-restful-openapi/v2 v2.9.2-0.20230928201233-d828a4fc267c
 	github.com/emicklei/go-restful/v3 => github.com/emicklei/go-restful/v3 v3.10.2
 	github.com/emirpasic/gods => github.com/emirpasic/gods v1.12.0
 	github.com/evanphx/json-patch => github.com/evanphx/json-patch v5.6.0+incompatible
