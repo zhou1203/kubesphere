@@ -89,7 +89,7 @@ func (r *RepositoryReconciler) createOrUpdateExtension(ctx context.Context, repo
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, extension, func() error {
 		originRepoName := extension.Labels[corev1alpha1.RepositoryReferenceLabel]
 		if originRepoName != "" && originRepoName != repo.Name {
-			logger.Error(extensionRepoConflict, "extension", extensionName, "want", originRepoName, "got", repo.Name)
+			logger.Error(extensionRepoConflict, "conflict", "extension", extensionName, "want", originRepoName, "got", repo.Name)
 			return extensionRepoConflict
 		}
 
