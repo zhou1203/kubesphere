@@ -19,6 +19,8 @@ package v1alpha2
 import (
 	"net/http"
 
+	"kubesphere.io/kubesphere/pkg/models/terminal"
+
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	appsv1 "k8s.io/api/apps/v1"
@@ -49,7 +51,7 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
 
-func NewHandler(cacheClient runtimeclient.Client, masterURL, kubectlImage string) rest.Handler {
+func NewHandler(cacheClient runtimeclient.Client, masterURL string, options *terminal.Options) rest.Handler {
 	return &handler{
 		resourceGetter:      resourcev1alpha3.NewResourceGetter(cacheClient),
 		componentsGetter:    components.NewComponentsGetter(cacheClient),
@@ -58,7 +60,7 @@ func NewHandler(cacheClient runtimeclient.Client, masterURL, kubectlImage string
 		gitVerifier:         git.NewGitVerifier(cacheClient),
 		registryGetter:      registries.NewRegistryGetter(cacheClient),
 		kubeconfigOperator:  kubeconfig.NewReadOnlyOperator(cacheClient, masterURL),
-		kubectlOperator:     kubectl.NewOperator(cacheClient, kubectlImage),
+		kubectlOperator:     kubectl.NewOperator(cacheClient, options),
 	}
 }
 

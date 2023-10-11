@@ -78,8 +78,13 @@ func newTestConfig() (*Config, error) {
 			Version:     "6",
 		},
 		TerminalOptions: &terminal.Options{
-			Image:   "alpine:3.15",
-			Timeout: 600,
+			NodeShellOptions: terminal.NodeShellOptions{
+				Image:   "alpine:3.15",
+				Timeout: 600,
+			},
+			KubectlOptions: terminal.KubectlOptions{
+				Image: "kubesphere/kubectl:v1.27.4",
+			},
 		},
 		TelemetryOptions: &telemetry.Options{
 			Enabled:             pointer.Bool(true),

@@ -238,6 +238,13 @@ controller:
 agent:
   replicaCount: 1
 
+helm:
+  image:
+    registry: ""
+    repository: kubesphereio/helm
+    tag: "v3.12.1"
+    pullPolicy: IfNotPresent
+
 kubectl:
   image:
     registry: ""
@@ -245,9 +252,9 @@ kubectl:
     tag: "latest"
     pullPolicy: IfNotPresent
 
-helm:
+nodeShell:
   image:
-    registry: ""
-    repository: kubesphereio/helm
-    tag: "v3.12.1"
+    registry: "docker.io"
+    repository: alpine
+    tag: "3.18.4"
     pullPolicy: IfNotPresent

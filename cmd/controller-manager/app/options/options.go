@@ -29,9 +29,9 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
-	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
-
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
+	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
+	"kubesphere.io/kubesphere/pkg/models/terminal"
 	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/telemetry"
@@ -42,6 +42,7 @@ type KubeSphereControllerManagerOptions struct {
 	AuthenticationOptions *authentication.Options
 	MultiClusterOptions   *multicluster.Options
 	TelemetryOptions      *telemetry.Options
+	TerminalOptions       *terminal.Options
 	// HelmImage defines the Pod image used by the helm executor.
 	HelmImage      string `json:"helmImage,omitempty" yaml:"helmImage,omitempty"`
 	LeaderElect    bool
@@ -75,6 +76,7 @@ func NewKubeSphereControllerManagerOptions() *KubeSphereControllerManagerOptions
 		KubernetesOptions:     k8s.NewKubernetesOptions(),
 		MultiClusterOptions:   multicluster.NewOptions(),
 		AuthenticationOptions: authentication.NewOptions(),
+		TerminalOptions:       terminal.NewTerminalOptions(),
 		HelmImage:             "kubesphere/helm:v3.12.1",
 		LeaderElection: &leaderelection.LeaderElectionConfig{
 			LeaseDuration: 30 * time.Second,
