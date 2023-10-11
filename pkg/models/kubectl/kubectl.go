@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/models/terminal"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,14 +39,14 @@ type Interface interface {
 }
 
 type operator struct {
-	client       runtimeclient.Client
-	kubectlImage string
+	client  runtimeclient.Client
+	options *terminal.Options
 }
 
-func NewOperator(cacheClient runtimeclient.Client, kubectlImage string) Interface {
+func NewOperator(cacheClient runtimeclient.Client, options *terminal.Options) Interface {
 	return &operator{
-		client:       cacheClient,
-		kubectlImage: kubectlImage,
+		client:  cacheClient,
+		options: options,
 	}
 }
 
@@ -98,7 +100,7 @@ func (o *operator) createKubectlPod(ctx context.Context, username string) (*core
 			Containers: []corev1.Container{
 				{
 					Name:            "kubectl",
-					Image:           o.kubectlImage,
+					Image:           o.options.KubectlOptions.Image,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					VolumeMounts: []corev1.VolumeMount{
 						{

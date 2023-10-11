@@ -17,6 +17,10 @@ Return the proper image name
 {{ include "common.images.image" (dict "imageRoot" .Values.kubectl.image "global" .Values.global) }}
 {{- end -}}
 
+{{- define "nodeShell.image" -}}
+{{ include "common.images.image" (dict "imageRoot" .Values.nodeShell.image "global" .Values.global) }}
+{{- end -}}
+
 {{- define "helm.image" -}}
 {{ include "common.images.image" (dict "imageRoot" .Values.helm.image "global" .Values.global) }}
 {{- end -}}

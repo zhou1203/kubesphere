@@ -237,7 +237,7 @@ func (n *NodeTerminaler) getNSEnterPod() (*v1.Pod, error) {
 				Containers: []v1.Container{
 					{
 						Name:  n.ContainerName,
-						Image: n.Config.Image,
+						Image: n.Config.NodeShellOptions.Image,
 						Command: []string{
 							"nsenter", "-m", "-u", "-i", "-n", "-p", "-t", "1",
 						},
@@ -251,10 +251,10 @@ func (n *NodeTerminaler) getNSEnterPod() (*v1.Pod, error) {
 			},
 		}
 
-		if n.Config.Timeout == 0 {
+		if n.Config.NodeShellOptions.Timeout == 0 {
 			p.Spec.Containers[0].Args = []string{"tail", "-f", "/dev/null"}
 		} else {
-			p.Spec.Containers[0].Args = []string{"sleep", strconv.Itoa(n.Config.Timeout)}
+			p.Spec.Containers[0].Args = []string{"sleep", strconv.Itoa(n.Config.NodeShellOptions.Timeout)}
 		}
 
 		pod, err = n.client.CoreV1().Pods(n.Namespace).Create(context.Background(), p, metav1.CreateOptions{})

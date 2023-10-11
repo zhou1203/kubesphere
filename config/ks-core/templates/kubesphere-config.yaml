@@ -12,7 +12,6 @@ data:
       loginHistoryRetentionPeriod: {{ .Values.config.authentication.loginHistoryRetentionPeriod | default "168h"  }}
       maximumClockSkew: {{ .Values.config.authentication.maximumClockSkew | default "10s" }}
       multipleLogin: {{ .Values.config.authentication.enableMultiLogin | default true }}
-      kubectlImage: {{ template "kubectl.image" . }}
 {{- if eq .Values.role "host" }}
       {{- with lookup "v1" "ConfigMap" (printf "%s" .Release.Namespace) "kubesphere-config" }}
       jwtSecret: "{{ (fromYaml (index .data "kubesphere.yaml")).authentication.jwtSecret }}"
@@ -33,5 +32,9 @@ data:
 {{- end }}
     multicluster:
       clusterRole: {{ .Values.role }}
-    helmImage: {{ template "helm.image" . }}
+    terminal:
+      kubectl:
+        image: {{ template "kubectl.image" . }}
+      node:
+        image:  {{ template "nodeShell.image" . }}
 {{- end }}
