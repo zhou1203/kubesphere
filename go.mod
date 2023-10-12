@@ -60,6 +60,7 @@ require (
 	golang.org/x/crypto v0.13.0
 	golang.org/x/net v0.15.0
 	golang.org/x/oauth2 v0.12.0
+	google.golang.org/grpc v1.58.0-dev
 	gopkg.in/cas.v2 v2.2.0
 	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/src-d/go-git.v4 v4.13.1
@@ -240,7 +241,6 @@ require (
 	google.golang.org/genproto v0.0.0-20230913181813-007df8e322eb // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230803162519-f966b187b2e5 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230920204549-e6e6cdab5c13 // indirect
-	google.golang.org/grpc v1.58.0-dev // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

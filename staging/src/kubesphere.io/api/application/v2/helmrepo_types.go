@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v2
 
 import (
 	"crypto/md5"
@@ -55,22 +55,12 @@ type HelmRepoSpec struct {
 	SyncPeriod int `json:"syncPeriod,omitempty"`
 }
 
-type HelmRepoSyncState struct {
-	// last sync state, valid state are: "failed", "success", and ""
-	State string `json:"state,omitempty"`
-	// A human readable message indicating details about why the repo is in this state.
-	Message  string       `json:"message,omitempty"`
-	SyncTime *metav1.Time `json:"syncTime"`
-}
-
 // HelmRepoStatus defines the observed state of HelmRepo
 type HelmRepoStatus struct {
 	// status last update time
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
 	// current state of the repo, successful, failed or syncing
 	State string `json:"state,omitempty"`
-	// sync state list of history, which will store at most 10 state
-	SyncState []HelmRepoSyncState `json:"syncState,omitempty"`
 	// current release spec hash
 	// This is used to compare whether the spec has been modified to determine sync is needed.
 	SpecHash string `json:"specHash,omitempty"`
@@ -79,7 +69,6 @@ type HelmRepoStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,path=helmrepos,shortName=hrepo
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="name",type=string,JSONPath=`.spec.name`
 // +kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
 // +kubebuilder:printcolumn:name="url",type=string,JSONPath=`.spec.url`
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"

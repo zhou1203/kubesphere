@@ -14,12 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"kubesphere.io/api/constants"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
@@ -29,19 +28,13 @@ type ApplicationSpec struct {
 	Description corev1alpha1.Locales `json:"description,omitempty"`
 	AppHome     string               `json:"appHome,omitempty"`
 	Icon        string               `json:"icon,omitempty"`
-	// attachments id
-	Attachments []string `json:"attachments,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application
 type ApplicationStatus struct {
-	// If this application belong to appStore, latestVersion is the the latest version of the active application version.
-	// otherwise latestVersion is the latest version of all application version
-	LatestVersion string `json:"latestVersion,omitempty"`
 	// the state of the helm application: draft, submitted, passed, rejected, suspended, active
 	State      string       `json:"state,omitempty"`
 	UpdateTime *metav1.Time `json:"updateTime"`
-	StatusTime *metav1.Time `json:"statusTime"`
 }
 
 // +kubebuilder:object:root=true
@@ -70,36 +63,9 @@ type ApplicationList struct {
 	Items           []Application `json:"items"`
 }
 
-func (in *Application) GetHelmRepoID() string {
-	return getValue(in.Labels, RepoIDLabelKey)
-}
-
-func (in *Application) GetCategoryID() string {
-	return getValue(in.Labels, CategoryIDLabelKey)
-}
-
-func (in *Application) GetWorkspace() string {
-	ws := getValue(in.Labels, constants.WorkspaceLabelKey)
-	if ws == "" {
-		return getValue(in.Labels, OriginWorkspaceLabelKey)
-	}
-	return ws
-}
-
-func (in *Application) GetCreator() string {
-	return getValue(in.Annotations, constants.CreatorAnnotationKey)
-}
-
 func getValue(m map[string]string, key string) string {
 	if m == nil {
 		return ""
 	}
 	return m[key]
-}
-
-func (in *Application) State() string {
-	if in.Status.State == "" {
-		return StateDraft
-	}
-	return in.Status.State
 }

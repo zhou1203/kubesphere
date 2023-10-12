@@ -26,7 +26,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha2
+    name: v2
     schema:
       openAPIV3Schema:
         description: ApplicationVersion is the Schema for the applicationversions
@@ -47,174 +47,41 @@ spec:
           spec:
             description: ApplicationVersionSpec defines the desired state of ApplicationVersion
             properties:
-              appClassName:
-                description: appClassName
-                type: string
-              chartAdditionData:
-                description: Chart addition data
-                properties:
-                  chartVersion:
-                    type: string
-                  dependencies:
-                    description: Dependencies are a list of dependencies for a chart.
-                    items:
-                      description: Dependency describes a chart upon which another
-                        chart depends. Dependencies can be used to express developer
-                        intent, or to capture the state of a chart.
-                      properties:
-                        alias:
-                          description: Alias usable alias to be used for the chart
-                          type: string
-                        condition:
-                          description: A yaml path that resolves to a boolean, used
-                            for enabling/disabling charts (e.g. subchart1.enabled
-                            )
-                          type: string
-                        enabled:
-                          description: Enabled bool determines if chart should be
-                            loaded
-                          type: boolean
-                        name:
-                          description: Name is the name of the dependency. This must
-                            mach the name in the dependency's Chart.yaml.
-                          type: string
-                        repository:
-                          description: The URL to the repository. Appending `index.yaml`
-                            to this string should result in a URL that can be used
-                            to fetch the repository index.
-                          type: string
-                        tags:
-                          description: Tags can be used to group charts for enabling/disabling
-                            together
-                          items:
-                            type: string
-                          type: array
-                        version:
-                          description: Version is the version (range) of this chart.
-                            A lock file will always produce a single version, while
-                            a dependency may contain a semantic version range.
-                          type: string
-                      required:
-                      - name
-                      - repository
-                      type: object
-                    type: array
-                  digest:
-                    description: chart digest
-                    type: string
-                  urls:
-                    description: chart url
-                    items:
-                      type: string
-                    type: array
-                type: object
               created:
-                description: create time
                 format: date-time
                 type: string
-              dataRef:
-                description: DataRef refers to a configMap which contains raw chart
-                  or yaml data.
-                properties:
-                  key:
-                    description: The key to select.
-                    type: string
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                      TODO: Add other useful fields. apiVersion, kind, uid?'
-                    type: string
-                  namespace:
-                    type: string
-                  optional:
-                    description: Specify whether the ConfigMap or its key must be
-                      defined
-                    type: boolean
-                required:
-                - key
-                - namespace
-                type: object
-                x-kubernetes-map-type: atomic
               description:
                 additionalProperties:
                   type: string
-                description: A one-sentence description
                 type: object
+              digest:
+                type: string
               displayName:
                 additionalProperties:
                   type: string
                 type: object
               home:
-                description: The URL to a relevant project page, git repo, or contact
-                  person
                 type: string
               icon:
-                description: The URL to an icon file.
                 type: string
-              keywords:
-                description: A list of string keywords
-                items:
-                  type: string
-                type: array
-              maintainers:
-                description: A list of name and URL/email address combinations for
-                  the maintainer(s)
-                items:
-                  description: Maintainer describes a Chart maintainer.
-                  properties:
-                    email:
-                      description: Email is an optional email address to contact the
-                        named maintainer
-                      type: string
-                    name:
-                      description: Name is a user name or organization name
-                      type: string
-                    url:
-                      description: URL is an optional URL to an address for the named
-                        maintainer
-                      type: string
-                  type: object
-                type: array
               sources:
-                description: Source is the URL to the source code
                 items:
                   type: string
                 type: array
               version:
-                description: A SemVer 2 conformant version string
                 type: string
             required:
-            - appClassName
-            - dataRef
             - displayName
             - version
             type: object
           status:
             description: ApplicationVersionStatus defines the observed state of ApplicationVersion
             properties:
-              audit:
-                items:
-                  properties:
-                    message:
-                      description: audit message
-                      type: string
-                    operator:
-                      description: audit operator
-                      type: string
-                    operatorType:
-                      type: string
-                    state:
-                      description: 'audit state: submitted, passed, draft, active,
-                        rejected, suspended'
-                      type: string
-                    time:
-                      description: audit time
-                      format: date-time
-                      type: string
-                  required:
-                  - time
-                  type: object
-                type: array
+              message:
+                type: string
               state:
+                type: string
+              user_name:
                 type: string
             type: object
         type: object

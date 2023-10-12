@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	"kubesphere.io/kubesphere/pkg/controller/application"
+
 	"github.com/google/gops/agent"
 	"github.com/spf13/cobra"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -33,7 +35,6 @@ import (
 
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
-	"kubesphere.io/kubesphere/pkg/controller/application"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/user"

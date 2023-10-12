@@ -17,8 +17,8 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.displayName.en
-      name: Release Name
+    - jsonPath: .spec.AppID
+      name: App Name
       type: string
     - jsonPath: .metadata.labels.kubesphere\.io/workspace
       name: Workspace
@@ -35,7 +35,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha2
+    name: v2
     schema:
       openAPIV3Schema:
         description: ApplicationRelease is the Schema for the applicationreleases
@@ -56,42 +56,22 @@ spec:
           spec:
             description: ApplicationReleaseSpec defines the desired state of ApplicationRelease
             properties:
-              appID:
+              app_id:
                 type: string
-              appVersionID:
+              app_type:
+                type: string
+              appVersion_id:
                 type: string
               values:
-                description: helm release values.yaml or yaml
                 format: byte
                 type: string
             required:
-            - appID
-            - appVersionID
+            - appVersion_id
+            - app_id
             type: object
           status:
             description: ApplicationReleaseStatus defines the observed state of ApplicationRelease
             properties:
-              deployStatus:
-                description: deploy status list of history, which will store at most
-                  10 state
-                items:
-                  properties:
-                    deployTime:
-                      description: deploy time, upgrade time or check status time
-                      format: date-time
-                      type: string
-                    message:
-                      description: A human readable message indicating details about
-                        why the release is in this state.
-                      type: string
-                    state:
-                      description: current state of the release
-                      type: string
-                  required:
-                  - deployTime
-                  - state
-                  type: object
-                type: array
               jobName:
                 description: JobName for installation and upgrade
                 type: string

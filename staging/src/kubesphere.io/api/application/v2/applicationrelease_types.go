@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v2
 
 import (
 	"crypto/md5"
@@ -28,19 +28,10 @@ import (
 
 // ApplicationReleaseSpec defines the desired state of ApplicationRelease
 type ApplicationReleaseSpec struct {
-	AppID        string `json:"appID"`
-	AppVersionID string `json:"appVersionID"`
-	// helm release values.yaml or yaml
-	Values []byte `json:"values,omitempty"`
-}
-
-type ApplicationReleaseDeployStatus struct {
-	// A human readable message indicating details about why the release is in this state.
-	Message string `json:"message,omitempty"`
-	// current state of the release
-	State string `json:"state"`
-	// deploy time, upgrade time or check status time
-	Time metav1.Time `json:"deployTime"`
+	AppID        string `json:"app_id"`
+	AppVersionID string `json:"appVersion_id"`
+	Values       []byte `json:"values,omitempty"`
+	AppType      string `json:"app_type,omitempty"`
 }
 
 // ApplicationReleaseStatus defines the observed state of ApplicationRelease
@@ -56,8 +47,6 @@ type ApplicationReleaseStatus struct {
 	SpecHash string `json:"specHash,omitempty"`
 	// JobName for installation and upgrade
 	JobName string `json:"jobName,omitempty"`
-	// deploy status list of history, which will store at most 10 state
-	DeployStatus []ApplicationReleaseDeployStatus `json:"deployStatus,omitempty"`
 	// last update time
 	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
 	// last deploy time or upgrade time
@@ -67,7 +56,7 @@ type ApplicationReleaseStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=apprls
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Release Name",type=string,JSONPath=".spec.displayName.en"
+// +kubebuilder:printcolumn:name="App Name",type=string,JSONPath=".spec.AppID"
 // +kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.kubesphere\\.io/cluster"
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/namespace"

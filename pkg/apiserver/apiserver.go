@@ -57,6 +57,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/metrics"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/apiserver/rest"
+	appv2 "kubesphere.io/kubesphere/pkg/kapis/application/v2"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
 	gatewayv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha2"
@@ -184,6 +185,7 @@ func (s *APIServer) installKubeSphereAPIs() {
 		version.NewHandler(s.K8sVersionInfo),
 		packagev1alpha1.NewHandler(s.RuntimeCache),
 		gatewayv1alpha2.NewHandler(s.RuntimeCache),
+		appv2.NewHandler(s.RuntimeClient, s.KubernetesClient.Config()),
 	}
 
 	for _, handler := range handlers {

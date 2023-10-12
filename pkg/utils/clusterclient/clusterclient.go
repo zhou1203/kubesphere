@@ -108,7 +108,6 @@ func (c *clusterClients) addCluster(obj interface{}) (*ClusterClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse kubesphere apiserver endpoint %s failed: %v", cluster.Spec.Connection.KubeSphereAPIEndpoint, err)
 	}
-
 	restConfig, err := clientcmd.RESTConfigFromKubeConfig(cluster.Spec.Connection.KubeConfig)
 	if err != nil {
 		return nil, err

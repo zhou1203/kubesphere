@@ -25,12 +25,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	appv1alpha2 "kubesphere.io/api/application/v1alpha2"
+	appv2 "kubesphere.io/api/application/v2"
 )
 
 func SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return builder.WebhookManagedBy(mgr).
-		For(&appv1alpha2.ApplicationRelease{}).
+		For(&appv2.ApplicationRelease{}).
 		WithDefaulter(&applicationAnnotator{}).
 		Complete()
 }
@@ -38,7 +38,7 @@ func SetupWebhookWithManager(mgr ctrl.Manager) error {
 type applicationAnnotator struct{}
 
 func (a *applicationAnnotator) Default(ctx context.Context, obj runtime.Object) error {
-	rls, ok := obj.(*appv1alpha2.ApplicationRelease)
+	rls, ok := obj.(*appv2.ApplicationRelease)
 	if !ok {
 		return fmt.Errorf("expected a ApplicationRelease but got a %T", obj)
 	}
@@ -50,6 +50,6 @@ func (a *applicationAnnotator) Default(ctx context.Context, obj runtime.Object) 
 	if rls.Annotations == nil {
 		rls.Annotations = map[string]string{}
 	}
-	rls.Annotations[appv1alpha2.ReqUserAnnotationKey] = req.UserInfo.Username
+	rls.Annotations[appv2.ReqUserAnnotationKey] = req.UserInfo.Username
 	return nil
 }

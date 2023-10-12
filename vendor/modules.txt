@@ -2096,8 +2096,7 @@ k8s.io/utils/strings/slices
 k8s.io/utils/trace
 # kubesphere.io/api v0.0.0 => ./staging/src/kubesphere.io/api
 ## explicit; go 1.20
-kubesphere.io/api/application/v1alpha2
-kubesphere.io/api/applicationclass/v1alpha1
+kubesphere.io/api/application/v2
 kubesphere.io/api/auditing/v1alpha1
 kubesphere.io/api/cluster/v1alpha1
 kubesphere.io/api/constants

@@ -29,7 +29,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha2
+    name: v2
     schema:
       openAPIV3Schema:
         description: Application is the Schema for the applications API
@@ -51,11 +51,6 @@ spec:
             properties:
               appHome:
                 type: string
-              attachments:
-                description: attachments id
-                items:
-                  type: string
-                type: array
               description:
                 additionalProperties:
                   type: string
@@ -72,23 +67,14 @@ spec:
           status:
             description: ApplicationStatus defines the observed state of Application
             properties:
-              latestVersion:
-                description: If this application belong to appStore, latestVersion
-                  is the the latest version of the active application version. otherwise
-                  latestVersion is the latest version of all application version
-                type: string
               state:
                 description: 'the state of the helm application: draft, submitted,
                   passed, rejected, suspended, active'
-                type: string
-              statusTime:
-                format: date-time
                 type: string
               updateTime:
                 format: date-time
                 type: string
             required:
-            - statusTime
             - updateTime
             type: object
         type: object

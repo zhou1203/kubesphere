@@ -23,6 +23,10 @@ import (
 	"net/http"
 	"strings"
 
+	"golang.org/x/net/context"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -95,6 +99,14 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		return nil, fmt.Errorf("unable to create controller runtime cluster: %v", err)
 	} else {
 		apiServer.RuntimeCache = c.GetCache()
+		key := "involvedObject.name"
+		indexerFunc := func(obj client.Object) []string {
+			e := obj.(*corev1.Event)
+			return []string{e.InvolvedObject.Name}
+		}
+		if err = apiServer.RuntimeCache.IndexField(context.Background(), &corev1.Event{}, key, indexerFunc); err != nil {
+			klog.Fatalf("unable to create index field: %v", err)
+		}
 		apiServer.RuntimeClient = c.GetClient()
 	}
 
