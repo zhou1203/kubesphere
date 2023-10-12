@@ -58,16 +58,14 @@ type ClusterClient struct {
 }
 
 type clusterClients struct {
-	sync.RWMutex
 	// build an in memory cluster cache to speed things up
-	clients map[string]*ClusterClient
+	clients sync.Map
 	cache   runtimecache.Cache
 }
 
 func NewClusterClientSet(runtimeCache runtimecache.Cache) (Interface, error) {
 	c := &clusterClients{
-		clients: make(map[string]*ClusterClient),
-		cache:   runtimeCache,
+		cache: runtimeCache,
 	}
 
 	clusterInformer, err := runtimeCache.GetInformerForKind(context.Background(), clusterv1alpha1.SchemeGroupVersion.WithKind(clusterv1alpha1.ResourceKindCluster))
@@ -167,18 +165,14 @@ func (c *clusterClients) addCluster(obj interface{}) (*ClusterClient, error) {
 		Client:            client,
 		KubernetesClient:  kubernetesClient,
 	}
-	c.Lock()
-	c.clients[cluster.Name] = clusterClient
-	c.Unlock()
+	c.clients.Store(cluster.Name, clusterClient)
 	return clusterClient, nil
 }
 
 func (c *clusterClients) removeCluster(obj interface{}) {
 	cluster := obj.(*clusterv1alpha1.Cluster)
 	klog.V(4).Infof("remove cluster %s", cluster.Name)
-	c.Lock()
-	delete(c.clients, cluster.Name)
-	c.Unlock()
+	c.clients.Delete(cluster.Name)
 }
 
 func (c *clusterClients) Get(clusterName string) (*clusterv1alpha1.Cluster, error) {
@@ -196,10 +190,8 @@ func (c *clusterClients) ListClusters(ctx context.Context) ([]clusterv1alpha1.Cl
 }
 
 func (c *clusterClients) GetClusterClient(name string) (*ClusterClient, error) {
-	c.RLock()
-	defer c.RUnlock()
-	if client, ok := c.clients[name]; ok {
-		return client, nil
+	if client, ok := c.clients.Load(name); ok {
+		return client.(*ClusterClient), nil
 	}
 
 	// double check if the cluster exists but is not cached
