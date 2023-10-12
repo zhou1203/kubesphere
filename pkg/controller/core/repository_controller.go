@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -220,7 +221,7 @@ func (r *RepositoryReconciler) syncExtensionsFromURL(ctx context.Context, repo *
 
 		extension, err := r.createOrUpdateExtension(ctx, repo, extensionName, latestExtensionVersion)
 		if err != nil {
-			if err == extensionRepoConflict {
+			if errors.Is(err, extensionRepoConflict) {
 				continue
 			}
 			return fmt.Errorf("failed to create or update extension: %s", err)
