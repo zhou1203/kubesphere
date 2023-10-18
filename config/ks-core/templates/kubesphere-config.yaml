@@ -37,4 +37,5 @@ data:
         image: {{ template "kubectl.image" . }}
       node:
         image:  {{ template "nodeShell.image" . }}
+    helmImage: {{ template "helm.image" . }}
 {{- end }}
