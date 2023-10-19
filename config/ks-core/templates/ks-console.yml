@@ -72,6 +72,10 @@ spec:
           {{- if .Values.console.extraVolumeMounts }}
           {{- include "common.tplvalues.render" (dict "value" .Values.console.extraVolumeMounts "context" $) | nindent 12 }}
           {{- end }}
+          {{- if .Values.tlsInternal }}
+            - name: tls-cert
+              mountPath: /etc/kubesphere/pki/
+          {{- end }}
       volumes:
         - configMap:
             defaultMode: 420
@@ -87,7 +91,12 @@ spec:
         {{- if .Values.console.extraVolumes }}
         {{- include "common.tplvalues.render" (dict "value" .Values.console.extraVolumes "context" $) | nindent 8 }}
         {{- end }}
-
+        {{- if .Values.tlsInternal }}
+        - name: tls-cert
+          secret:
+            secretName: ks-console-tls-certs
+            defaultMode: 420
+        {{- end }}
 ---
 
 apiVersion: v1
@@ -101,7 +110,11 @@ metadata:
 spec:
   ports:
   - name: nginx
+  {{- if .Values.tlsInternal }}
+    port: 443
+  {{- else }}
     port: 80
+  {{- end }}
     protocol: TCP
     targetPort: 8000
     {{- with .Values.console.nodePort }}

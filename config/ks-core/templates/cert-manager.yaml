@@ -1,0 +1,141 @@
+{{- if eq .Values.tls "ingress" -}}
+  {{- if eq .Values.ingress.tls.source "letsEncrypt" -}}
+    {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
+    {{- if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 16)) }}
+apiVersion: cert-manager.io/v1beta1
+    {{- else if or (.Capabilities.APIVersions.Has "cert-manager.io/v1alpha2") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 11)) }}
+apiVersion: cert-manager.io/v1alpha2
+    {{- else if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (lt (int $certmanagerVer._1) 11)) }}
+apiVersion: certmanager.k8s.io/v1alpha1
+    {{- else }}
+apiVersion: cert-manager.io/v1
+    {{- end }}
+kind: Issuer
+metadata:
+  name: {{ template "ks-core.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  acme:
+    email: {{ .Values.letsEncrypt.email }}
+    {{- if eq .Values.letsEncrypt.environment "production" }}
+    server: https://acme-v02.api.letsencrypt.org/directory
+    {{- else }}
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    {{- end }}
+    privateKeySecretRef:
+      name: letsencrypt-{{ .Values.letsEncrypt.environment }}
+    {{- if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (lt (int $certmanagerVer._1) 11)) }}
+    http01: {}
+    {{- else }}
+    solvers:
+      - http01:
+          ingress:
+            class: {{ .Values.letsEncrypt.ingress.class }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+
+---
+{{- if eq .Values.tls "ingress" -}}
+    {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
+    {{- if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 16)) }}
+apiVersion: cert-manager.io/v1beta1
+    {{- else if or (.Capabilities.APIVersions.Has "cert-manager.io/v1alpha2") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 11)) }}
+apiVersion: cert-manager.io/v1alpha2
+    {{- else if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (lt (int $certmanagerVer._1) 11)) }}
+apiVersion: certmanager.k8s.io/v1alpha1
+    {{- else }}
+apiVersion: cert-manager.io/v1
+    {{- end }}
+kind: Issuer
+metadata:
+  name: {{ printf "%s-internal" .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  ca:
+    secretName: ks-core-ca
+{{- end }}
+
+---
+{{- if .Values.tlsInternal -}}
+  {{- if or (eq .Values.ingress.tls.source "letsEncrypt") (eq .Values.ingress.tls.source "ks-core") (eq .Values.ingress.tls.source "secret") -}}
+    {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
+    {{- if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 16)) }}
+apiVersion: cert-manager.io/v1beta1
+    {{- else if or (.Capabilities.APIVersions.Has "cert-manager.io/v1alpha2") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 11)) }}
+apiVersion: cert-manager.io/v1alpha2
+    {{- else if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (lt (int $certmanagerVer._1) 11)) }}
+apiVersion: certmanager.k8s.io/v1alpha1
+    {{- else }}
+apiVersion: cert-manager.io/v1
+    {{- end }}
+kind: Certificate
+metadata:
+  name: ks-apiserver-certificate
+  namespace: {{ .Release.Namespace }}
+spec:
+  # Secret names are always required.
+  secretName: ks-apiserver-tls-certs
+  duration: {{ .Values.certmanager.duration }}
+  renewBefore: {{ .Values.certmanager.renewBefore }}
+  subject:
+    organizations:
+      - ks-apiserver
+  commonName: ks-apiserver
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  dnsNames:
+    - ks-apiserver
+    - {{ printf "%s.%s" "ks-apiserver" .Release.Namespace }}
+    - {{ printf "%s.%s.%s" "ks-apiserver" .Release.Namespace "svc" }}
+    - {{ printf "%s.%s.%s" "ks-apiserver" .Release.Namespace "svc.cluster.local" }}
+  issuerRef:
+    name: {{ printf "%s-internal" .Release.Name }}
+    kind: Issuer
+    group: cert-manager.io
+  {{- end }}
+{{- end }}
+
+---
+{{- if .Values.tlsInternal -}}
+  {{- if or (eq .Values.ingress.tls.source "letsEncrypt") (eq .Values.ingress.tls.source "ks-core") (eq .Values.ingress.tls.source "secret") -}}
+    {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
+    {{- if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 16)) }}
+apiVersion: cert-manager.io/v1beta1
+    {{- else if or (.Capabilities.APIVersions.Has "cert-manager.io/v1alpha2") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 11)) }}
+apiVersion: cert-manager.io/v1alpha2
+    {{- else if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (lt (int $certmanagerVer._1) 11)) }}
+apiVersion: certmanager.k8s.io/v1alpha1
+    {{- else }}
+apiVersion: cert-manager.io/v1
+    {{- end }}
+kind: Certificate
+metadata:
+  name: ks-console-certificate
+  namespace: {{ .Release.Namespace }}
+spec:
+  # Secret names are always required.
+  secretName: ks-console-tls-certs
+  duration: {{ .Values.certmanager.duration }}
+  renewBefore: {{ .Values.certmanager.renewBefore }}
+  subject:
+    organizations:
+      - ks-console
+  commonName: ks-console
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  dnsNames:
+    - ks-console
+    - {{ printf "%s.%s" "ks-console" .Release.Namespace }}
+    - {{ printf "%s.%s.%s" "ks-console" .Release.Namespace "svc" }}
+    - {{ printf "%s.%s.%s" "ks-console" .Release.Namespace "svc.cluster.local" }}
+  issuerRef:
+    name: {{ printf "%s-internal" .Release.Name }}
+    kind: Issuer
+    group: cert-manager.io
+  {{- end }}
+{{- end }}

@@ -86,6 +86,8 @@ affinity: {}
 
 nodeSelector: {}
 
+hostname: example.com
+
 ## deployment specific configuration
 
 apiserver:
@@ -251,6 +253,42 @@ kubectl:
     repository: kubesphereio/kubectl
     tag: "latest"
     pullPolicy: IfNotPresent
+
+# tls
+#   Where to offload the TLS/SSL encryption
+# - ingress (default)
+# - external
+tls: ingress
+# Set to enable/disable internal tls
+# - false (default)
+# - true
+tlsInternal: false
+
+ingress:
+  # If set to false, ingress will not be created
+  # Defaults to true
+  # options: true, false
+  enabled: true
+
+  ingressClassName: ""
+  # backend port number
+  tls:
+    # options: ks-core, letsEncrypt, secret
+    source: ks-core
+    secretName: tls-ks-core-ingress
+
+letsEncrypt:
+  # email: none@example.com
+  environment: production
+  ingress:
+    # options: traefik, nginx
+    class: ""
+
+certmanager:
+  version: ""
+  clusterResourceNamespace: cert-manager
+  duration: 2160h
+  renewBefore: 360h
 
 nodeShell:
   image:
