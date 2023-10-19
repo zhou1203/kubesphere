@@ -1,4 +1,4 @@
-{{- if eq .Values.tls "ingress" -}}
+{{- if .Values.ingress.enabled -}}
   {{- if eq .Values.ingress.tls.source "letsEncrypt" -}}
     {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
     {{- if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 16)) }}
@@ -12,7 +12,7 @@ apiVersion: cert-manager.io/v1
     {{- end }}
 kind: Issuer
 metadata:
-  name: {{ template "ks-core.fullname" . }}
+  name: letsencrypt
   namespace: {{ .Release.Namespace }}
 spec:
   acme:
@@ -25,7 +25,7 @@ spec:
     privateKeySecretRef:
       name: letsencrypt-{{ .Values.letsEncrypt.environment }}
     {{- if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (lt (int $certmanagerVer._1) 11)) }}
-    http01: {}
+    http01: { }
     {{- else }}
     solvers:
       - http01:
@@ -36,7 +36,7 @@ spec:
 {{- end }}
 
 ---
-{{- if eq .Values.tls "ingress" -}}
+{{- if .Values.ingress.enabled -}}
     {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
     {{- if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 16)) }}
 apiVersion: cert-manager.io/v1beta1
@@ -49,16 +49,15 @@ apiVersion: cert-manager.io/v1
     {{- end }}
 kind: Issuer
 metadata:
-  name: {{ printf "%s-internal" .Release.Name }}
+  name: self-signed
   namespace: {{ .Release.Namespace }}
 spec:
-  ca:
-    secretName: ks-core-ca
+  selfSigned: {}
 {{- end }}
 
 ---
-{{- if .Values.tlsInternal -}}
-  {{- if or (eq .Values.ingress.tls.source "letsEncrypt") (eq .Values.ingress.tls.source "ks-core") (eq .Values.ingress.tls.source "secret") -}}
+{{- if .Values.internalTLS -}}
+  {{- if or (eq .Values.ingress.tls.source "letsEncrypt") (eq .Values.ingress.tls.source "generation") (eq .Values.ingress.tls.source "importation") -}}
     {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
     {{- if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 16)) }}
 apiVersion: cert-manager.io/v1beta1
@@ -92,15 +91,15 @@ spec:
     - {{ printf "%s.%s.%s" "ks-apiserver" .Release.Namespace "svc" }}
     - {{ printf "%s.%s.%s" "ks-apiserver" .Release.Namespace "svc.cluster.local" }}
   issuerRef:
-    name: {{ printf "%s-internal" .Release.Name }}
+    name: self-signed
     kind: Issuer
     group: cert-manager.io
   {{- end }}
 {{- end }}
 
 ---
-{{- if .Values.tlsInternal -}}
-  {{- if or (eq .Values.ingress.tls.source "letsEncrypt") (eq .Values.ingress.tls.source "ks-core") (eq .Values.ingress.tls.source "secret") -}}
+{{- if .Values.internalTLS -}}
+  {{- if or (eq .Values.ingress.tls.source "letsEncrypt") (eq .Values.ingress.tls.source "generation") (eq .Values.ingress.tls.source "importation") -}}
     {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
     {{- if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (ge (int $certmanagerVer._1) 16)) }}
 apiVersion: cert-manager.io/v1beta1
@@ -134,7 +133,7 @@ spec:
     - {{ printf "%s.%s.%s" "ks-console" .Release.Namespace "svc" }}
     - {{ printf "%s.%s.%s" "ks-console" .Release.Namespace "svc.cluster.local" }}
   issuerRef:
-    name: {{ printf "%s-internal" .Release.Name }}
+    name: self-signed
     kind: Issuer
     group: cert-manager.io
   {{- end }}

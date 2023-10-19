@@ -12,7 +12,7 @@ metadata:
 spec:
   ports:
     - protocol: TCP
-    {{- if .Values.tlsInternal }}
+    {{- if .Values.internalTLS }}
       port: 443
     {{- else }}
       port: 80
