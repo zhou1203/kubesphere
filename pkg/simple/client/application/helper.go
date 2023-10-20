@@ -51,6 +51,7 @@ type NewAppRequest struct {
 	AppHome     string
 	Workspace   string
 	Description string
+	AppType     string                   `json:"appType,omitempty"`
 	Credential  appv2.HelmRepoCredential `json:"credential,omitempty"`
 }
 
@@ -65,6 +66,7 @@ func CreateOrUpdateApp(ctx context.Context, client client.Client, request NewApp
 			Description: corev1alpha1.NewLocales(request.Description, request.Description),
 			Icon:        request.Icon,
 			AppHome:     request.AppHome,
+			AppType:     request.AppType,
 		}
 		app.Labels = map[string]string{
 			appv2.RepoIDLabelKey:        request.RepoName,
@@ -100,6 +102,7 @@ func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, request
 	appVersion.Name = vRequest.Name
 
 	mutateFn := func() error {
+
 		if err := controllerutil.SetControllerReference(&app, &appVersion, scheme.Scheme); err != nil {
 			klog.Errorf("%s SetControllerReference failed, err:%v", appVersion.Name, err)
 			return err
@@ -114,6 +117,7 @@ func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, request
 			Sources:     vRequest.Sources,
 			Created:     &metav1.Time{Time: time.Now()},
 			Digest:      vRequest.Digest,
+			AppType:     request.AppType,
 		}
 
 		appVersion.Labels = map[string]string{

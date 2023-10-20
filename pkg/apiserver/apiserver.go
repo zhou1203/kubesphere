@@ -185,7 +185,7 @@ func (s *APIServer) installKubeSphereAPIs() {
 		version.NewHandler(s.K8sVersionInfo),
 		packagev1alpha1.NewHandler(s.RuntimeCache),
 		gatewayv1alpha2.NewHandler(s.RuntimeCache),
-		appv2.NewHandler(s.RuntimeClient, s.KubernetesClient.Config()),
+		appv2.NewHandler(s.RuntimeClient, s.ClusterClient),
 	}
 
 	for _, handler := range handlers {

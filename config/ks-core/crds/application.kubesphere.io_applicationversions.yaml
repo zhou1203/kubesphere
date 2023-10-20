@@ -47,6 +47,8 @@ spec:
           spec:
             description: ApplicationVersionSpec defines the desired state of ApplicationVersion
             properties:
+              appType:
+                type: string
               created:
                 format: date-time
                 type: string

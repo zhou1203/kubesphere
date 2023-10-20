@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"helm.sh/helm/v3/pkg/chart"
+
 	"github.com/emicklei/go-restful/v3"
 	"golang.org/x/net/context"
 	"helm.sh/helm/v3/pkg/chart/loader"
@@ -38,19 +40,48 @@ func (h *appHandler) CreateOrUpdateApp(req *restful.Request, resp *restful.Respo
 		appRequest application.NewAppRequest
 		vRequest   []application.VersionRequest
 	)
+	validate, _ := strconv.ParseBool(req.QueryParameter("validate"))
+	if validate {
+		if createAppRequest.AppType == appv2.AppTypeHelm {
+			chartPack, err := loader.LoadArchive(bytes.NewReader(createAppRequest.Package))
+			if err != nil {
+				klog.V(4).Infoln(err)
+				api.HandleBadRequest(resp, nil, err)
+				return
+			}
+			data := map[string]interface{}{
+				"description":  chartPack.Metadata.Description,
+				"name":         chartPack.Name(),
+				"version_name": chartPack.AppVersion(),
+			}
+			resp.WriteAsJson(data)
+			return
+		} else {
+			resp.WriteEntity(errors.None)
+			return
+		}
+	}
+
 	if createAppRequest.AppType == appv2.AppTypeHelm {
-		appRequest, vRequest, err = h.helmRequest(req, createAppRequest.Package)
+		chartPack, err := loader.LoadArchive(bytes.NewReader(createAppRequest.Package))
+		if err != nil {
+			api.HandleInternalError(resp, nil, err)
+			return
+		}
+		appRequest, vRequest, err = h.helmRequest(chartPack, createAppRequest.Package)
 		if err != nil {
 			api.HandleInternalError(resp, nil, err)
 			return
 		}
 	}
-	if createAppRequest.AppType == appv2.AppTypeYaml {
+	if createAppRequest.AppType == appv2.AppTypeYaml || createAppRequest.AppType == appv2.AppTypeEdge {
 		appRequest, vRequest = yamlRequest(
 			createAppRequest.Name,
 			createAppRequest.VersionName,
-			req.PathParameter("workspace"),
-			createAppRequest.Package)
+			req.QueryParameter("workspace"),
+			createAppRequest.AppType,
+			createAppRequest.Package,
+		)
 	}
 
 	err = application.CreateOrUpdateApp(context.TODO(), h.client, appRequest, vRequest)
@@ -66,12 +97,13 @@ func (h *appHandler) CreateOrUpdateApp(req *restful.Request, resp *restful.Respo
 	resp.WriteAsJson(data)
 }
 
-func yamlRequest(name, versionName, workspace string, data []byte) (application.NewAppRequest, []application.VersionRequest) {
+func yamlRequest(name, versionName, workspace, appType string, data []byte) (application.NewAppRequest, []application.VersionRequest) {
 
 	appRequest := application.NewAppRequest{
 		RepoName:  "configyaml",
 		AppName:   fmt.Sprintf("configyaml-%s", name),
 		Workspace: workspace,
+		AppType:   appType,
 	}
 
 	vRequest := []application.VersionRequest{{
@@ -80,28 +112,20 @@ func yamlRequest(name, versionName, workspace string, data []byte) (application.
 		Name:     fmt.Sprintf("configyaml-%s-%s", name, versionName),
 		Version:  versionName,
 		Data:     data,
-		AppType:  appv2.AppTypeYaml,
+		AppType:  appType,
 	}}
 
 	return appRequest, vRequest
 }
 
-func (h *appHandler) helmRequest(req *restful.Request, data []byte) (application.NewAppRequest, []application.VersionRequest, error) {
-	validate, _ := strconv.ParseBool(req.QueryParameter("validate"))
+func (h *appHandler) helmRequest(chartPack *chart.Chart, data []byte) (application.NewAppRequest, []application.VersionRequest, error) {
 
-	chartPack, err := loader.LoadArchive(bytes.NewReader(data))
-	if err != nil {
-		klog.Errorf("Failed to load package, error: %+v", err)
-		return application.NewAppRequest{}, nil, err
-	}
-	if validate {
-		return application.NewAppRequest{}, nil, nil
-	}
 	appRequest := application.NewAppRequest{
 		RepoName: "upload",
 		AppName:  fmt.Sprintf("upload-%s", chartPack.Metadata.Name),
 		Icon:     chartPack.Metadata.Icon,
 		AppHome:  chartPack.Metadata.Home,
+		AppType:  "helm",
 	}
 
 	vRequest := []application.VersionRequest{{
@@ -122,8 +146,8 @@ func (h *appHandler) ListApps(req *restful.Request, resp *restful.Response) {
 
 	var err error
 	result := appv2.ApplicationList{}
-	if req.PathParameter("workspace") != "" {
-		workspace := req.PathParameter("workspace")
+	if req.QueryParameter("workspace") != "" {
+		workspace := req.QueryParameter("workspace")
 		opt := runtimeclient.ListOptions{LabelSelector: labels.SelectorFromSet(
 			labels.Set{constants.WorkspaceLabelKey: workspace})}
 		err = h.client.List(req.Request.Context(), &result, &opt)

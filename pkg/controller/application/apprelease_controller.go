@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"os"
 
+	helmrelease "helm.sh/helm/v3/pkg/release"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 	appv2 "kubesphere.io/api/application/v2"
@@ -35,8 +35,7 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/controller/application/installer"
-
-	helmrelease "helm.sh/helm/v3/pkg/release"
+	"kubesphere.io/kubesphere/pkg/simple/client/application"
 
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 
@@ -69,7 +68,6 @@ func (r *AppReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 type AppReleaseReconciler struct {
 	client.Client
-	RestConfig       *rest.Config
 	clusterClientSet clusterclient.Interface
 	KubeConfigPath   string
 	HelmImage        string
@@ -117,9 +115,9 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if err := r.generateRoleBinding(ctx, apprls.GetRlsNamespace()); err != nil {
-		return ctrl.Result{}, err
-	}
+	//if err := r.generateRoleBinding(ctx, apprls.GetRlsNamespace()); err != nil {
+	//	return ctrl.Result{}, err
+	//}
 
 	switch apprls.Status.State {
 	case "":
@@ -148,7 +146,10 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				if err = r.updateStatus(ctx, apprls, appv2.StatusFailed); err != nil {
 					return ctrl.Result{}, err
 				}
+				klog.Infof("job failed %s", err)
+				return ctrl.Result{}, err
 			}
+			return ctrl.Result{}, err
 		}
 
 		switch release.Info.Status {
@@ -170,22 +171,45 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (executor helm.Executor, err error) {
 
-	if apprls.Spec.AppType == appv2.AppTypeYaml {
+	if apprls.Spec.AppType == appv2.AppTypeYaml || apprls.Spec.AppType == appv2.AppTypeEdge {
 
-		dc, err := dynamic.NewForConfig(r.RestConfig)
+		clusterName := apprls.GetRlsCluster()
 		if err != nil {
-			klog.Errorf("failed to create dynamic client, err: %v", err)
 			return executor, err
 		}
+
+		runtimeClient, err := r.clusterClientSet.GetRuntimeClient(clusterName)
+		if err != nil {
+			return nil, err
+		}
+		clusterClient, err := r.clusterClientSet.GetClusterClient(clusterName)
+		if err != nil {
+			return nil, err
+		}
+		DynamicClient, err := dynamic.NewForConfig(clusterClient.RestConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		jsonList := application.ReadYaml(apprls.Spec.Values)
+		var gvrListInfo []installer.InsInfo
+		for _, i := range jsonList {
+			gvr, utd, err := application.GetInfoFromBytes(i, runtimeClient.RESTMapper())
+			if err != nil {
+				return nil, err
+			}
+			ins := installer.InsInfo{
+				GroupVersionResource: gvr,
+				Name:                 utd.GetName(),
+				Namespace:            utd.GetNamespace(),
+			}
+			gvrListInfo = append(gvrListInfo, ins)
+		}
+
 		executor = installer.YamlInstaller{
-			Mapper:     r.Client.RESTMapper(),
-			DynamicCli: dc,
-			AppRlsReference: metav1.OwnerReference{
-				APIVersion: apprls.APIVersion,
-				Kind:       apprls.Kind,
-				Name:       apprls.Name,
-				UID:        apprls.UID,
-			},
+			Mapper:      runtimeClient.RESTMapper(),
+			DynamicCli:  DynamicClient,
+			GvrListInfo: gvrListInfo,
 		}
 		return executor, nil
 	}
@@ -229,15 +253,7 @@ func (r *AppReleaseReconciler) uninstall(ctx context.Context, rls *appv2.Applica
 		return err
 	}
 
-	deletePolicy := metav1.DeletePropagationBackground
-	err := r.DeleteAllOf(ctx, &batchv1.Job{}, &client.DeleteAllOfOptions{
-		ListOptions: client.ListOptions{
-			Namespace:     rls.GetRlsNamespace(),
-			LabelSelector: labels.SelectorFromSet(labels.Set{appv2.AppReleaseReferenceLabelKey: rls.Name}),
-		},
-		DeleteOptions: client.DeleteOptions{PropagationPolicy: &deletePolicy},
-	})
-	return err
+	return nil
 
 }
 func (r *AppReleaseReconciler) createOrUpgradeAppRelease(ctx context.Context, rls *appv2.ApplicationRelease, executor helm.Executor) error {
@@ -245,20 +261,15 @@ func (r *AppReleaseReconciler) createOrUpgradeAppRelease(ctx context.Context, rl
 	if err != nil {
 		return err
 	}
-
 	clusterName := rls.GetRlsCluster()
-	if clusterName == "" {
-		//todo
-		clusterName = "host"
-	}
-	cluster, err := r.clusterClientSet.Get(clusterName)
+	c, err := r.clusterClientSet.Get(clusterName)
 	if err != nil {
 		return err
 	}
 
 	options := []helm.HelmOption{
 		helm.SetInstall(true),
-		helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)),
+		helm.SetHelmKubeConfig(string(c.Spec.Connection.KubeConfig)),
 		helm.SetKubeAsUser(rls.Annotations[appv2.ReqUserAnnotationKey]),
 	}
 

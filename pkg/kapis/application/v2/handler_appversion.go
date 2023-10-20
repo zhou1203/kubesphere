@@ -2,6 +2,7 @@ package v2
 
 import (
 	"bytes"
+	"strconv"
 
 	"github.com/emicklei/go-restful/v3"
 	"golang.org/x/net/context"
@@ -40,18 +41,36 @@ func (h *appHandler) CreateOrUpdateAppVersion(req *restful.Request, resp *restfu
 		appRequest application.NewAppRequest
 		vRequest   []application.VersionRequest
 	)
+
+	validate, _ := strconv.ParseBool(req.QueryParameter("validate"))
+	chartPack, err := loader.LoadArchive(bytes.NewReader(createAppVersionRequest.Package))
+	if err != nil {
+		klog.V(4).Infoln(err)
+		api.HandleBadRequest(resp, nil, err)
+	}
+	if validate {
+		data := map[string]interface{}{
+			"description":  chartPack.Metadata.Description,
+			"name":         chartPack.Name(),
+			"version_name": chartPack.AppVersion(),
+		}
+		resp.WriteAsJson(data)
+		return
+	}
+
 	if createAppVersionRequest.AppType == appv2.AppTypeHelm {
-		appRequest, vRequest, err = h.helmRequest(req, createAppVersionRequest.Package)
+		appRequest, vRequest, err = h.helmRequest(chartPack, createAppVersionRequest.Package)
 		if err != nil {
 			api.HandleInternalError(resp, nil, err)
 			return
 		}
 	}
-	if createAppVersionRequest.AppType == appv2.AppTypeYaml {
+	if createAppVersionRequest.AppType == appv2.AppTypeYaml || createAppVersionRequest.AppType == appv2.AppTypeEdge {
 		appRequest, vRequest = yamlRequest(
 			createAppVersionRequest.AppId,
 			createAppVersionRequest.VersionName,
 			req.PathParameter("workspace"),
+			createAppVersionRequest.AppType,
 			createAppVersionRequest.Package,
 		)
 	}
@@ -162,7 +181,7 @@ func (h *appHandler) GetAppVersionFiles(req *restful.Request, resp *restful.Resp
 		return
 	}
 
-	if configMap.Labels["appType"] == appv2.AppTypeYaml {
+	if configMap.Labels["appType"] == appv2.AppTypeYaml || configMap.Labels["appType"] == appv2.AppTypeEdge {
 		data["all.yaml"] = configMap.BinaryData[appv2.BinaryKey]
 		resp.WriteAsJson(data)
 		return

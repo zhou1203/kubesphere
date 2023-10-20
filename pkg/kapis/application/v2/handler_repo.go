@@ -43,7 +43,6 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 		api.HandleBadRequest(resp, nil, err)
 		return
 	}
-	workspace := req.PathParameter("workspace")
 
 	repoId := req.PathParameter("repo")
 	if repoId == "" {
@@ -76,6 +75,7 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 		resp.WriteAsJson(data)
 		return
 	}
+	workspace := req.QueryParameter("workspace")
 	mutateFn := func() error {
 		repo.Spec = appv2.HelmRepoSpec{
 			Name:        repo.Name,

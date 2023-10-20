@@ -33,6 +33,7 @@ type ApplicationVersionSpec struct {
 	Sources     []string             `json:"sources,omitempty"`
 	Created     *metav1.Time         `json:"created,omitempty"`
 	Digest      string               `json:"digest,omitempty"`
+	AppType     string               `json:"appType,omitempty"`
 }
 
 // ApplicationVersionStatus defines the observed state of ApplicationVersion

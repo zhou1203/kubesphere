@@ -6,6 +6,7 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
 	appv2 "kubesphere.io/api/application/v2"
 	"kubesphere.io/api/constants"
@@ -18,9 +19,8 @@ import (
 )
 
 func (h *appHandler) CreateOrUpdateAppRls(req *restful.Request, resp *restful.Response) {
-	namespace := req.PathParameter("namespace")
-	workspace := req.PathParameter("workspace")
-	cluster := req.PathParameter("cluster")
+	workspace := req.QueryParameter("workspace")
+	cluster := req.QueryParameter("cluster")
 	var createRlsRequest appv2.ApplicationRelease
 	err := req.ReadEntity(&createRlsRequest)
 	if err != nil {
@@ -37,9 +37,10 @@ func (h *appHandler) CreateOrUpdateAppRls(req *restful.Request, resp *restful.Re
 		apprls.Spec.AppType = createRlsRequest.Spec.AppType
 		apprls.Spec.Values = createRlsRequest.Spec.Values
 		apprls.SetLabels(map[string]string{
-			constants.NamespaceLabelKey:   namespace,
 			constants.ClusterNameLabelKey: cluster,
 			constants.WorkspaceLabelKey:   workspace,
+			appv2.AppIDLabelKey:           createRlsRequest.Spec.AppID,
+			constants.NamespaceLabelKey:   createRlsRequest.GetLabels()[constants.NamespaceLabelKey],
 		})
 		return nil
 	}
@@ -55,9 +56,8 @@ func (h *appHandler) CreateOrUpdateAppRls(req *restful.Request, resp *restful.Re
 
 func (h *appHandler) DescribeAppRls(req *restful.Request, resp *restful.Response) {
 	applicationId := req.PathParameter("application")
-	namespace := req.PathParameter("namespace")
 
-	key := runtimeclient.ObjectKey{Name: applicationId, Namespace: namespace}
+	key := runtimeclient.ObjectKey{Name: applicationId}
 	app := &appv2.ApplicationRelease{}
 	err := h.client.Get(req.Request.Context(), key, app)
 	if requestDone(err, resp) {
@@ -66,7 +66,7 @@ func (h *appHandler) DescribeAppRls(req *restful.Request, resp *restful.Response
 	app.SetManagedFields(nil)
 	// When querying, return real-time data for editing to solve the problem of out-of-sync values during editing.
 	// It is only valid when using the ks API query API. If you want kubectl to work, please use the aggregation API for resource abstraction.
-	if app.Spec.AppType == appv2.AppTypeYaml {
+	if app.Spec.AppType == appv2.AppTypeYaml || app.Spec.AppType == appv2.AppTypeEdge {
 		data, err := h.getRealTimeObj(app)
 		if err != nil {
 			klog.V(4).Infoln(err)
@@ -79,15 +79,31 @@ func (h *appHandler) DescribeAppRls(req *restful.Request, resp *restful.Response
 }
 
 func (h *appHandler) getRealTimeObj(app *appv2.ApplicationRelease) ([]byte, error) {
+
+	clusterName := app.GetRlsCluster()
+
+	client, err := h.clusterClient.GetRuntimeClient(clusterName)
+	if err != nil {
+		return nil, err
+	}
+	clusterClient, err := h.clusterClient.GetClusterClient(clusterName)
+	if err != nil {
+		return nil, err
+	}
+
+	DynamicClient, err := dynamic.NewForConfig(clusterClient.RestConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	jsonList := application.ReadYaml(app.Spec.Values)
 	var realTimeDataList []json.RawMessage
 	for _, i := range jsonList {
-		gvr, utd, err := application.GetInfoFromBytes(i, h.client.RESTMapper())
+		gvr, utd, err := application.GetInfoFromBytes(i, client.RESTMapper())
 		if err != nil {
 			return nil, err
 		}
-		utdRealTime, err := h.dynamicClient.Resource(gvr).Namespace(utd.GetNamespace()).
-			Get(context.Background(), utd.GetName(), metav1.GetOptions{})
+		utdRealTime, err := DynamicClient.Resource(gvr).Get(context.Background(), utd.GetName(), metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -105,10 +121,8 @@ func (h *appHandler) getRealTimeObj(app *appv2.ApplicationRelease) ([]byte, erro
 
 func (h *appHandler) DeleteAppRls(req *restful.Request, resp *restful.Response) {
 	applicationId := req.PathParameter("application")
-	namespace := req.PathParameter("namespace")
 
 	app := &appv2.ApplicationRelease{}
-	app.Namespace = namespace
 	app.Name = applicationId
 
 	err := h.client.Delete(req.Request.Context(), app)

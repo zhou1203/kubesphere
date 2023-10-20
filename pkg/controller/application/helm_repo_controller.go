@@ -118,6 +118,7 @@ func helmAppRequest(repo *appv2.HelmRepo, versions helmrepo.ChartVersions, name 
 		Icon:        versions[0].Icon,
 		AppHome:     versions[0].Home,
 		Url:         repo.Spec.Url,
+		AppType:     appv2.AppTypeHelm,
 		Credential:  repo.Spec.Credential,
 	}
 

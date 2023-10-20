@@ -33,6 +33,7 @@ const (
 	HelmRepoMinSyncPeriod       = 180
 	AppTypeHelm                 = "helm"
 	AppTypeYaml                 = "yaml"
+	AppTypeEdge                 = "edge"
 	BinaryKey                   = "BinaryKey"
 	MaxNumOfVersions            = 10
 )

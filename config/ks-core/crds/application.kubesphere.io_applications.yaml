@@ -51,6 +51,8 @@ spec:
             properties:
               appHome:
                 type: string
+              appType:
+                type: string
               description:
                 additionalProperties:
                   type: string

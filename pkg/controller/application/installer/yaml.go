@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	helmrelease "helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,9 +22,14 @@ import (
 )
 
 type YamlInstaller struct {
-	Mapper          meta.RESTMapper
-	DynamicCli      *dynamic.DynamicClient
-	AppRlsReference metav1.OwnerReference
+	Mapper      meta.RESTMapper
+	DynamicCli  *dynamic.DynamicClient
+	GvrListInfo []InsInfo
+}
+type InsInfo struct {
+	schema.GroupVersionResource
+	Name      string
+	Namespace string
 }
 
 var _ helm.Executor = &YamlInstaller{}
@@ -38,9 +45,7 @@ func (t YamlInstaller) Upgrade(ctx context.Context, chartName string, tempLate, 
 	}
 	klog.Infof("attempting to apply %d yaml files", len(yamlList))
 
-	var references []metav1.OwnerReference
-	references = append(references, t.AppRlsReference)
-	err = t.ForApply(yamlList, references)
+	err = t.ForApply(yamlList)
 
 	return "", err
 }
@@ -68,6 +73,13 @@ func (t YamlInstaller) complianceCheck(values, tempLate []byte) ([]json.RawMessa
 }
 
 func (t YamlInstaller) Uninstall(ctx context.Context, options ...helm.HelmOption) (string, error) {
+	for _, i := range t.GvrListInfo {
+		err := t.DynamicCli.Resource(i.GroupVersionResource).Namespace(i.Namespace).
+			Delete(context.TODO(), i.Name, metav1.DeleteOptions{})
+		if err != nil {
+			return "", err
+		}
+	}
 	return "", nil
 }
 
@@ -85,7 +97,7 @@ func (t YamlInstaller) IsReleaseReady(timeout time.Duration, options ...helm.Hel
 	return true, nil
 }
 
-func (t YamlInstaller) ForApply(tasks []json.RawMessage, references []metav1.OwnerReference) (err error) {
+func (t YamlInstaller) ForApply(tasks []json.RawMessage) (err error) {
 
 	for idx, js := range tasks {
 
@@ -94,17 +106,9 @@ func (t YamlInstaller) ForApply(tasks []json.RawMessage, references []metav1.Own
 			return err
 		}
 		opt := metav1.PatchOptions{FieldManager: "v1.FieldManager"}
-
-		utd.SetOwnerReferences(references)
-
-		marshalJSON, err := utd.MarshalJSON()
-		if err != nil {
-			return err
-		}
-
 		_, err = t.DynamicCli.Resource(gvr).
 			Namespace(utd.GetNamespace()).
-			Patch(context.TODO(), utd.GetName(), types.ApplyPatchType, marshalJSON, opt)
+			Patch(context.TODO(), utd.GetName(), types.ApplyPatchType, js, opt)
 
 		if err != nil {
 			return err

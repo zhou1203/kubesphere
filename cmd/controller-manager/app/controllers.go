@@ -194,7 +194,6 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	if cmOptions.IsControllerEnabled("apprelease-helminstaller") {
 		ins := &application.AppReleaseReconciler{
 			KubeConfigPath: cmOptions.KubernetesOptions.KubeConfig,
-			RestConfig:     client.Config(),
 			HelmImage:      cmOptions.HelmImage,
 		}
 		addControllerWithSetup(mgr, "apprelease-helminstaller", ins)

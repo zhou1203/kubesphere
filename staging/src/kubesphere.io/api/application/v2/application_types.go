@@ -27,6 +27,7 @@ type ApplicationSpec struct {
 	DisplayName corev1alpha1.Locales `json:"displayName"`
 	Description corev1alpha1.Locales `json:"description,omitempty"`
 	AppHome     string               `json:"appHome,omitempty"`
+	AppType     string               `json:"appType,omitempty"`
 	Icon        string               `json:"icon,omitempty"`
 }
 

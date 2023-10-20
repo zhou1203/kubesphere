@@ -86,7 +86,12 @@ func (in *ApplicationRelease) GetCreator() string {
 }
 
 func (in *ApplicationRelease) GetRlsCluster() string {
-	return getValue(in.Labels, constants.ClusterNameLabelKey)
+	name := getValue(in.Labels, constants.ClusterNameLabelKey)
+	if name != "" {
+		return name
+	}
+	//todo remove hardcode
+	return "host"
 }
 
 func (in *ApplicationRelease) GetWorkspace() string {
