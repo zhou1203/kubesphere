@@ -3,7 +3,7 @@
 global:
   imageRegistry: registry.cn-beijing.aliyuncs.com
   tag: v4.0.0
-  imagePullSecrets: [ ]
+  imagePullSecrets: []
 
 ## @section Common parameters
 ##
@@ -19,10 +19,10 @@ nameOverride: ""
 fullnameOverride: ""
 ## @param commonLabels Labels to add to all deployed objects
 ##
-commonLabels: { }
+commonLabels: {}
 ## @param commonAnnotations Annotations to add to all deployed objects
 ##
-commonAnnotations: { }
+commonAnnotations: {}
 
 role: host
 
@@ -50,17 +50,17 @@ serviceAccount:
   # Specifies whether a service account should be created
   create: true
   # Annotations to add to the service account
-  annotations: { }
+  annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name: "kubesphere"
 
-podAnnotations: { }
+podAnnotations: {}
 
-podSecurityContext: { }
+podSecurityContext: {}
 # fsGroup: 2000
 
-securityContext: { }
+securityContext: {}
 # capabilities:
 #   drop:
 #   - ALL
@@ -82,11 +82,9 @@ tolerations:
     operator: Exists
     tolerationSeconds: 60
 
-affinity: { }
+affinity: {}
 
-nodeSelector: { }
-
-hostname: example.com
+nodeSelector: {}
 
 ## deployment specific configuration
 
@@ -105,7 +103,7 @@ apiserver:
     ## pullSecrets:
     ##   - myRegistryKeySecretName
     ##
-    pullSecrets: [ ]
+    pullSecrets: []
   ## @param containerPorts [array] List of container ports to enable in the ks-apiserver container
   ##
   containerPorts:
@@ -135,13 +133,13 @@ apiserver:
   ##   - name: FOO
   ##     value: "bar"
   ##
-  extraEnvVars: [ ]
+  extraEnvVars: []
   ## @param extraVolumeMounts Optionally specify extra list of additional volumeMounts for the haproxy container(s)
   ##
-  extraVolumeMounts: [ ]
+  extraVolumeMounts: []
   ## @param extraVolumes Optionally specify extra list of additional volumes for the haproxy pod(s)
   ##
-  extraVolumes: [ ]
+  extraVolumes: []
 
 console:
   replicaCount: 1
@@ -158,10 +156,10 @@ console:
     ## pullSecrets:
     ##   - myRegistryKeySecretName
     ##
-    pullSecrets: [ ]
+    pullSecrets: []
   ## @param containerPorts [array] List of container ports to enable in the ks-apiserver container
   ##
-  containerPorts: [ ]
+  containerPorts: []
   nodePort: 30880
   defaultClusterName: "default"
   ## @param resources.limits The resources limits for the haproxy containers
@@ -176,16 +174,16 @@ console:
       memory: 100Mi
   ## @param command Override default container command (useful when using custom images)
   ##
-  command: [ ]
+  command: []
   ## @param extraEnvVars Array with extra environment variables to add to haproxy nodes
   ##
-  extraEnvVars: [ ]
+  extraEnvVars: []
   ## @param extraVolumeMounts Optionally specify extra list of additional volumeMounts for the haproxy container(s)
   ##
-  extraVolumeMounts: [ ]
+  extraVolumeMounts: []
   ## @param extraVolumes Optionally specify extra list of additional volumes for the haproxy pod(s)
   ##
-  extraVolumes: [ ]
+  extraVolumes: []
 
 controller:
   replicaCount: 1
@@ -202,7 +200,7 @@ controller:
     ## pullSecrets:
     ##   - myRegistryKeySecretName
     ##
-    pullSecrets: [ ]
+    pullSecrets: []
   ## @param containerPorts [array] List of container ports to enable in the ks-apiserver container
   ##
   containerPorts:
@@ -229,13 +227,13 @@ controller:
     - --controllers=*
   ## @param extraEnvVars Array with extra environment variables to add to haproxy nodes
   ##
-  extraEnvVars: [ ]
+  extraEnvVars: []
   ## @param extraVolumeMounts Optionally specify extra list of additional volumeMounts for the haproxy container(s)
   ##
-  extraVolumeMounts: [ ]
+  extraVolumeMounts: []
   ## @param extraVolumes Optionally specify extra list of additional volumes for the haproxy pod(s)
   ##
-  extraVolumes: [ ]
+  extraVolumes: []
 
 agent:
   replicaCount: 1
@@ -251,13 +249,15 @@ kubectl:
   image:
     registry: ""
     repository: kubesphereio/kubectl
-    tag: "latest"
+    tag: "v1.27.4"
     pullPolicy: IfNotPresent
 
 # Set to enable/disable internal tls
 # - false (default)
 # - true
 internalTLS: false
+
+hostname: example.com
 
 ingress:
   # If set to false, ingress will not be created
@@ -280,7 +280,6 @@ letsEncrypt:
     class: ""
 
 certmanager:
-  clusterResourceNamespace: cert-manager
   duration: 2160h
   renewBefore: 360h
 
