@@ -280,7 +280,6 @@ letsEncrypt:
     class: ""
 
 certmanager:
-  version: ""
   clusterResourceNamespace: cert-manager
   duration: 2160h
   renewBefore: 360h

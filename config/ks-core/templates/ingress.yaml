@@ -9,18 +9,16 @@ metadata:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
     {{- end }}
   {{- if eq .Values.ingress.tls.source "letsEncrypt" }}
-    {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
-    {{- if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (lt (int $certmanagerVer._1) 11)) }}
+    {{- if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") }}
     certmanager.k8s.io/issuer: letsencrypt
-    {{- else }}
+    {{- else if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (.Capabilities.APIVersions.Has "cert-manager.io/v1alpha2") (.Capabilities.APIVersions.Has "cert-manager.io/v1") }}
     cert-manager.io/issuer: letsencrypt
     cert-manager.io/issuer-kind: Issuer
     {{- end }}
   {{- else if eq .Values.ingress.tls.source "generation" }}
-    {{- $certmanagerVer :=  split "." .Values.certmanager.version -}}
-    {{- if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") (and (gt (len $certmanagerVer._0) 0) (eq (int $certmanagerVer._0) 0) (lt (int $certmanagerVer._1) 11)) }}
+    {{- if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") }}
     certmanager.k8s.io/issuer: self-signed
-    {{- else }}
+    {{- else if or (.Capabilities.APIVersions.Has "cert-manager.io/v1beta1") (.Capabilities.APIVersions.Has "cert-manager.io/v1alpha2") (.Capabilities.APIVersions.Has "cert-manager.io/v1") }}
     cert-manager.io/issuer: self-signed
     cert-manager.io/issuer-kind: Issuer
     {{- end }}
