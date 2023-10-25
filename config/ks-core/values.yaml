@@ -265,7 +265,8 @@ ingress:
   # options: true, false
   enabled: false
 
-  ingressClassName: ""
+  # options: traefik, nginx
+  ingressClassName: "nginx"
   # backend port number
   tls:
     # options: generation, importation, letsEncrypt
@@ -275,9 +276,6 @@ ingress:
 letsEncrypt:
   # email: none@example.com
   environment: production
-  ingress:
-    # options: traefik, nginx
-    class: ""
 
 certmanager:
   duration: 2160h

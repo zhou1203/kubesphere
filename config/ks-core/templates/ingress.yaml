@@ -6,7 +6,11 @@ metadata:
   namespace: {{ .Release.Namespace }}
   annotations:
     {{- if .Values.internalTLS }}
+    {{- if eq .Values.ingress.ingressClassName "nginx" }}
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    {{- else if eq .Values.ingress.ingressClassName "traefik" }}
+    ingress.kubernetes.io/protocol: "https"
+    {{- end }}
     {{- end }}
   {{- if eq .Values.ingress.tls.source "letsEncrypt" }}
     {{- if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") }}

@@ -32,7 +32,7 @@ spec:
     solvers:
       - http01:
           ingress:
-            class: {{ .Values.letsEncrypt.ingress.class }}
+            class: {{ .Values.ingress.ingressClassName }}
     {{- end }}
     {{- end }}
   {{- end }}

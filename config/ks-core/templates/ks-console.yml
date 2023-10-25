@@ -132,6 +132,12 @@ metadata:
     app: ks-console
     tier: frontend
     version: {{ .Chart.AppVersion }}
+  annotations:
+    {{- if .Values.internalTLS }}
+    {{- if eq .Values.ingress.ingressClassName "traefik" }}
+    traefik.ingress.kubernetes.io/service.serverstransport: {{ printf "%s-%s@kubernetescrd" .Release.Namespace "ks-console-transport" }}
+    {{- end }}
+    {{- end }}
   name: ks-console
 spec:
   ports:
