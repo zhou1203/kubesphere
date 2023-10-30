@@ -266,9 +266,10 @@ ingress:
   enabled: false
 
   # options: traefik, nginx
-  ingressClassName: "nginx"
+  ingressClassName: ""
   # backend port number
   tls:
+    enabled: true
     # options: generation, importation, letsEncrypt
     source: generation
     secretName: kubesphere-tls-certs

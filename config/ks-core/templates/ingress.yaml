@@ -12,6 +12,7 @@ metadata:
     ingress.kubernetes.io/protocol: "https"
     {{- end }}
     {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
   {{- if eq .Values.ingress.tls.source "letsEncrypt" }}
     {{- if or (.Capabilities.APIVersions.Has "certmanager.k8s.io/v1alpha1") }}
     certmanager.k8s.io/issuer: letsencrypt
@@ -26,7 +27,8 @@ metadata:
     cert-manager.io/issuer: self-signed
     cert-manager.io/issuer-kind: Issuer
     {{- end }}
-{{- end }}
+  {{- end }}
+  {{- end }}
 spec:
   {{- if .Values.ingress.ingressClassName }}
   ingressClassName: {{ .Values.ingress.ingressClassName }}
@@ -56,7 +58,7 @@ spec:
             {{- if or (.Capabilities.APIVersions.Has "networking.k8s.io/v1/Ingress") (not (.Capabilities.APIVersions.Has "networking.k8s.io/v1beta1/Ingress")) }}
             pathType: ImplementationSpecific
             {{- end }}
-{{- if .Values.ingress.enabled }}
+{{- if .Values.ingress.tls.enabled }}
   tls:
     - hosts:
         - {{ .Values.hostname }}
