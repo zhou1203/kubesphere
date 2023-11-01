@@ -61,10 +61,10 @@ func convertToListResult(obj runtime.Object, req *restful.Request) (listResult a
 	_ = meta.EachListItem(obj, omitManagedFields)
 	queryParams := query.ParseQueryParameter(req)
 	list, _ := meta.ExtractList(obj)
-	items, _ := resv1beta1.DefaultList(list, queryParams, resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+	items, _, totalCount := resv1beta1.DefaultList(list, queryParams, resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
 
 	listResult.Items = items
-	listResult.TotalItems = len(items)
+	listResult.TotalItems = int(*totalCount)
 
 	return listResult
 }

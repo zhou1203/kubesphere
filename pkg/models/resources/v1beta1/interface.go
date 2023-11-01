@@ -45,7 +45,7 @@ type FilterFunc func(runtime.Object, query.Filter) bool
 
 type TransformFunc func(runtime.Object) runtime.Object
 
-func DefaultList(objects []runtime.Object, q *query.Query, compareFunc CompareFunc, filterFunc FilterFunc, transformFuncs ...TransformFunc) ([]runtime.Object, *int64) {
+func DefaultList(objects []runtime.Object, q *query.Query, compareFunc CompareFunc, filterFunc FilterFunc, transformFuncs ...TransformFunc) ([]runtime.Object, *int64, *int64) {
 	// selected matched ones
 	var filtered []runtime.Object
 	if len(q.Filters) != 0 {
@@ -85,8 +85,9 @@ func DefaultList(objects []runtime.Object, q *query.Query, compareFunc CompareFu
 
 	start, end := q.Pagination.GetValidPagination(total)
 	remainingItemCount := int64(total - end)
+	totalCount := int64(total)
 
-	return filtered[start:end], &remainingItemCount
+	return filtered[start:end], &remainingItemCount, &totalCount
 }
 
 // DefaultObjectMetaCompare return true is left greater than right

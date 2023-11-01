@@ -315,9 +315,9 @@ func (h *handler) ListClusterMembers(request *restful.Request, response *restful
 		}
 	}
 
-	list, _ := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+	list, _, totalCount := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
 	result.Items = list
-	result.TotalItems = len(list)
+	result.TotalItems = int(*totalCount)
 
 	_ = response.WriteEntity(result)
 }
@@ -349,9 +349,9 @@ func (h *handler) ListWorkspaceMembers(request *restful.Request, response *restf
 			}
 		}
 	}
-	list, _ := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+	list, _, totalCount := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
 	result.Items = list
-	result.TotalItems = len(list)
+	result.TotalItems = int(*totalCount)
 
 	_ = response.WriteEntity(result)
 }
@@ -385,9 +385,9 @@ func (h *handler) ListNamespaceMembers(request *restful.Request, response *restf
 		}
 	}
 
-	list, _ := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+	list, _, totalCount := resv1beta1.DefaultList(users, query.ParseQueryParameter(request), resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
 	result.Items = list
-	result.TotalItems = len(list)
+	result.TotalItems = int(*totalCount)
 
 	_ = response.WriteEntity(result)
 }

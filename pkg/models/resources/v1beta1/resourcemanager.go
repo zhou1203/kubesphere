@@ -209,7 +209,7 @@ func (h *resourceManager) List(ctx context.Context, namespace string, query *que
 		return err
 	}
 
-	filtered, remainingItemCount := DefaultList(extractList, query, DefaultCompare, DefaultFilter)
+	filtered, remainingItemCount, _ := DefaultList(extractList, query, DefaultCompare, DefaultFilter)
 	list.SetRemainingItemCount(remainingItemCount)
 	if err := meta.SetList(list, filtered); err != nil {
 		return err
