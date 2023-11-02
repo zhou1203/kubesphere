@@ -37,6 +37,7 @@ import (
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
+	"kubesphere.io/kubesphere/pkg/utils/directives"
 )
 
 type reverseProxy struct {
@@ -137,6 +138,27 @@ func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.Revers
 				addOrReplaceHeader(newReq.Header, header, true)
 			}
 		}
+	}
+
+	if err = directives.HandlerRequest(newReq, reverseProxy.Spec.Directives.Rewrite, directives.WithRewriteFilter); err != nil {
+		reason := "failed to create handler directives Directives.Rewrite"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
+		return
+	}
+
+	if err = directives.HandlerRequest(newReq, reverseProxy.Spec.Directives.Replace, directives.WithReplaceFilter); err != nil {
+		reason := "failed to create handler directives Directives.Replace"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
+		return
+	}
+
+	if err = directives.HandlerRequest(newReq, reverseProxy.Spec.Directives.PathRegexp, directives.WithPathRegexpFilter); err != nil {
+		reason := "failed to create handler directives Directives.PathRegexp"
+		klog.Warningf("%v: %v\n", reason, err)
+		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
+		return
 	}
 
 	proxyRoundTripper, err := transport.New(&transport.Config{

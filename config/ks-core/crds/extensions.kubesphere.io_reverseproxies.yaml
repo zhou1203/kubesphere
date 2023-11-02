@@ -65,6 +65,18 @@ spec:
                   method:
                     description: Changes the request's HTTP verb.
                     type: string
+                  pathRegexp:
+                    items:
+                      type: string
+                    type: array
+                  replace:
+                    items:
+                      type: string
+                    type: array
+                  rewrite:
+                    items:
+                      type: string
+                    type: array
                   stripPathPrefix:
                     description: Strips the given prefix from the beginning of the
                       URI path.
