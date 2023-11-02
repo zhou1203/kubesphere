@@ -309,17 +309,16 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !repo.ObjectMeta.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, repo)
+	}
+
 	if !controllerutil.ContainsFinalizer(repo, repositoryProtection) {
 		expected := repo.DeepCopy()
 		controllerutil.AddFinalizer(expected, repositoryProtection)
 		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(repo))
 	}
-
-	if !repo.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, repo)
-	} else {
-		return r.reconcileRepository(ctx, repo)
-	}
+	return r.reconcileRepository(ctx, repo)
 }
 
 func (r *RepositoryReconciler) SetupWithManager(mgr ctrl.Manager) error {

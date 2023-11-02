@@ -91,14 +91,29 @@ func (r *InstallPlanReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	ctx = klog.NewContext(ctx, logger)
+
+	if !plan.ObjectMeta.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, plan)
+	}
+
+	// If the corresponding ExtensionVersion is deleted, the current InstallPlan will be cascade-deleted
+	extensionVersion := &corev1alpha1.ExtensionVersion{}
+	if err := r.Client.Get(ctx, types.NamespacedName{
+		Name: fmt.Sprintf("%s-%s", plan.Spec.Extension.Name, plan.Spec.Extension.Version),
+	}, extensionVersion); err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, r.Delete(ctx, plan)
+		}
+		return ctrl.Result{}, err
+	}
+	if !extensionVersion.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, r.Delete(ctx, plan)
+	}
+
 	if !controllerutil.ContainsFinalizer(plan, installPlanProtection) {
 		expected := plan.DeepCopy()
 		controllerutil.AddFinalizer(expected, installPlanProtection)
 		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(plan))
-	}
-
-	if !plan.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, plan)
 	}
 
 	if err := r.syncInstallPlanStatus(ctx, plan); err != nil {
@@ -168,6 +183,27 @@ func (r *InstallPlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					return false
 				},
 			})),
+		).
+		Watches(
+			&corev1alpha1.ExtensionVersion{},
+			handler.EnqueueRequestsFromMapFunc(
+				func(ctx context.Context, h client.Object) []reconcile.Request {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name: h.GetLabels()[corev1alpha1.ExtensionReferenceLabel],
+						}}}
+				}),
+			builder.WithPredicates(predicate.Funcs{
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					return false
+				},
+				CreateFunc: func(e event.CreateEvent) bool {
+					return false
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					return true
+				},
+			}),
 		).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		Complete(r)

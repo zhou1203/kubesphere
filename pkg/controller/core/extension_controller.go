@@ -23,6 +23,8 @@ import (
 	"sort"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
@@ -51,6 +53,16 @@ type ExtensionReconciler struct {
 
 // reconcileDelete delete the extension.
 func (r *ExtensionReconciler) reconcileDelete(ctx context.Context, extension *corev1alpha1.Extension) (ctrl.Result, error) {
+	deletePolicy := metav1.DeletePropagationBackground
+	if err := r.DeleteAllOf(ctx, &corev1alpha1.ExtensionVersion{}, &client.DeleteAllOfOptions{
+		ListOptions: client.ListOptions{
+			LabelSelector: labels.SelectorFromSet(labels.Set{corev1alpha1.ExtensionReferenceLabel: extension.Name}),
+		},
+		DeleteOptions: client.DeleteOptions{PropagationPolicy: &deletePolicy},
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to delete related ExtensionVersion: %s", err)
+	}
+
 	// Remove the finalizer from the extension
 	controllerutil.RemoveFinalizer(extension, extensionProtection)
 	if err := r.Update(ctx, extension); err != nil {
@@ -112,14 +124,14 @@ func (r *ExtensionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	r.logger.V(4).Info("reconcile", "extension", extension.Name)
 
+	if extension.ObjectMeta.DeletionTimestamp != nil {
+		return r.reconcileDelete(ctx, extension)
+	}
+
 	if !controllerutil.ContainsFinalizer(extension, extensionProtection) {
 		expected := extension.DeepCopy()
 		controllerutil.AddFinalizer(expected, extensionProtection)
 		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(extension))
-	}
-
-	if extension.ObjectMeta.DeletionTimestamp != nil {
-		return r.reconcileDelete(ctx, extension)
 	}
 
 	if err := r.syncExtensionStatus(ctx, extension); err != nil {
