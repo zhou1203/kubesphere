@@ -246,7 +246,7 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	handler = filters.WithJSBundle(handler, s.RuntimeCache)
 
 	if s.Config.AuditingOptions.Enable {
-		handler = filters.WithAuditing(handler, audit.NewAuditing(s.RuntimeCache, s.Config.AuditingOptions, stopCh))
+		handler = filters.WithAuditing(handler, audit.NewAuditing(s.KubernetesClient, s.Config.AuditingOptions, stopCh))
 	}
 
 	var authorizers authorizer.Authorizer

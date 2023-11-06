@@ -25,7 +25,6 @@ import (
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 
 	appv2 "kubesphere.io/api/application/v2"
-	auditingv1alpha1 "kubesphere.io/api/auditing/v1alpha1"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
@@ -44,7 +43,6 @@ var Codecs = serializer.NewCodecFactory(Scheme)
 var ParameterCodec = runtime.NewParameterCodec(Scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
 	appv2.AddToScheme,
-	auditingv1alpha1.AddToScheme,
 	clusterv1alpha1.AddToScheme,
 	corev1alpha1.AddToScheme,
 	extensionsv1alpha1.AddToScheme,

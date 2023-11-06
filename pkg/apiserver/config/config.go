@@ -27,12 +27,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/models/terminal"
 	"kubesphere.io/kubesphere/pkg/multicluster"
-	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/telemetry"

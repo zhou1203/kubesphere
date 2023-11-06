@@ -25,9 +25,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
-	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
+	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 
 	"github.com/google/uuid"
 	v1 "k8s.io/api/authentication/v1"
@@ -36,66 +40,94 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/apis/audit"
 	"k8s.io/klog/v2"
-	auditingv1alpha1 "kubesphere.io/api/auditing/v1alpha1"
 	"kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
-	options "kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/utils/iputil"
 )
 
 const (
-	DefaultWebhook       = "kube-auditing-webhook"
 	DefaultCacheCapacity = 10000
 	CacheTimeout         = time.Second
 )
 
 type Auditing interface {
 	Enabled() bool
-	K8sAuditingEnabled() bool
 	LogRequestObject(req *http.Request, info *request.RequestInfo) *Event
 	LogResponseObject(e *Event, resp *ResponseCapture)
 }
 
 type auditing struct {
-	cache   runtimecache.Cache
-	events  chan *Event
-	backend *Backend
+	kubernetesClient k8s.Client
+	opts             *Options
+	events           chan *Event
+	backend          *Backend
+
+	host    *Instance
+	cluster string
 }
 
-func NewAuditing(cache runtimecache.Cache, opts *options.Options, stopCh <-chan struct{}) Auditing {
+func NewAuditing(kubernetesClient k8s.Client, opts *Options, stopCh <-chan struct{}) Auditing {
 
 	a := &auditing{
-		cache:  cache,
-		events: make(chan *Event, DefaultCacheCapacity),
+		kubernetesClient: kubernetesClient,
+		opts:             opts,
+		events:           make(chan *Event, DefaultCacheCapacity),
+		host:             getHostInstance(),
 	}
 
+	a.cluster = a.getClusterName()
 	a.backend = NewBackend(opts, a.events, stopCh)
 	return a
 }
 
-func (a *auditing) getAuditLevel() audit.Level {
-	defaultWebhook := &auditingv1alpha1.Webhook{}
-	if err := a.cache.Get(context.Background(), types.NamespacedName{Name: DefaultWebhook}, defaultWebhook); err != nil {
-		klog.Error(err)
-		return audit.LevelNone
+func getHostInstance() *Instance {
+	addrs, err := net.InterfaceAddrs()
+	hostip := ""
+	if err == nil {
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+				if ipnet.IP.To4() != nil {
+					hostip = ipnet.IP.String()
+					break
+				}
+			}
+		}
 	}
-	return (audit.Level)(defaultWebhook.Spec.AuditLevel)
+
+	return &Instance{
+		Name: os.Getenv("HOSTNAME"),
+		IP:   hostip,
+	}
+}
+
+func (a *auditing) getClusterName() string {
+	ns, err := a.kubernetesClient.Kubernetes().CoreV1().Namespaces().Get(context.Background(), constants.KubeSphereNamespace, metav1.GetOptions{})
+	if err != nil {
+		klog.Error("get %s error: %s", constants.KubeSphereNamespace, err)
+		return ""
+	}
+
+	if ns.Annotations != nil {
+		return ns.Annotations[clusterv1alpha1.AnnotationClusterName]
+	}
+
+	return ""
+}
+
+func (a *auditing) getAuditLevel() audit.Level {
+	if a.opts != nil &&
+		a.opts.AuditLevel != "" {
+		return a.opts.AuditLevel
+	}
+
+	return audit.LevelMetadata
 }
 
 func (a *auditing) Enabled() bool {
 
 	level := a.getAuditLevel()
 	return !level.Less(audit.LevelMetadata)
-}
-
-func (a *auditing) K8sAuditingEnabled() bool {
-	defaultWebhook := &auditingv1alpha1.Webhook{}
-	if err := a.cache.Get(context.Background(), types.NamespacedName{Name: DefaultWebhook}, defaultWebhook); err != nil {
-		klog.Error(err)
-		return false
-	}
-	return defaultWebhook.Spec.K8sAuditingEnabled
 }
 
 // If the request is not a standard request, or a resource request,
@@ -121,8 +153,9 @@ func (a *auditing) LogRequestObject(req *http.Request, info *request.RequestInfo
 	}
 
 	e := &Event{
+		Instance:  a.host,
 		Workspace: info.Workspace,
-		Cluster:   info.Cluster,
+		Cluster:   a.cluster,
 		Event: audit.Event{
 			RequestURI:               info.Path,
 			Verb:                     info.Verb,

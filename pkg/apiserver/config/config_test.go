@@ -26,12 +26,12 @@ import (
 	"gopkg.in/yaml.v2"
 	"k8s.io/utils/pointer"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization"
 	"kubesphere.io/kubesphere/pkg/models/terminal"
 	"kubesphere.io/kubesphere/pkg/multicluster"
-	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/telemetry"
@@ -72,11 +72,7 @@ func newTestConfig() (*Config, error) {
 			},
 		},
 		MultiClusterOptions: multicluster.NewOptions(),
-		AuditingOptions: &auditing.Options{
-			Host:        "http://elasticsearch-logging-data.kubesphere-logging-system.svc:9200",
-			IndexPrefix: "ks-logstash-auditing",
-			Version:     "6",
-		},
+		AuditingOptions:     &auditing.Options{},
 		TerminalOptions: &terminal.Options{
 			NodeShellOptions: terminal.NodeShellOptions{
 				Image:   "alpine:3.15",

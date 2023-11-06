@@ -25,8 +25,6 @@ import (
 	"time"
 
 	"k8s.io/klog/v2"
-
-	options "kubesphere.io/kubesphere/pkg/simple/client/auditing"
 )
 
 const (
@@ -50,7 +48,7 @@ type Backend struct {
 	stopCh             <-chan struct{}
 }
 
-func NewBackend(opts *options.Options, cache chan *Event, stopCh <-chan struct{}) *Backend {
+func NewBackend(opts *Options, cache chan *Event, stopCh <-chan struct{}) *Backend {
 
 	b := Backend{
 		url:                opts.WebhookUrl,

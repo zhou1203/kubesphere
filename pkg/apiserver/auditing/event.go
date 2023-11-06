@@ -21,6 +21,11 @@ import (
 	"k8s.io/apiserver/pkg/apis/audit"
 )
 
+type Instance struct {
+	Name string
+	IP   string
+}
+
 type Event struct {
 	// The workspace which this audit event happened
 	Workspace string
@@ -28,6 +33,8 @@ type Event struct {
 	Cluster string
 	// Message send to user.
 	Message string
+	// information about the ks-apiserver pod
+	Instance *Instance
 
 	audit.Event
 }
