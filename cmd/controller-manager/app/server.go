@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	"kubesphere.io/kubesphere/pkg/controller/application"
-
 	"github.com/google/gops/agent"
 	"github.com/spf13/cobra"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -31,11 +29,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
 	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
+	"kubesphere.io/kubesphere/pkg/controller/application"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
+	"kubesphere.io/kubesphere/pkg/controller/ksserviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/user"
 	"kubesphere.io/kubesphere/pkg/scheme"
@@ -208,6 +209,14 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	}
 	mgr.GetWebhookServer().Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
 	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(scheme.Scheme))
+
+	decoder := admission.NewDecoder(mgr.GetScheme())
+	serviceAccountPodInjector := &ksserviceaccount.PodInjector{
+		Log:     mgr.GetLogger(),
+		Decoder: decoder,
+		Client:  mgr.GetClient(),
+	}
+	mgr.GetWebhookServer().Register("/serviceaccount-pod-injector", &webhook.Admission{Handler: serviceAccountPodInjector})
 
 	klog.V(0).Info("Starting the controllers.")
 	if err = mgr.Start(ctx); err != nil {

@@ -977,7 +977,7 @@ func TestAppliesTo(t *testing.T) {
 			subjects: []rbacv1.Subject{
 				{Kind: rbacv1.UserKind, Name: "barfoo"},
 				{Kind: rbacv1.GroupKind, Name: "foobar"},
-				{Kind: rbacv1.ServiceAccountKind, Namespace: "kube-system", Name: "default"},
+				{Kind: rbacv1.ServiceAccountKind, APIGroup: rbacv1.GroupName, Namespace: "kube-system", Name: "default"},
 			},
 			user:      &user.DefaultInfo{Name: "system:serviceaccount:kube-system:default"},
 			namespace: "default",

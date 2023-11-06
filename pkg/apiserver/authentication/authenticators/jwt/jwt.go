@@ -23,10 +23,14 @@ import (
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
+
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	"kubesphere.io/kubesphere/pkg/models/auth"
+	"kubesphere.io/kubesphere/pkg/utils/serviceaccount"
 )
 
 // TokenAuthenticator implements kubernetes token authenticate interface with our custom logic.
@@ -53,6 +57,18 @@ func (t *tokenAuthenticator) AuthenticateToken(ctx context.Context, token string
 		return nil, false, err
 	}
 
+	if serviceaccount.IsServiceAccountToken(verified.Subject) {
+		_, err = t.validateServiceAccount(verified)
+		if err != nil {
+			return nil, false, err
+		}
+
+		return &authenticator.Response{
+			User: verified.User,
+		}, true, nil
+
+	}
+
 	if verified.User.GetName() == iamv1beta1.PreRegistrationUser {
 		return &authenticator.Response{
 			User: verified.User,
@@ -74,4 +90,16 @@ func (t *tokenAuthenticator) AuthenticateToken(ctx context.Context, token string
 			Groups: append(userInfo.Spec.Groups, user.AllAuthenticated),
 		},
 	}, true, nil
+}
+
+func (t *tokenAuthenticator) validateServiceAccount(verify *token.VerifiedResponse) (*corev1alpha1.ServiceAccount, error) {
+	// Ensure the relative service account exist
+	name, namespace := serviceaccount.SplitUsername(verify.Username)
+	sa := &corev1alpha1.ServiceAccount{}
+	ctx := context.Background()
+	err := t.cache.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sa)
+	if err != nil {
+		return nil, err
+	}
+	return sa, nil
 }

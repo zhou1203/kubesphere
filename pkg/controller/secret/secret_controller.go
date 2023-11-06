@@ -23,7 +23,7 @@ import (
 
 const (
 	controllerName               = "secrets-controller"
-	serviceAccountUsernameFormat = "kubesphere:serviceaccount:%s:%s"
+	serviceAccountUsernameFormat = corev1alpha1.ServiceAccountGroup + ":%s:%s"
 )
 
 type Reconciler struct {
@@ -94,14 +94,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *Reconciler) issueTokenTo(sa *corev1alpha1.ServiceAccount) (*oauth.Token, error) {
-	name := fmt.Sprintf(serviceAccountUsernameFormat, sa.Namespace, sa.Name)
+	// We verify that the token is valid by checking the validity of SA, so we issue a token with no expiration date
 	accessToken, err := r.TokenIssuer.IssueTo(&token.IssueRequest{
 		User: &user.DefaultInfo{
-			Name:   name,
-			Groups: nil, // TODO add group
-			Extra:  nil,
+			Name: fmt.Sprintf(serviceAccountUsernameFormat, sa.Namespace, sa.Name),
 		},
-		Claims: token.Claims{TokenType: token.AccessToken},
+		Claims: token.Claims{TokenType: token.StaticToken},
 	})
 	if err != nil {
 		return nil, err

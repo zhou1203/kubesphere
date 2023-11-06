@@ -30,11 +30,13 @@ import (
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
 
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
+	ksserviceaccount "kubesphere.io/kubesphere/pkg/utils/serviceaccount"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
@@ -372,8 +374,16 @@ func appliesToUser(user user.Info, subject rbacv1.Subject, namespace string) boo
 		if len(saNamespace) == 0 {
 			return false
 		}
-		// use a more efficient comparison for RBAC checking
-		return serviceaccount.MatchesUsername(saNamespace, subject.Name, user.GetName())
+		switch subject.APIGroup {
+		case rbacv1.GroupName:
+			// use a more efficient comparison for RBAC checking
+			return serviceaccount.MatchesUsername(saNamespace, subject.Name, user.GetName())
+		case corev1alpha1.GroupName:
+			return ksserviceaccount.MatchesUsername(saNamespace, subject.Name, user.GetName())
+		default:
+			return false
+		}
+
 	default:
 		return false
 	}

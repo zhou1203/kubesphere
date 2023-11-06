@@ -10,6 +10,12 @@ const (
 	ServiceAccountUID             = "kubesphere.io/service-account.uid"
 	ServiceAccountToken           = "token"
 	SecretTypeServiceAccountToken = "kubesphere.io/service-account-token"
+
+	ServiceAccountGroup                     = "kubesphere:serviceaccount"
+	ServiceAccountTokenPrefix               = ServiceAccountGroup + ":"
+	ServiceAccountTokenSubFormat            = ServiceAccountTokenPrefix + "%s:%s"
+	ServiceAccountTokenExtraSecretNamespace = "secret-namespace"
+	ServiceAccountTokenExtraSecretName      = "secret-name"
 )
 
 // +kubebuilder:object:root=true
