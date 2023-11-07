@@ -18,12 +18,9 @@ package oauth
 
 import (
 	"errors"
-	"net/url"
 	"time"
 
 	"kubesphere.io/kubesphere/pkg/server/options"
-
-	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 type GrantHandlerType string
@@ -31,15 +28,6 @@ type MappingMethod string
 type IdentityProviderType string
 
 const (
-	// GrantHandlerAuto auto-approves client authorization grant requests
-	GrantHandlerAuto GrantHandlerType = "auto"
-	// GrantHandlerPrompt prompts the user to approve new client authorization grant requests
-	GrantHandlerPrompt GrantHandlerType = "prompt"
-	// GrantHandlerDeny auto-denies client authorization grant requests
-	GrantHandlerDeny GrantHandlerType = "deny"
-	// MappingMethodAuto  The default value.
-	// The user will automatically create and mapping when login successful.
-	// Fails if a user with that username is already mapped to another identity.
 	MappingMethodAuto MappingMethod = "auto"
 	// MappingMethodLookup Looks up an existing identity, user identity mapping, and user, but does not automatically
 	// provision users or identities. Using this method requires you to manually provision users.
@@ -52,9 +40,7 @@ const (
 )
 
 var (
-	ErrorClientNotFound        = errors.New("the OAuth client was not found")
-	ErrorProviderNotFound      = errors.New("the identity provider was not found")
-	ErrorRedirectURLNotAllowed = errors.New("redirect URL is not allowed")
+	ErrorProviderNotFound = errors.New("the identity provider was not found")
 )
 
 type Options struct {
@@ -70,9 +56,6 @@ type Options struct {
 
 	// Register identity providers.
 	IdentityProviders []IdentityProviderOptions `json:"identityProviders,omitempty" yaml:"identityProviders,omitempty"`
-
-	// Register additional OAuth clients.
-	Clients []Client `json:"clients,omitempty" yaml:"clients,omitempty"`
 
 	// AccessTokenMaxAgeSeconds  control the lifetime of access tokens. The default lifetime is 24 hours.
 	// 0 means no expiration.
@@ -137,55 +120,6 @@ type Token struct {
 	ExpiresIn int `json:"expires_in,omitempty"`
 }
 
-type Client struct {
-	// The name of the OAuth client is used as the client_id parameter when making requests to <master>/oauth/authorize
-	// and <master>/oauth/token.
-	Name string `json:"name,omitempty" yaml:"name,omitempty"`
-
-	// Secret is the unique secret associated with a client
-	Secret string `json:"-" yaml:"secret,omitempty"`
-
-	// RespondWithChallenges indicates whether the client wants authentication needed responses made
-	// in the form of challenges instead of redirects
-	RespondWithChallenges bool `json:"respondWithChallenges,omitempty" yaml:"respondWithChallenges,omitempty"`
-
-	// RedirectURIs is the valid redirection URIs associated with a client
-	RedirectURIs []string `json:"redirectURIs,omitempty" yaml:"redirectURIs,omitempty"`
-
-	// GrantMethod determines how to handle grants for this client. If no method is provided, the
-	// cluster default grant handling method will be used. Valid grant handling methods are:
-	//  - auto:   always approves grant requests, useful for trusted clients
-	//  - prompt: prompts the end user for approval of grant requests, useful for third-party clients
-	//  - deny:   always denies grant requests, useful for black-listed clients
-	GrantMethod GrantHandlerType `json:"grantMethod,omitempty" yaml:"grantMethod,omitempty"`
-
-	// ScopeRestrictions describes which scopes this client can request.  Each requested scope
-	// is checked against each restriction.  If any restriction matches, then the scope is allowed.
-	// If no restriction matches, then the scope is denied.
-	ScopeRestrictions []string `json:"scopeRestrictions,omitempty" yaml:"scopeRestrictions,omitempty"`
-
-	// AccessTokenMaxAge overrides the default access token max age for tokens granted to this client.
-	AccessTokenMaxAge *time.Duration `json:"accessTokenMaxAge,omitempty" yaml:"accessTokenMaxAge,omitempty"`
-
-	// AccessTokenInactivityTimeout overrides the default token
-	// inactivity timeout for tokens granted to this client.
-	AccessTokenInactivityTimeout *time.Duration `json:"accessTokenInactivityTimeout,omitempty" yaml:"accessTokenInactivityTimeout,omitempty"`
-}
-
-var (
-	// AllowAllRedirectURI Allow any redirect URI if the redirectURI is defined in request
-	AllowAllRedirectURI = "*"
-)
-
-func (o *Options) OAuthClient(name string) (Client, error) {
-	for _, found := range o.Clients {
-		if found.Name == name {
-			return found, nil
-		}
-	}
-	return Client{}, ErrorClientNotFound
-}
-
 func (o *Options) IdentityProviderOptions(name string) (*IdentityProviderOptions, error) {
 	for _, found := range o.IdentityProviders {
 		if found.Name == name {
@@ -195,45 +129,10 @@ func (o *Options) IdentityProviderOptions(name string) (*IdentityProviderOptions
 	return nil, ErrorProviderNotFound
 }
 
-func (c Client) anyRedirectAbleURI() []string {
-	uris := make([]string, 0)
-	for _, uri := range c.RedirectURIs {
-		_, err := url.Parse(uri)
-		if err == nil {
-			uris = append(uris, uri)
-		}
-	}
-	return uris
-}
-
-func (c Client) ResolveRedirectURL(expectURL string) (*url.URL, error) {
-	// RedirectURIs is empty
-	if len(c.RedirectURIs) == 0 {
-		return nil, ErrorRedirectURLNotAllowed
-	}
-	allowAllRedirectURI := sliceutil.HasString(c.RedirectURIs, AllowAllRedirectURI)
-	redirectAbleURIs := c.anyRedirectAbleURI()
-
-	if expectURL == "" {
-		// Need to specify at least one RedirectURI
-		if len(redirectAbleURIs) > 0 {
-			return url.Parse(redirectAbleURIs[0])
-		} else {
-			return nil, ErrorRedirectURLNotAllowed
-		}
-	}
-	if allowAllRedirectURI || sliceutil.HasString(redirectAbleURIs, expectURL) {
-		return url.Parse(expectURL)
-	}
-
-	return nil, ErrorRedirectURLNotAllowed
-}
-
 func NewOptions() *Options {
 	return &Options{
 		Issuer:                       DefaultIssuer,
 		IdentityProviders:            make([]IdentityProviderOptions, 0),
-		Clients:                      make([]Client, 0),
 		AccessTokenMaxAge:            time.Hour * 2,
 		AccessTokenInactivityTimeout: time.Hour * 2,
 	}

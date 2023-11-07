@@ -57,16 +57,8 @@ func newTestConfig() (*Config, error) {
 			LoginHistoryMaximumEntries:      100,
 			MultipleLogin:                   false,
 			OAuthOptions: &oauth.Options{
-				Issuer:            oauth.DefaultIssuer,
-				IdentityProviders: []oauth.IdentityProviderOptions{},
-				Clients: []oauth.Client{{
-					Name:                         "kubesphere-console-client",
-					Secret:                       "xxxxxx-xxxxxx-xxxxxx",
-					RespondWithChallenges:        true,
-					RedirectURIs:                 []string{"http://ks-console.kubesphere-system.svc/oauth/token/implicit"},
-					GrantMethod:                  oauth.GrantHandlerAuto,
-					AccessTokenInactivityTimeout: nil,
-				}},
+				Issuer:                       oauth.DefaultIssuer,
+				IdentityProviders:            []oauth.IdentityProviderOptions{},
 				AccessTokenMaxAge:            time.Hour * 24,
 				AccessTokenInactivityTimeout: 0,
 			},

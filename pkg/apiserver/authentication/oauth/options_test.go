@@ -23,50 +23,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestClientResolveRedirectURL(t *testing.T) {
-
-	tests := []struct {
-		Name      string
-		client    Client
-		wantErr   bool
-		expectURL string
-	}{
-		{
-			Name: "custom client test",
-			client: Client{
-				Name:                  "custom",
-				RespondWithChallenges: true,
-				RedirectURIs:          []string{AllowAllRedirectURI, "https://foo.bar.com/oauth/cb"},
-				GrantMethod:           GrantHandlerAuto,
-			},
-			wantErr:   false,
-			expectURL: "https://foo.bar.com/oauth/cb",
-		},
-		{
-			Name: "custom client test",
-			client: Client{
-				Name:                  "custom",
-				RespondWithChallenges: true,
-				RedirectURIs:          []string{"https://foo.bar.com/oauth/cb"},
-				GrantMethod:           GrantHandlerAuto,
-			},
-			wantErr:   true,
-			expectURL: "https://foo.bar.com/oauth/cb2",
-		},
-	}
-
-	for _, test := range tests {
-		redirectURL, err := test.client.ResolveRedirectURL(test.expectURL)
-		if (err != nil) != test.wantErr {
-			t.Errorf("ResolveRedirectURL() error = %+v, wantErr %+v", err, test.wantErr)
-			return
-		}
-		if redirectURL != nil && test.expectURL != redirectURL.String() {
-			t.Errorf("expected redirect url: %s, got: %s", test.expectURL, redirectURL)
-		}
-	}
-}
-
 func TestDynamicOptions_MarshalJSON(t *testing.T) {
 	config := `
 accessTokenMaxAge: 1h

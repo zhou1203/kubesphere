@@ -36,6 +36,7 @@ import (
 	controllerconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/controller/application"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
+	"kubesphere.io/kubesphere/pkg/controller/config"
 	"kubesphere.io/kubesphere/pkg/controller/ksserviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/quota"
 	"kubesphere.io/kubesphere/pkg/controller/user"
@@ -201,6 +202,10 @@ func run(s *options.KubeSphereControllerManagerOptions, ctx context.Context) err
 	}
 	if err = application.SetupWebhookWithManager(mgr); err != nil {
 		klog.Fatalf("unable to register application webhook: %v", err)
+	}
+
+	if err = config.SetupWebhookWithManager(mgr); err != nil {
+		klog.Fatalf("unable to register config webhook: %v", err)
 	}
 
 	resourceQuotaAdmission, err := quota.NewResourceQuotaAdmission(mgr.GetClient(), mgr.GetScheme())

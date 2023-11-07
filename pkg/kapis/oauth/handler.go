@@ -121,6 +121,7 @@ type handler struct {
 	passwordAuthenticator auth.PasswordAuthenticator
 	oauthAuthenticator    auth.OAuthAuthenticator
 	loginRecorder         auth.LoginRecorder
+	oauthOperator         auth.OAuthOperator
 }
 
 // tokenReview Implement webhook authentication interface
@@ -212,7 +213,7 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 		nonce, _ = req.BodyParameter("nonce")
 	}
 
-	oauthClient, err := h.options.OAuthOptions.OAuthClient(clientID)
+	oauthClient, err := h.oauthOperator.GetOAuthClient(req.Request.Context(), clientID)
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidClient(err))
 		return
@@ -220,6 +221,11 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 
 	redirectURL, err := oauthClient.ResolveRedirectURL(redirectURI)
 	if err != nil {
+		response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidRequest(err))
+		return
+	}
+	if !oauthClient.IsValidScope(scope) {
+		err := fmt.Errorf("some requested scope were invalid: %v", scope)
 		response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidRequest(err))
 		return
 	}
@@ -258,12 +264,6 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 		}
 		redirectURL.RawQuery = values.Encode()
 		http.Redirect(response.ResponseWriter, req.Request, redirectURL.String(), http.StatusFound)
-	}
-
-	// Other scope values MAY be present.
-	// Scope values used that are not understood by an implementation SHOULD be ignored.
-	if !oauth.IsValidScopes(scopes) {
-		klog.Warningf("some requested scopes were invalid: %v", scopes)
 	}
 
 	if !oauth.IsValidResponseTypes(responseTypes) {
@@ -307,7 +307,7 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 		return
 	}
 
-	result, err := h.issueTokenTo(authenticated)
+	result, err := h.issueTokenTo(authenticated, oauthClient)
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(err))
 		return
@@ -333,7 +333,7 @@ func (h *handler) oauthCallback(req *restful.Request, response *restful.Response
 		return
 	}
 
-	result, err := h.issueTokenTo(authenticated)
+	result, err := h.issueTokenTo(authenticated, nil)
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(err))
 		return
@@ -365,7 +365,7 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 		return
 	}
 
-	client, err := h.options.OAuthOptions.OAuthClient(clientID)
+	client, err := h.oauthOperator.GetOAuthClient(req.Request.Context(), clientID)
 	if err != nil {
 		oauthError := oauth.NewInvalidClient(err)
 		response.WriteHeaderAndEntity(http.StatusUnauthorized, oauthError)
@@ -391,13 +391,13 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 		h.passwordGrant("", username, password, req, response)
 		return
 	case grantTypeRefreshToken:
-		h.refreshTokenGrant(req, response)
+		h.refreshTokenGrant(req, response, client)
 		return
 	case grantTypeCode, grantTypeAuthorizationCode:
-		h.codeGrant(req, response)
+		h.codeGrant(req, response, client)
 		return
 	default:
-		response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.ErrorUnsupportedGrantType)
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.ErrorUnsupportedGrantType)
 		return
 	}
 }
@@ -432,7 +432,7 @@ func (h *handler) passwordGrant(provider, username string, password string, req 
 		}
 	}
 
-	result, err := h.issueTokenTo(authenticated)
+	result, err := h.issueTokenTo(authenticated, nil)
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(err))
 		return
@@ -446,7 +446,14 @@ func (h *handler) passwordGrant(provider, username string, password string, req 
 	response.WriteEntity(result)
 }
 
-func (h *handler) issueTokenTo(user user.Info) (*oauth.Token, error) {
+func (h *handler) issueTokenTo(user user.Info, client *auth.OAuthClient) (*oauth.Token, error) {
+	accessTokenMaxAge := h.options.OAuthOptions.AccessTokenMaxAge
+	accessTokenInactivityTimeout := h.options.OAuthOptions.AccessTokenInactivityTimeout
+	if client != nil {
+		accessTokenMaxAge = time.Duration(client.AccessTokenMaxAge)
+		accessTokenInactivityTimeout = time.Duration(client.AccessTokenInactivityTimeout)
+	}
+
 	if !h.options.MultipleLogin {
 		if err := h.tokenOperator.RevokeAllUserTokens(user.GetName()); err != nil {
 			return nil, err
@@ -455,7 +462,7 @@ func (h *handler) issueTokenTo(user user.Info) (*oauth.Token, error) {
 	accessToken, err := h.tokenOperator.IssueTo(&token.IssueRequest{
 		User:      user,
 		Claims:    token.Claims{TokenType: token.AccessToken},
-		ExpiresIn: h.options.OAuthOptions.AccessTokenMaxAge,
+		ExpiresIn: accessTokenMaxAge,
 	})
 	if err != nil {
 		return nil, err
@@ -463,7 +470,7 @@ func (h *handler) issueTokenTo(user user.Info) (*oauth.Token, error) {
 	refreshToken, err := h.tokenOperator.IssueTo(&token.IssueRequest{
 		User:      user,
 		Claims:    token.Claims{TokenType: token.RefreshToken},
-		ExpiresIn: h.options.OAuthOptions.AccessTokenMaxAge + h.options.OAuthOptions.AccessTokenInactivityTimeout,
+		ExpiresIn: accessTokenMaxAge + accessTokenInactivityTimeout,
 	})
 	if err != nil {
 		return nil, err
@@ -474,12 +481,12 @@ func (h *handler) issueTokenTo(user user.Info) (*oauth.Token, error) {
 		// as specified in OAuth 2.0 Bearer Token Usage [RFC6750]
 		TokenType:    "Bearer",
 		RefreshToken: refreshToken,
-		ExpiresIn:    int(h.options.OAuthOptions.AccessTokenMaxAge.Seconds()),
+		ExpiresIn:    int(accessTokenMaxAge),
 	}
 	return &result, nil
 }
 
-func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Response) {
+func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Response, oauthClient *auth.OAuthClient) {
 	refreshToken, err := req.BodyParameter("refresh_token")
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidRequest(err))
@@ -524,7 +531,7 @@ func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Resp
 		authenticated = &user.DefaultInfo{Name: result.Items[0].(*iamv1beta1.User).Name}
 	}
 
-	result, err := h.issueTokenTo(authenticated)
+	result, err := h.issueTokenTo(authenticated, oauthClient)
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(err))
 		return
@@ -533,7 +540,8 @@ func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Resp
 	response.WriteEntity(result)
 }
 
-func (h *handler) codeGrant(req *restful.Request, response *restful.Response) {
+// TODO check oauthclient GrantMethod
+func (h *handler) codeGrant(req *restful.Request, response *restful.Response, oauthClient *auth.OAuthClient) {
 	code, err := req.BodyParameter("code")
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidRequest(err))
@@ -560,7 +568,7 @@ func (h *handler) codeGrant(req *restful.Request, response *restful.Response) {
 		}
 	}()
 
-	result, err := h.issueTokenTo(authorizeContext.User)
+	result, err := h.issueTokenTo(authorizeContext.User, oauthClient)
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(err))
 		return
@@ -589,7 +597,7 @@ func (h *handler) codeGrant(req *restful.Request, response *restful.Response) {
 			TokenType: token.IDToken,
 			Name:      authorizeContext.User.GetName(),
 		},
-		ExpiresIn: h.options.OAuthOptions.AccessTokenMaxAge + h.options.OAuthOptions.AccessTokenInactivityTimeout,
+		ExpiresIn: time.Duration(oauthClient.AccessTokenMaxAge + oauthClient.AccessTokenInactivityTimeout),
 	}
 
 	if sliceutil.HasString(authorizeContext.Scopes, oauth.ScopeProfile) {

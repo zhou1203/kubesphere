@@ -37,12 +37,6 @@ config:
     loginHistoryRetentionPeriod: 168h
     maximumClockSkew: 10s
     enableMultiLogin: true
-    oauthOptions:
-      clients:
-        - name: kubesphere
-          secret: kubesphere
-          redirectURIs:
-            - '*'
   # Jwt Secret is required by ks-apiserver, a random string would be generated if it's empty
   jwtSecret: ""
 
