@@ -31,7 +31,7 @@ import (
 )
 
 func init() {
-	identityprovider.RegisterOAuthProvider(&idaasProviderFactory{})
+	identityprovider.RegisterOAuthProviderFactory(&idaasProviderFactory{})
 }
 
 type aliyunIDaaS struct {

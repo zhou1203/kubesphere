@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 
 	"kubesphere.io/kubesphere/pkg/apiserver"
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
+	idpcontroller "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/controller"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
@@ -111,6 +113,13 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 	}
 
 	apiServer.ResourceManager = resourcev1beta1.New(apiServer.RuntimeClient)
+
+	apiServer.IdentityProviderHandler = identityprovider.NewHandler()
+	informer, err := apiServer.RuntimeCache.GetInformer(context.Background(), &corev1.Secret{})
+	if err != nil {
+		return nil, err
+	}
+	idpcontroller.SetupIdentityProvider(informer, apiServer.IdentityProviderHandler, stopCh)
 
 	if apiServer.ClusterClient, err = clusterclient.NewClusterClientSet(apiServer.RuntimeCache); err != nil {
 		return nil, fmt.Errorf("unable to create cluster client: %v", err)

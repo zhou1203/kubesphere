@@ -1,110 +1,108 @@
-/*
-Copyright 2020 The KubeSphere Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package identityprovider
 
 import (
+	"context"
 	"errors"
-	"fmt"
 
-	"k8s.io/klog/v2"
+	"gopkg.in/yaml.v2"
+	v1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
+	"kubesphere.io/kubesphere/pkg/server/options"
 )
 
-var (
-	oauthProviderFactories   = make(map[string]OAuthProviderFactory)
-	genericProviderFactories = make(map[string]GenericProviderFactory)
-	identityProviderNotFound = errors.New("identity provider not found")
-	oauthProviders           = make(map[string]OAuthProvider)
-	genericProviders         = make(map[string]GenericProvider)
+const (
+	MappingMethodAuto MappingMethod = "auto"
+	// MappingMethodLookup Looks up an existing identity, user identity mapping, and user, but does not automatically
+	// provision users or identities. Using this method requires you to manually provision users.
+	MappingMethodLookup MappingMethod = "lookup"
+	// MappingMethodMixed  A user entity can be mapped with multiple identifyProvider.
+	// not supported yet.
+	MappingMethodMixed MappingMethod = "mixed"
+
+	SecretLabelIdentityProviderName = "config.kubesphere.io/identityprovider-name"
+	SecretTypeIdentityProvider      = "config.kubesphere.io/identityprovider"
+
+	SecretDataKey = "configuration.yaml"
+
+	AnnotationProviderCategory = "config.kubesphere.io/identityprovider-category"
+	CategoryGeneric            = "generic"
+	CategoryOAuth              = "oauth"
 )
 
-// Identity represents the account mapped to kubesphere
-type Identity interface {
-	// GetUserID required
-	// Identifier for the End-User at the Issuer.
-	GetUserID() string
-	// GetUsername optional
-	// The username which the End-User wishes to be referred to kubesphere.
-	GetUsername() string
-	// GetEmail optional
-	GetEmail() string
+var ErrorIdentityProviderNotFound = errors.New("the Identity provider was not found")
+
+type MappingMethod string
+type Configuration struct {
+
+	// The provider name.
+	Name string `json:"name" yaml:"name"`
+
+	// Defines how new identities are mapped to users when they login. Allowed values are:
+	//  - auto:   The default value.The user will automatically create and mapping when login successful.
+	//            Fails if a user with that user name is already mapped to another identity.
+	//  - lookup: Looks up an existing identity, user identity mapping, and user, but does not automatically
+	//            provision users or identities. Using this method requires you to manually provision users.
+	//  - mixed:  A user entity can be mapped with multiple identifyProvider.
+	MappingMethod MappingMethod `json:"mappingMethod" yaml:"mappingMethod"`
+
+	// DisableLoginConfirmation means that when the user login successfully,
+	// reconfirm the account information is not required.
+	// Username from IDP must math [a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*
+	DisableLoginConfirmation bool `json:"disableLoginConfirmation" yaml:"disableLoginConfirmation"`
+
+	// The type of identify provider
+	// OpenIDIdentityProvider LDAPIdentityProvider GitHubIdentityProvider
+	Type string `json:"type" yaml:"type"`
+
+	// The options of identify provider
+	ProviderOptions options.DynamicOptions `json:"provider" yaml:"provider"`
 }
 
-// SetupWithOptions will verify the configuration and initialize the identityProviders
-func SetupWithOptions(options []oauth.IdentityProviderOptions) error {
-	// Clear all providers when reloading configuration
-	oauthProviders = make(map[string]OAuthProvider)
-	genericProviders = make(map[string]GenericProvider)
+type ConfigurationGetter interface {
+	GetConfiguration(ctx context.Context, name string) (*Configuration, error)
+}
 
-	for _, o := range options {
-		if oauthProviders[o.Name] != nil || genericProviders[o.Name] != nil {
-			err := fmt.Errorf("duplicate identity provider found: %s, name must be unique", o.Name)
-			klog.Error(err)
-			return err
-		}
-		if genericProviderFactories[o.Type] == nil && oauthProviderFactories[o.Type] == nil {
-			err := fmt.Errorf("identity provider %s with type %s is not supported", o.Name, o.Type)
-			klog.Error(err)
-			return err
-		}
-		if factory, ok := oauthProviderFactories[o.Type]; ok {
-			if provider, err := factory.Create(o.Provider); err != nil {
-				// don’t return errors, decoupling external dependencies
-				klog.Error(fmt.Sprintf("failed to create identity provider %s: %s", o.Name, err))
-			} else {
-				oauthProviders[o.Name] = provider
-				klog.V(4).Infof("create identity provider %s successfully", o.Name)
-			}
-		}
-		if factory, ok := genericProviderFactories[o.Type]; ok {
-			if provider, err := factory.Create(o.Provider); err != nil {
-				klog.Error(fmt.Sprintf("failed to create identity provider %s: %s", o.Name, err))
-			} else {
-				genericProviders[o.Name] = provider
-				klog.V(4).Infof("create identity provider %s successfully", o.Name)
-			}
-		}
+func NewConfigurationGetter(client client.Client) ConfigurationGetter {
+	return &configurationGetter{client}
+}
+
+type configurationGetter struct {
+	client.Client
+}
+
+func (o *configurationGetter) GetConfiguration(ctx context.Context, name string) (*Configuration, error) {
+	identityProvider := &Configuration{}
+	secrets := &v1.SecretList{}
+	err := o.List(ctx, secrets, client.MatchingLabels{SecretLabelIdentityProviderName: name})
+	if err != nil {
+		return nil, err
 	}
-	return nil
-}
 
-// GetGenericProvider returns GenericProvider with given name
-func GetGenericProvider(providerName string) (GenericProvider, error) {
-	if provider, ok := genericProviders[providerName]; ok {
-		return provider, nil
+	if len(secrets.Items) == 0 {
+		return nil, ErrorIdentityProviderNotFound
 	}
-	return nil, identityProviderNotFound
-}
 
-// GetOAuthProvider returns OAuthProvider with given name
-func GetOAuthProvider(providerName string) (OAuthProvider, error) {
-	if provider, ok := oauthProviders[providerName]; ok {
-		return provider, nil
+	// select the first item, because we ensure there will not be a client with the same name
+	secret := secrets.Items[0]
+
+	if secret.Type != SecretTypeIdentityProvider {
+		return nil, ErrorIdentityProviderNotFound
 	}
-	return nil, identityProviderNotFound
+
+	err = yaml.Unmarshal(secret.Data[SecretDataKey], identityProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	return identityProvider, nil
 }
 
-// RegisterOAuthProvider register OAuthProviderFactory with the specified type
-func RegisterOAuthProvider(factory OAuthProviderFactory) {
-	oauthProviderFactories[factory.Type()] = factory
-}
-
-// RegisterGenericProvider registers GenericProviderFactory with the specified type
-func RegisterGenericProvider(factory GenericProviderFactory) {
-	genericProviderFactories[factory.Type()] = factory
+func UnmarshalTo(secret v1.Secret) (*Configuration, error) {
+	config := &Configuration{}
+	err := yaml.Unmarshal(secret.Data[SecretDataKey], config)
+	if err != nil {
+		return nil, err
+	}
+	return config, nil
 }

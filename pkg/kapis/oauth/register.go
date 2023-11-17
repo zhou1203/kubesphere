@@ -40,7 +40,7 @@ func NewHandler(im im.IdentityManagementInterface,
 	oauth2Authenticator auth.OAuthAuthenticator,
 	loginRecorder auth.LoginRecorder,
 	options *authentication.Options,
-	oauthOperator auth.OAuthOperator) rest.Handler {
+	oauthOperator oauth.OAuthClientGetter) rest.Handler {
 	handler := &handler{im: im,
 		tokenOperator:         tokenOperator,
 		passwordAuthenticator: passwordAuthenticator,

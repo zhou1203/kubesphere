@@ -20,6 +20,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,20 +32,23 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 )
 
 type passwordAuthenticator struct {
-	userGetter  *userMapper
-	client      runtimeclient.Client
-	authOptions *authentication.Options
+	userGetter                          *userMapper
+	client                              runtimeclient.Client
+	authOptions                         *authentication.Options
+	identityProviderHandler             identityprovider.Handler
+	identityProviderConfigurationGetter identityprovider.ConfigurationGetter
 }
 
-func NewPasswordAuthenticator(cacheClient runtimeclient.Client, options *authentication.Options) PasswordAuthenticator {
+func NewPasswordAuthenticator(cacheClient runtimeclient.Client, identityProviderHandler identityprovider.Handler, options *authentication.Options) PasswordAuthenticator {
 	passwordAuthenticator := &passwordAuthenticator{
-		client:      cacheClient,
-		userGetter:  &userMapper{cache: cacheClient},
-		authOptions: options,
+		client:                              cacheClient,
+		userGetter:                          &userMapper{cache: cacheClient},
+		identityProviderConfigurationGetter: identityprovider.NewConfigurationGetter(cacheClient),
+		identityProviderHandler:             identityProviderHandler,
+		authOptions:                         options,
 	}
 	return passwordAuthenticator
 }
@@ -106,17 +110,17 @@ func (p *passwordAuthenticator) authByKubeSphere(username, password string) (aut
 }
 
 // authByProvider authenticate by the third-party identity provider user
-func (p *passwordAuthenticator) authByProvider(provider, username, password string) (authuser.Info, string, error) {
-	providerOptions, err := p.authOptions.OAuthOptions.IdentityProviderOptions(provider)
+func (p *passwordAuthenticator) authByProvider(providerName, username, password string) (authuser.Info, string, error) {
+	genericProvider, exist := p.identityProviderHandler.GetGenericProvider(providerName)
+	if !exist {
+		return nil, "", fmt.Errorf("provider not exist")
+	}
+
+	configuration, err := p.identityProviderConfigurationGetter.GetConfiguration(context.Background(), providerName)
 	if err != nil {
-		klog.Error(err)
 		return nil, "", err
 	}
-	genericProvider, err := identityprovider.GetGenericProvider(providerOptions.Name)
-	if err != nil {
-		klog.Error(err)
-		return nil, "", err
-	}
+
 	authenticated, err := genericProvider.Authenticate(username, password)
 	if err != nil {
 		klog.Error(err)
@@ -125,28 +129,26 @@ func (p *passwordAuthenticator) authByProvider(provider, username, password stri
 		}
 		return nil, "", err
 	}
-	linkedAccount, err := p.userGetter.FindMappedUser(providerOptions.Name, authenticated.GetUserID())
-
+	linkedAccount, err := p.userGetter.FindMappedUser(providerName, authenticated.GetUserID())
 	if err != nil && !errors.IsNotFound(err) {
 		klog.Error(err)
 		return nil, "", err
 	}
-
 	if linkedAccount != nil {
-		return &authuser.DefaultInfo{Name: linkedAccount.Name}, provider, nil
+		return &authuser.DefaultInfo{Name: linkedAccount.Name}, providerName, nil
 	}
 
 	// the user will automatically create and mapping when login successful.
-	if providerOptions.MappingMethod == oauth.MappingMethodAuto {
-		if !providerOptions.DisableLoginConfirmation {
-			return preRegistrationUser(providerOptions.Name, authenticated), providerOptions.Name, nil
+	if configuration.MappingMethod == identityprovider.MappingMethodAuto {
+		if !configuration.DisableLoginConfirmation {
+			return preRegistrationUser(configuration.Name, authenticated), configuration.Name, nil
 		}
-		linkedAccount = mappedUser(providerOptions.Name, authenticated)
+		linkedAccount = mappedUser(configuration.Name, authenticated)
 		if err = p.client.Create(context.Background(), linkedAccount); err != nil {
 			klog.Error(err)
 			return nil, "", err
 		}
-		return &authuser.DefaultInfo{Name: linkedAccount.Name}, provider, nil
+		return &authuser.DefaultInfo{Name: linkedAccount.Name}, providerName, nil
 	}
 
 	return nil, "", err

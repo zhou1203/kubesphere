@@ -58,7 +58,6 @@ func newTestConfig() (*Config, error) {
 			MultipleLogin:                   false,
 			OAuthOptions: &oauth.Options{
 				Issuer:                       oauth.DefaultIssuer,
-				IdentityProviders:            []oauth.IdentityProviderOptions{},
 				AccessTokenMaxAge:            time.Hour * 24,
 				AccessTokenInactivityTimeout: 0,
 			},

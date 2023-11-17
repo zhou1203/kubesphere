@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -13,16 +14,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
-	"kubesphere.io/kubesphere/pkg/models/auth"
 )
+
+var once sync.Once
 
 type WebhookHandler struct {
 	client.Client
+	getter oauth.OAuthClientGetter
 }
 
 func (v *WebhookHandler) Default(_ context.Context, secret *v1.Secret) error {
-	oc := &auth.OAuthClient{}
-	err := yaml.Unmarshal(secret.Data[auth.SecretDataKey], oc)
+	oc, err := oauth.UnmarshalTo(*secret)
 	if err != nil {
 		return err
 	}
@@ -30,10 +32,10 @@ func (v *WebhookHandler) Default(_ context.Context, secret *v1.Secret) error {
 	if secret.Labels == nil {
 		secret.Labels = make(map[string]string)
 	}
-	secret.Labels[auth.SecretLabelClientName] = oc.Name
+	secret.Labels[oauth.SecretLabelClientName] = oc.Name
 
-	if oc.GrantMethod == auth.GrantMethodNone {
-		oc.GrantMethod = auth.GrantMethodAuto
+	if oc.GrantMethod == oauth.GrantMethodNone {
+		oc.GrantMethod = oauth.GrantMethodAuto
 	}
 	if oc.Secret == "" {
 		oc.Secret = generatePassword(32)
@@ -48,38 +50,44 @@ func (v *WebhookHandler) Default(_ context.Context, secret *v1.Secret) error {
 	if err != nil {
 		return err
 	}
-	secret.Data[auth.SecretDataKey] = marshal
+	secret.Data[oauth.SecretDataKey] = marshal
 
 	return nil
 }
 
 func (v *WebhookHandler) ValidateCreate(ctx context.Context, secret *corev1.Secret) (admission.Warnings, error) {
-	oc := &auth.OAuthClient{}
-	err := yaml.Unmarshal(secret.Data[auth.SecretDataKey], oc)
+	oc, err := oauth.UnmarshalTo(*secret)
 	if err != nil {
 		return nil, err
 	}
-	return v.validate(ctx, oc)
+	if oc.Name != "" {
+		exist, err := v.clientExist(ctx, oc.Name)
+		if err != nil {
+			return nil, err
+		}
+		if exist {
+			return nil, fmt.Errorf("invalid OAuth client, client name '%s' already exists", oc.Name)
+		}
+	}
+
+	return validate(oc)
 }
 
 func (v *WebhookHandler) ValidateUpdate(ctx context.Context, old, new *corev1.Secret) (admission.Warnings, error) {
-	newOc := &auth.OAuthClient{}
-	err := yaml.Unmarshal(new.Data[auth.SecretDataKey], newOc)
+	newOc, err := oauth.UnmarshalTo(*new)
 	if err != nil {
 		return nil, err
 	}
-	oldOc := &auth.OAuthClient{}
-	err = yaml.Unmarshal(old.Data[auth.SecretDataKey], newOc)
+	oldOc, err := oauth.UnmarshalTo(*old)
 	if err != nil {
 		return nil, err
 	}
 
-	// the client
 	if newOc.Name != oldOc.Name {
 		return nil, fmt.Errorf("cannot change client name")
 	}
 
-	return v.validate(ctx, newOc)
+	return validate(newOc)
 }
 
 func (v *WebhookHandler) ValidateDelete(ctx context.Context, secret *corev1.Secret) (admission.Warnings, error) {
@@ -87,25 +95,14 @@ func (v *WebhookHandler) ValidateDelete(ctx context.Context, secret *corev1.Secr
 }
 
 func (v *WebhookHandler) ConfigType() corev1.SecretType {
-	return auth.SecretTypeOAuthClient
+	return oauth.SecretTypeOAuthClient
 }
 
-func (v *WebhookHandler) validate(ctx context.Context, oc *auth.OAuthClient) (admission.Warnings, error) {
+func validate(oc *oauth.OAuthClient) (admission.Warnings, error) {
 	if oc.Name == "" {
 		return nil, fmt.Errorf("invalid OAuth client, please ensure that the client name is not empty")
 	}
-
-	// check if the client name is unique
-	secretList := &v1.SecretList{}
-	err := v.Client.List(ctx, secretList, client.MatchingLabels{auth.SecretLabelClientName: oc.Name})
-	if err != nil {
-		return nil, err
-	}
-	if len(secretList.Items) != 0 {
-		return nil, fmt.Errorf("invalid OAuth client, client name %s already exists", oc.Name)
-	}
-
-	err = auth.ValidateClient(*oc)
+	err := oauth.ValidateClient(*oc)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +114,21 @@ func (v *WebhookHandler) validate(ctx context.Context, oc *auth.OAuthClient) (ad
 		return []string{warnings}, nil
 	}
 	return nil, nil
+}
+
+func (v *WebhookHandler) clientExist(ctx context.Context, clientName string) (bool, error) {
+	once.Do(func() {
+		v.getter = oauth.NewOAuthClientGetter(v.Client)
+	})
+
+	authClient, err := v.getter.GetOAuthClient(ctx, clientName)
+	if err != nil {
+		return false, err
+	}
+	if authClient == nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 func generatePassword(length int) string {

@@ -42,6 +42,8 @@ import (
 	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/basic"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/jwt"
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
+	oauth2 "kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/request/anonymous"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/request/basictoken"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/request/bearertoken"
@@ -115,6 +117,8 @@ type APIServer struct {
 	ResourceManager resourcev1beta1.ResourceManager
 
 	K8sVersionInfo *k8sversion.Info
+
+	IdentityProviderHandler identityprovider.Handler
 }
 
 func (s *APIServer) PrepareRun(stopCh <-chan struct{}) error {
@@ -179,10 +183,10 @@ func (s *APIServer) installKubeSphereAPIs() {
 		clusterkapisv1alpha1.NewHandler(s.RuntimeClient),
 		iamapiv1beta1.NewHandler(imOperator, amOperator),
 		oauth.NewHandler(imOperator, auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions),
-			auth.NewPasswordAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
-			auth.NewOAuthAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
+			auth.NewPasswordAuthenticator(s.RuntimeClient, s.IdentityProviderHandler, s.Config.AuthenticationOptions),
+			auth.NewOAuthAuthenticator(s.RuntimeClient, s.IdentityProviderHandler),
 			auth.NewLoginRecorder(s.RuntimeClient), s.Config.AuthenticationOptions,
-			auth.NewOAuthOperator(s.RuntimeClient)),
+			oauth2.NewOAuthClientGetter(s.RuntimeClient)),
 		version.NewHandler(s.K8sVersionInfo),
 		packagev1alpha1.NewHandler(s.RuntimeCache),
 		gatewayv1alpha2.NewHandler(s.RuntimeCache),
@@ -271,7 +275,7 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	// authenticators are unordered
 	authn := unionauth.New(anonymous.NewAuthenticator(),
 		basictoken.New(basic.NewBasicAuthenticator(
-			auth.NewPasswordAuthenticator(s.RuntimeClient, s.Config.AuthenticationOptions),
+			auth.NewPasswordAuthenticator(s.RuntimeClient, s.IdentityProviderHandler, s.Config.AuthenticationOptions),
 			auth.NewLoginRecorder(s.RuntimeClient))),
 		bearertoken.New(jwt.NewTokenAuthenticator(s.RuntimeCache,
 			auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions))))

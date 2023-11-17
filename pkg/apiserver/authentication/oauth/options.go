@@ -54,9 +54,6 @@ type Options struct {
 	// Raw RSA private key. Base64 encoded PEM file
 	SignKeyData string `json:"-,omitempty" yaml:"signKeyData,omitempty"`
 
-	// Register identity providers.
-	IdentityProviders []IdentityProviderOptions `json:"identityProviders,omitempty" yaml:"identityProviders,omitempty"`
-
 	// AccessTokenMaxAgeSeconds  control the lifetime of access tokens. The default lifetime is 24 hours.
 	// 0 means no expiration.
 	AccessTokenMaxAge time.Duration `json:"accessTokenMaxAge" yaml:"accessTokenMaxAge"`
@@ -120,19 +117,9 @@ type Token struct {
 	ExpiresIn int `json:"expires_in,omitempty"`
 }
 
-func (o *Options) IdentityProviderOptions(name string) (*IdentityProviderOptions, error) {
-	for _, found := range o.IdentityProviders {
-		if found.Name == name {
-			return &found, nil
-		}
-	}
-	return nil, ErrorProviderNotFound
-}
-
 func NewOptions() *Options {
 	return &Options{
 		Issuer:                       DefaultIssuer,
-		IdentityProviders:            make([]IdentityProviderOptions, 0),
 		AccessTokenMaxAge:            time.Hour * 2,
 		AccessTokenInactivityTimeout: time.Hour * 2,
 	}

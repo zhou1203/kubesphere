@@ -1,4 +1,4 @@
-package auth
+package oauth
 
 import (
 	"context"
@@ -25,6 +25,7 @@ const (
 
 	SecretDataKey         = "configuration.yaml"
 	SecretLabelClientName = "config.kubesphere.io/oauthclient-name"
+	SecretLabelConfigType = "config.kubesphere.io/type"
 )
 
 var (
@@ -72,19 +73,19 @@ type OAuthClient struct {
 	AccessTokenInactivityTimeout int64 `yaml:"accessTokenInactivityTimeout,omitempty"`
 }
 
-type OAuthOperator interface {
+type OAuthClientGetter interface {
 	GetOAuthClient(ctx context.Context, name string) (*OAuthClient, error)
 }
 
-func NewOAuthOperator(cli client.Client) OAuthOperator {
-	return &oauthOperator{cli}
+func NewOAuthClientGetter(cli client.Client) OAuthClientGetter {
+	return &oauthClientGetter{cli}
 }
 
-type oauthOperator struct {
+type oauthClientGetter struct {
 	client.Client
 }
 
-func (o *oauthOperator) GetOAuthClient(ctx context.Context, name string) (*OAuthClient, error) {
+func (o *oauthClientGetter) GetOAuthClient(ctx context.Context, name string) (*OAuthClient, error) {
 	oauthClient := &OAuthClient{}
 	secrets := &v1.SecretList{}
 	err := o.List(ctx, secrets, client.MatchingLabels{SecretLabelClientName: name})
@@ -169,4 +170,13 @@ func anyRedirectAbleURI(redirectURIs []string) []string {
 		}
 	}
 	return uris
+}
+
+func UnmarshalTo(secret v1.Secret) (*OAuthClient, error) {
+	oc := &OAuthClient{}
+	err := yaml.Unmarshal(secret.Data[SecretDataKey], oc)
+	if err != nil {
+		return nil, err
+	}
+	return oc, nil
 }

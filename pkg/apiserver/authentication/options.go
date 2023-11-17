@@ -24,7 +24,6 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
 	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/aliyunidaas"
 	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/cas"
 	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/github"
@@ -80,9 +79,6 @@ func (options *Options) Validate() []error {
 	}
 	if options.AuthenticateRateLimiterMaxTries > options.LoginHistoryMaximumEntries {
 		errs = append(errs, errors.New("authenticateRateLimiterMaxTries MUST not be greater than loginHistoryMaximumEntries"))
-	}
-	if err := identityprovider.SetupWithOptions(options.OAuthOptions.IdentityProviders); err != nil {
-		errs = append(errs, err)
 	}
 	return errs
 }

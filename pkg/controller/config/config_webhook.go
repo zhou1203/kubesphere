@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/controller/config/identityprovider"
 	"kubesphere.io/kubesphere/pkg/controller/config/oauthclient"
 )
 
@@ -68,6 +69,9 @@ func SetupWebhookWithManager(mgr ctrl.Manager) error {
 	oauthWebhookHandler := &oauthclient.WebhookHandler{Client: mgr.GetClient()}
 	factory.RegisterValidator(oauthWebhookHandler)
 	factory.RegisterDefaulter(oauthWebhookHandler)
+	identityProviderWebhookHandler := &identityprovider.WebhookHandler{Client: mgr.GetClient()}
+	factory.RegisterValidator(identityProviderWebhookHandler)
+	factory.RegisterDefaulter(identityProviderWebhookHandler)
 
 	webhook := &configWebhook{
 		Client:         mgr.GetClient(),

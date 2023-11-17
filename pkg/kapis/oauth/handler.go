@@ -121,7 +121,7 @@ type handler struct {
 	passwordAuthenticator auth.PasswordAuthenticator
 	oauthAuthenticator    auth.OAuthAuthenticator
 	loginRecorder         auth.LoginRecorder
-	oauthOperator         auth.OAuthOperator
+	oauthOperator         oauth.OAuthClientGetter
 }
 
 // tokenReview Implement webhook authentication interface
@@ -446,7 +446,7 @@ func (h *handler) passwordGrant(provider, username string, password string, req 
 	response.WriteEntity(result)
 }
 
-func (h *handler) issueTokenTo(user user.Info, client *auth.OAuthClient) (*oauth.Token, error) {
+func (h *handler) issueTokenTo(user user.Info, client *oauth.OAuthClient) (*oauth.Token, error) {
 	accessTokenMaxAge := h.options.OAuthOptions.AccessTokenMaxAge
 	accessTokenInactivityTimeout := h.options.OAuthOptions.AccessTokenInactivityTimeout
 	if client != nil {
@@ -486,7 +486,7 @@ func (h *handler) issueTokenTo(user user.Info, client *auth.OAuthClient) (*oauth
 	return &result, nil
 }
 
-func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Response, oauthClient *auth.OAuthClient) {
+func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Response, oauthClient *oauth.OAuthClient) {
 	refreshToken, err := req.BodyParameter("refresh_token")
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidRequest(err))
@@ -541,7 +541,7 @@ func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Resp
 }
 
 // TODO check oauthclient GrantMethod
-func (h *handler) codeGrant(req *restful.Request, response *restful.Response, oauthClient *auth.OAuthClient) {
+func (h *handler) codeGrant(req *restful.Request, response *restful.Response, oauthClient *oauth.OAuthClient) {
 	code, err := req.BodyParameter("code")
 	if err != nil {
 		response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidRequest(err))

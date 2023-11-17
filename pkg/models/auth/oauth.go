@@ -20,45 +20,47 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	authuser "k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 )
 
 type oauthAuthenticator struct {
-	client     runtimeclient.Client
-	userGetter *userMapper
-	options    *authentication.Options
+	client                 runtimeclient.Client
+	userGetter             *userMapper
+	idpHandler             identityprovider.Handler
+	idpConfigurationGetter identityprovider.ConfigurationGetter
 }
 
-func NewOAuthAuthenticator(cacheClient runtimeclient.Client, options *authentication.Options) OAuthAuthenticator {
+func NewOAuthAuthenticator(cacheClient runtimeclient.Client, idpHandler identityprovider.Handler) OAuthAuthenticator {
 	authenticator := &oauthAuthenticator{
-		client:     cacheClient,
-		userGetter: &userMapper{cache: cacheClient},
-		options:    options,
+		client:                 cacheClient,
+		userGetter:             &userMapper{cache: cacheClient},
+		idpHandler:             idpHandler,
+		idpConfigurationGetter: identityprovider.NewConfigurationGetter(cacheClient),
 	}
 	return authenticator
 }
 
-func (o *oauthAuthenticator) Authenticate(_ context.Context, provider string, req *http.Request) (authuser.Info, string, error) {
-	providerOptions, err := o.options.OAuthOptions.IdentityProviderOptions(provider)
+func (o *oauthAuthenticator) Authenticate(ctx context.Context, provider string, req *http.Request) (authuser.Info, string, error) {
+	providerConfig, err := o.idpConfigurationGetter.GetConfiguration(ctx, provider)
 	// identity provider not registered
 	if err != nil {
 		klog.Error(err)
 		return nil, "", err
 	}
-	oauthIdentityProvider, err := identityprovider.GetOAuthProvider(providerOptions.Name)
-	if err != nil {
-		klog.Error(err)
+	oauthIdentityProvider, exist := o.idpHandler.GetOAuthProvider(provider)
+	if !exist {
+		err := fmt.Errorf("identity provider %s not exist", provider)
+		klog.Error()
 		return nil, "", err
 	}
 	authenticated, err := oauthIdentityProvider.IdentityExchangeCallback(req)
@@ -67,22 +69,22 @@ func (o *oauthAuthenticator) Authenticate(_ context.Context, provider string, re
 		return nil, "", err
 	}
 
-	user, err := o.userGetter.FindMappedUser(providerOptions.Name, authenticated.GetUserID())
-	if user == nil && providerOptions.MappingMethod == oauth.MappingMethodLookup {
+	user, err := o.userGetter.FindMappedUser(providerConfig.Name, authenticated.GetUserID())
+	if user == nil && providerConfig.MappingMethod == identityprovider.MappingMethodLookup {
 		klog.Error(err)
 		return nil, "", err
 	}
 
 	// the user will automatically create and mapping when login successful.
-	if user == nil && providerOptions.MappingMethod == oauth.MappingMethodAuto {
-		if !providerOptions.DisableLoginConfirmation {
-			return preRegistrationUser(providerOptions.Name, authenticated), providerOptions.Name, nil
+	if user == nil && providerConfig.MappingMethod == identityprovider.MappingMethodAuto {
+		if !providerConfig.DisableLoginConfirmation {
+			return preRegistrationUser(providerConfig.Name, authenticated), providerConfig.Name, nil
 		}
 
-		user = mappedUser(providerOptions.Name, authenticated)
+		user = mappedUser(providerConfig.Name, authenticated)
 
 		if err = o.client.Create(context.Background(), user); err != nil {
-			return nil, providerOptions.Name, err
+			return nil, providerConfig.Name, err
 		}
 	}
 
@@ -91,7 +93,7 @@ func (o *oauthAuthenticator) Authenticate(_ context.Context, provider string, re
 			// state not active
 			return nil, "", AccountIsNotActiveError
 		}
-		return &authuser.DefaultInfo{Name: user.GetName()}, providerOptions.Name, nil
+		return &authuser.DefaultInfo{Name: user.GetName()}, providerConfig.Name, nil
 	}
 
 	return nil, "", errors.NewNotFound(iamv1beta1.Resource("user"), authenticated.GetUsername())

@@ -23,6 +23,8 @@ import (
 	"reflect"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"kubesphere.io/kubesphere/pkg/scheme"
@@ -31,7 +33,9 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/crypto/bcrypt"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authentication/user"
 	authuser "k8s.io/apiserver/pkg/authentication/user"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
@@ -58,71 +62,136 @@ func hashPassword(password string) (string, error) {
 }
 
 func Test_passwordAuthenticator_Authenticate(t *testing.T) {
-
+	identityprovider.RegisterGenericProviderFactory(&fakePasswordProviderFactory{})
+	idpHandler := identityprovider.NewHandler()
 	oauthOptions := &authentication.Options{
-		OAuthOptions: &oauth.Options{
-			IdentityProviders: []oauth.IdentityProviderOptions{
-				{
-					Name:          "fakepwd",
-					MappingMethod: "auto",
-					Type:          "fakePasswordProvider",
-					Provider: options.DynamicOptions{
-						"identities": map[string]interface{}{
-							"user1": map[string]string{
-								"uid":      "100001",
-								"email":    "user1@kubesphere.io",
-								"username": "user1",
-								"password": "password",
-							},
-							"user2": map[string]string{
-								"uid":      "100002",
-								"email":    "user2@kubesphere.io",
-								"username": "user2",
-								"password": "password",
-							},
-						},
-					},
+		OAuthOptions: &oauth.Options{},
+	}
+
+	fakepwd := &identityprovider.Configuration{
+		Name:          "fakepwd",
+		MappingMethod: "auto",
+		Type:          "fakePasswordProvider",
+		ProviderOptions: options.DynamicOptions{
+			"identities": map[string]interface{}{
+				"user1": map[string]string{
+					"uid":      "100001",
+					"email":    "user1@kubesphere.io",
+					"username": "user1",
+					"password": "password",
 				},
-				{
-					Name:                     "fakepwd2",
-					MappingMethod:            "auto",
-					Type:                     "fakePasswordProvider",
-					DisableLoginConfirmation: true,
-					Provider: options.DynamicOptions{
-						"identities": map[string]interface{}{
-							"user5": map[string]string{
-								"uid":      "100005",
-								"email":    "user5@kubesphere.io",
-								"username": "user5",
-								"password": "password",
-							},
-						},
-					},
-				},
-				{
-					Name:                     "fakepwd3",
-					MappingMethod:            "lookup",
-					Type:                     "fakePasswordProvider",
-					DisableLoginConfirmation: true,
-					Provider: options.DynamicOptions{
-						"identities": map[string]interface{}{
-							"user6": map[string]string{
-								"uid":      "100006",
-								"email":    "user6@kubesphere.io",
-								"username": "user6",
-								"password": "password",
-							},
-						},
-					},
+				"user2": map[string]string{
+					"uid":      "100002",
+					"email":    "user2@kubesphere.io",
+					"username": "user2",
+					"password": "password",
 				},
 			},
 		},
 	}
 
-	identityprovider.RegisterGenericProvider(&fakePasswordProviderFactory{})
-	if err := identityprovider.SetupWithOptions(oauthOptions.OAuthOptions.IdentityProviders); err != nil {
+	fakepwd2 := &identityprovider.Configuration{
+		Name:                     "fakepwd2",
+		MappingMethod:            "auto",
+		DisableLoginConfirmation: true,
+		Type:                     "fakePasswordProvider",
+		ProviderOptions: options.DynamicOptions{
+			"identities": map[string]interface{}{
+				"user5": map[string]string{
+					"uid":      "100005",
+					"email":    "user5@kubesphere.io",
+					"username": "user5",
+					"password": "password",
+				},
+			},
+		},
+	}
+
+	fakepwd3 := &identityprovider.Configuration{
+		Name:                     "fakepwd3",
+		MappingMethod:            "lookup",
+		Type:                     "fakePasswordProvider",
+		DisableLoginConfirmation: true,
+		ProviderOptions: options.DynamicOptions{
+			"identities": map[string]interface{}{
+				"user6": map[string]string{
+					"uid":      "100006",
+					"email":    "user6@kubesphere.io",
+					"username": "user6",
+					"password": "password",
+				},
+			},
+		},
+	}
+
+	marshal1, err := yaml.Marshal(fakepwd)
+	if err != nil {
+		return
+	}
+
+	fakepwd1Secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-fake-idp",
+			Namespace: "kubesphere-system",
+			Labels: map[string]string{
+				identityprovider.SecretLabelIdentityProviderName: "fakepwd",
+			},
+		},
+		Data: map[string][]byte{
+			"configuration.yaml": marshal1,
+		},
+		Type: identityprovider.SecretTypeIdentityProvider,
+	}
+
+	marshal2, err := yaml.Marshal(fakepwd2)
+	if err != nil {
+		return
+	}
+	fakepwd2Secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-fake-idp2",
+			Namespace: "kubesphere-system",
+			Labels: map[string]string{
+				identityprovider.SecretLabelIdentityProviderName: "fakepwd2",
+			},
+		},
+		Data: map[string][]byte{
+			"configuration.yaml": marshal2,
+		},
+		Type: identityprovider.SecretTypeIdentityProvider,
+	}
+
+	marshal3, err := yaml.Marshal(fakepwd3)
+	if err != nil {
+		return
+	}
+	fakepwd3Secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-fake-idp3",
+			Namespace: "kubesphere-system",
+			Labels: map[string]string{
+				identityprovider.SecretLabelIdentityProviderName: "fakepwd3",
+			},
+		},
+		Data: map[string][]byte{
+			"configuration.yaml": marshal3,
+		},
+		Type: identityprovider.SecretTypeIdentityProvider,
+	}
+
+	err = idpHandler.RegisterGenericProvider(fakepwd)
+	if err != nil {
 		t.Fatal(err)
 	}
+	err = idpHandler.RegisterGenericProvider(fakepwd2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = idpHandler.RegisterGenericProvider(fakepwd3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	client := runtimefakeclient.NewClientBuilder().
 		WithScheme(scheme.Scheme).
 		WithRuntimeObjects(
@@ -132,7 +201,22 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 		).
 		Build()
 
-	authenticator := NewPasswordAuthenticator(client, oauthOptions)
+	err = client.Create(context.Background(), fakepwd1Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.Create(context.Background(), fakepwd2Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.Create(context.Background(), fakepwd3Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	authenticator := NewPasswordAuthenticator(client, idpHandler, oauthOptions)
 
 	type args struct {
 		ctx      context.Context

@@ -22,53 +22,65 @@ import (
 	"reflect"
 	"testing"
 
-	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	"kubesphere.io/kubesphere/pkg/scheme"
-
-	"kubesphere.io/kubesphere/pkg/server/options"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-
 	"github.com/mitchellh/mapstructure"
+	"gopkg.in/yaml.v3"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authentication/user"
+	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
+	"kubesphere.io/kubesphere/pkg/scheme"
+	"kubesphere.io/kubesphere/pkg/server/options"
 )
 
 func Test_oauthAuthenticator_Authenticate(t *testing.T) {
-
-	oauthOptions := &authentication.Options{
-		OAuthOptions: &oauth.Options{
-			IdentityProviders: []oauth.IdentityProviderOptions{
-				{
-					Name:          "fake",
-					MappingMethod: "auto",
-					Type:          "FakeIdentityProvider",
-					Provider: options.DynamicOptions{
-						"identities": map[string]interface{}{
-							"code1": map[string]string{
-								"uid":      "100001",
-								"email":    "user1@kubesphere.io",
-								"username": "user1",
-							},
-							"code2": map[string]string{
-								"uid":      "100002",
-								"email":    "user2@kubesphere.io",
-								"username": "user2",
-							},
-						},
-					},
+	var idpHandler = identityprovider.NewHandler()
+	fakeIDP := &identityprovider.Configuration{
+		Name:                     "fake",
+		MappingMethod:            "auto",
+		DisableLoginConfirmation: false,
+		Type:                     "FakeIdentityProvider",
+		ProviderOptions: options.DynamicOptions{
+			"identities": map[string]interface{}{
+				"code1": map[string]string{
+					"uid":      "100001",
+					"email":    "user1@kubesphere.io",
+					"username": "user1",
+				},
+				"code2": map[string]string{
+					"uid":      "100002",
+					"email":    "user2@kubesphere.io",
+					"username": "user2",
 				},
 			},
 		},
 	}
 
-	identityprovider.RegisterOAuthProvider(&fakeProviderFactory{})
-	if err := identityprovider.SetupWithOptions(oauthOptions.OAuthOptions.IdentityProviders); err != nil {
+	marshal, err := yaml.Marshal(fakeIDP)
+	if err != nil {
+		return
+	}
+
+	secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-fake-idp",
+			Namespace: "kubesphere-system",
+			Labels: map[string]string{
+				identityprovider.SecretLabelIdentityProviderName: "fake",
+			},
+		},
+		Data: map[string][]byte{
+			"configuration.yaml": marshal,
+		},
+		Type: identityprovider.SecretTypeIdentityProvider,
+	}
+
+	identityprovider.RegisterOAuthProviderFactory(&fakeProviderFactory{})
+	err = idpHandler.RegisterOAuthProvider(fakeIDP)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,6 +88,11 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 		WithScheme(scheme.Scheme).
 		WithRuntimeObjects(newUser("user1", "100001", "fake")).
 		Build()
+
+	err = client.Create(context.Background(), secret)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	blockedUser := newUser("user2", "100002", "fake")
 	blockedUser.Status = iamv1beta1.UserStatus{State: iamv1beta1.UserDisabled}
@@ -98,7 +115,7 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 	}{
 		{
 			name:               "Should successfully",
-			oauthAuthenticator: NewOAuthAuthenticator(client, oauthOptions),
+			oauthAuthenticator: NewOAuthAuthenticator(client, idpHandler),
 			args: args{
 				ctx:      context.Background(),
 				provider: "fake",
@@ -112,7 +129,7 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 		},
 		{
 			name:               "Blocked user test",
-			oauthAuthenticator: NewOAuthAuthenticator(client, oauthOptions),
+			oauthAuthenticator: NewOAuthAuthenticator(client, idpHandler),
 			args: args{
 				ctx:      context.Background(),
 				provider: "fake",
@@ -124,7 +141,7 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 		},
 		{
 			name:               "Should successfully",
-			oauthAuthenticator: NewOAuthAuthenticator(client, oauthOptions),
+			oauthAuthenticator: NewOAuthAuthenticator(client, idpHandler),
 			args: args{
 				ctx:      context.Background(),
 				provider: "fake1",
