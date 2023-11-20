@@ -20,7 +20,14 @@ const (
 	RepoIDLabelKey              = "app.kubesphere.io/repo-name"
 	ReqUserAnnotationKey        = "app.kubesphere.io/req-user"
 	AppIDLabelKey               = "app.kubesphere.io/app-id"
+	AppTypeLabelKey             = "app.kubesphere.io/app-type"
+	AppStoreLabelKey            = "app.kubesphere.io/app-store"
+	AppCategoryLabelKey         = "app.kubesphere.io/app-category-id"
+	AppCategoryNameKey          = "app.kubesphere.io/app-category-name"
+	LatestAppVersionKey         = "app.kubesphere.io/latest-app-version"
+	AppMaintainersKey           = "app.kubesphere.io/app-maintainers"
 	AppReleaseReferenceLabelKey = "app.kubesphere.io/app-release-name"
+	UncategorizedCategoryID     = "kubesphere-app-uncategorized"
 	UserNameHeader              = "X-Token-Username"
 	StatusActive                = "active"
 	StatusSuccessful            = "successful"
@@ -36,4 +43,12 @@ const (
 	AppTypeEdge                 = "edge"
 	BinaryKey                   = "BinaryKey"
 	MaxNumOfVersions            = 10
+	SystemWorkspace             = "system-workspace"
+	// App review status: draft, submitted, passed, rejected, suspended, active
+	ReviewStatusDraft     = "draft"
+	ReviewStatusSubmitted = "submitted"
+	ReviewStatusPassed    = "passed"
+	ReviewStatusRejected  = "rejected"
+	ReviewStatusSuspended = "suspended"
+	ReviewStatusActive    = "active"
 )

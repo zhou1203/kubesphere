@@ -19,12 +19,12 @@ package application
 import (
 	"context"
 	"fmt"
-	"os"
 
 	helmrelease "helm.sh/helm/v3/pkg/release"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/dynamic"
@@ -69,7 +69,6 @@ func (r *AppReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 type AppReleaseReconciler struct {
 	client.Client
 	clusterClientSet clusterclient.Interface
-	KubeConfigPath   string
 	HelmImage        string
 }
 
@@ -106,95 +105,70 @@ func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	if apprls.HashSpec() != apprls.Status.SpecHash {
+	// dispatch status
+	if apprls.Status.State == "" {
 		apprls.Status.SpecHash = apprls.HashSpec()
-		err := r.updateStatus(ctx, apprls, appv2.StatusUpgrading)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{}, r.updateStatus(ctx, apprls, appv2.StatusCreating)
+
+	} else if apprls.HashSpec() != apprls.Status.SpecHash {
+		apprls.Status.SpecHash = apprls.HashSpec()
+		return ctrl.Result{}, r.updateStatus(ctx, apprls, appv2.StatusUpgrading)
 	}
 
-	//if err := r.generateRoleBinding(ctx, apprls.GetRlsNamespace()); err != nil {
-	//	return ctrl.Result{}, err
-	//}
-
 	switch apprls.Status.State {
-	case "":
-		apprls.Status.SpecHash = apprls.HashSpec()
-		err = r.updateStatus(ctx, apprls, appv2.StatusCreating)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{Requeue: true}, nil
-	case appv2.StatusCreating:
-		err = r.createOrUpgradeAppRelease(ctx, apprls, executor)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
+	case appv2.StatusCreating, appv2.StatusUpgrading:
+		return ctrl.Result{}, r.createOrUpgradeAppRelease(ctx, apprls, executor)
 
-	case appv2.StatusUpgrading:
-		err = r.createOrUpgradeAppRelease(ctx, apprls, executor)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	case appv2.StatusCreated:
-		release, err := executor.Release()
-		if err != nil && apprls.Status.JobName != "" {
-			jobKey := client.ObjectKey{Namespace: apprls.GetRlsNamespace(), Name: apprls.Status.JobName}
-			if r.isJobStatusFailed(ctx, jobKey) {
-				if err = r.updateStatus(ctx, apprls, appv2.StatusFailed); err != nil {
-					return ctrl.Result{}, err
-				}
-				klog.Infof("job failed %s", err)
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
-		}
+	case appv2.StatusCreated, appv2.StatusUpgraded:
+		return ctrl.Result{}, r.checkHelmReleaseAndUpdateAppReleaseStatus(ctx, apprls, executor)
 
-		switch release.Info.Status {
-		case helmrelease.StatusFailed:
-			err = r.updateStatus(ctx, apprls, appv2.StatusFailed)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-		case helmrelease.StatusDeployed:
-			err = r.updateStatus(ctx, apprls, appv2.StatusActive)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-		}
+	case appv2.StatusFailed:
+		return ctrl.Result{}, nil
 	}
 
 	return ctrl.Result{}, nil
 }
 
+func (r *AppReleaseReconciler) checkHelmReleaseAndUpdateAppReleaseStatus(
+	ctx context.Context, apprls *appv2.ApplicationRelease, executor helm.Executor) error {
+	// Check if the target helm release exists, and check the status.
+	// If don't find the target helm release, retry until do.
+	release, err := executor.Release()
+	if err != nil {
+		// Job failed to execute during startup due to an environmental, such as image not being fetched
+		// update app release failed status based on job state
+		if apprls.Status.JobName != "" {
+			jobKey := client.ObjectKey{Namespace: apprls.GetRlsNamespace(), Name: apprls.Status.JobName}
+			if r.isJobStatusFailed(ctx, jobKey) {
+				return r.updateStatus(ctx, apprls, appv2.StatusFailed, fmt.Sprintf("job %s failed", apprls.Status.JobName))
+			}
+		}
+
+		return fmt.Errorf("%v, retrying", err)
+	}
+
+	// TODO if failed, add job logs to message
+	switch release.Info.Status {
+	case helmrelease.StatusFailed:
+		return r.updateStatus(ctx, apprls, appv2.StatusFailed, release.Info.Description)
+	case helmrelease.StatusDeployed:
+		return r.updateStatus(ctx, apprls, appv2.StatusActive)
+	}
+
+	return nil
+}
+
 func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (executor helm.Executor, err error) {
-
+	mapper, dynamicClient, configByte, err := r.getClusterInfo(apprls.GetRlsCluster())
+	if err != nil {
+		return nil, err
+	}
 	if apprls.Spec.AppType == appv2.AppTypeYaml || apprls.Spec.AppType == appv2.AppTypeEdge {
-
-		clusterName := apprls.GetRlsCluster()
-		if err != nil {
-			return executor, err
-		}
-
-		runtimeClient, err := r.clusterClientSet.GetRuntimeClient(clusterName)
-		if err != nil {
-			return nil, err
-		}
-		clusterClient, err := r.clusterClientSet.GetClusterClient(clusterName)
-		if err != nil {
-			return nil, err
-		}
-		DynamicClient, err := dynamic.NewForConfig(clusterClient.RestConfig)
-		if err != nil {
-			return nil, err
-		}
 
 		jsonList := application.ReadYaml(apprls.Spec.Values)
 		var gvrListInfo []installer.InsInfo
 		for _, i := range jsonList {
-			gvr, utd, err := application.GetInfoFromBytes(i, runtimeClient.RESTMapper())
+			gvr, utd, err := application.GetInfoFromBytes(i, mapper)
 			if err != nil {
 				return nil, err
 			}
@@ -207,8 +181,8 @@ func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (ex
 		}
 
 		executor = installer.YamlInstaller{
-			Mapper:      runtimeClient.RESTMapper(),
-			DynamicCli:  DynamicClient,
+			Mapper:      mapper,
+			DynamicCli:  dynamicClient,
 			GvrListInfo: gvrListInfo,
 		}
 		return executor, nil
@@ -216,14 +190,37 @@ func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (ex
 
 	opt1 := helm.SetHelmImage(r.HelmImage)
 	opt2 := helm.SetJobLabels(labels.Set{appv2.AppReleaseReferenceLabelKey: apprls.Name})
-	data, err := os.ReadFile(r.KubeConfigPath)
+	executor, err = helm.NewExecutor(string(configByte), apprls.GetRlsNamespace(), apprls.Name, opt1, opt2)
 	if err != nil {
-		klog.Errorf("failed to read kubeconfig file, err: %v", err)
-		return executor, err
+		return nil, err
 	}
-	executor, err = helm.NewExecutor(string(data), apprls.GetRlsNamespace(), apprls.Name, opt1, opt2)
+	// helm chart install need the clusterrolebinding
+	if err = r.generateRoleBinding(context.TODO(), apprls.GetRlsNamespace()); err != nil {
+		return nil, err
+	}
 
 	return executor, err
+}
+
+func (r *AppReleaseReconciler) getClusterInfo(clusterName string) (meta.RESTMapper, *dynamic.DynamicClient, []byte, error) {
+	c, err := r.clusterClientSet.Get(clusterName)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	runtimeClient, err := r.clusterClientSet.GetRuntimeClient(clusterName)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	clusterClient, err := r.clusterClientSet.GetClusterClient(clusterName)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	dynamicClient, err := dynamic.NewForConfig(clusterClient.RestConfig)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return runtimeClient.RESTMapper(), dynamicClient, c.Spec.Connection.KubeConfig, nil
 }
 
 func (r *AppReleaseReconciler) isJobStatusFailed(ctx context.Context, jobKey client.ObjectKey) bool {
@@ -281,8 +278,11 @@ func (r *AppReleaseReconciler) createOrUpgradeAppRelease(ctx context.Context, rl
 	return r.updateStatus(ctx, rls, appv2.StatusCreated)
 }
 
-func (r *AppReleaseReconciler) updateStatus(ctx context.Context, apprls *appv2.ApplicationRelease, status string) error {
+func (r *AppReleaseReconciler) updateStatus(ctx context.Context, apprls *appv2.ApplicationRelease, status string, message ...string) error {
 	apprls.Status.State = status
+	if message != nil {
+		apprls.Status.Message = message[0]
+	}
 	apprls.Status.LastUpdate = metav1.Now()
 	return r.Status().Update(ctx, apprls)
 }

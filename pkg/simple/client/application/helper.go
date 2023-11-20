@@ -40,7 +40,8 @@ type VersionRequest struct {
 	Digest      string   `json:"digest,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Data        []byte
-	AppType     string `json:"app_type,omitempty"`
+	AppType     string             `json:"app_type,omitempty"`
+	Maintainers []appv2.Maintainer `json:"maintainers,omitempty"`
 }
 
 type NewAppRequest struct {
@@ -55,12 +56,20 @@ type NewAppRequest struct {
 	Credential  appv2.HelmRepoCredential `json:"credential,omitempty"`
 }
 
-func CreateOrUpdateApp(ctx context.Context, client client.Client, request NewAppRequest, vRequests []VersionRequest) error {
+func CreateOrUpdateApp(ctx context.Context, client client.Client, owner metav1.Object, request NewAppRequest, vRequests []VersionRequest) error {
 
 	app := appv2.Application{}
 	app.Name = request.AppName
 
-	_, err := controllerutil.CreateOrUpdate(ctx, client, &app, func() error {
+	operationResult, err := controllerutil.CreateOrUpdate(ctx, client, &app, func() error {
+
+		if owner != nil {
+			if err := controllerutil.SetControllerReference(owner, &app, scheme.Scheme); err != nil {
+				klog.Errorf("%s SetControllerReference failed, err:%v", app.Name, err)
+				return err
+			}
+		}
+
 		app.Spec = appv2.ApplicationSpec{
 			DisplayName: corev1alpha1.NewLocales(request.AppName, request.AppName),
 			Description: corev1alpha1.NewLocales(request.Description, request.Description),
@@ -70,6 +79,7 @@ func CreateOrUpdateApp(ctx context.Context, client client.Client, request NewApp
 		}
 		app.Labels = map[string]string{
 			appv2.RepoIDLabelKey:        request.RepoName,
+			appv2.AppTypeLabelKey:       request.AppType,
 			constants.WorkspaceLabelKey: request.Workspace,
 		}
 		return nil
@@ -78,11 +88,12 @@ func CreateOrUpdateApp(ctx context.Context, client client.Client, request NewApp
 		klog.Errorf("failed create or update app %s, err:%v", app.Name, err)
 		return err
 	}
-	app.Status.State = appv2.StatusActive
-	now := metav1.Now()
-	app.Status.UpdateTime = &now
-	err = client.Status().Update(ctx, &app)
-	if err != nil {
+
+	if operationResult == controllerutil.OperationResultCreated {
+		app.Status.State = appv2.ReviewStatusDraft
+	}
+	app.Status.UpdateTime = &metav1.Time{Time: time.Now()}
+	if err = client.Status().Update(ctx, &app); err != nil {
 		return err
 	}
 
@@ -118,16 +129,18 @@ func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, request
 			Created:     &metav1.Time{Time: time.Now()},
 			Digest:      vRequest.Digest,
 			AppType:     request.AppType,
+			Maintainer:  vRequest.Maintainers,
 		}
 
 		appVersion.Labels = map[string]string{
 			appv2.RepoIDLabelKey:        request.RepoName,
 			appv2.AppIDLabelKey:         request.AppName,
+			appv2.AppTypeLabelKey:       request.AppType,
 			constants.WorkspaceLabelKey: request.Workspace,
 		}
 		return nil
 	}
-	_, err := controllerutil.CreateOrUpdate(ctx, client, &appVersion, mutateFn)
+	operationResult, err := controllerutil.CreateOrUpdate(ctx, client, &appVersion, mutateFn)
 
 	if err != nil {
 		klog.Errorf("failed create or update app version %s, err:%v", appVersion.Name, err)
@@ -151,7 +164,10 @@ func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, request
 	})
 
 	//3. update app version status
-	appVersion.Status.State = appv2.StatusActive
+	if operationResult == controllerutil.OperationResultCreated {
+		appVersion.Status.State = appv2.ReviewStatusDraft
+	}
+	appVersion.Status.Updated = &metav1.Time{Time: time.Now()}
 	err = client.Status().Update(ctx, &appVersion)
 
 	return err

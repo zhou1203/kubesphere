@@ -75,7 +75,7 @@ func (t YamlInstaller) complianceCheck(values, tempLate []byte) ([]json.RawMessa
 func (t YamlInstaller) Uninstall(ctx context.Context, options ...helm.HelmOption) (string, error) {
 	for _, i := range t.GvrListInfo {
 		err := t.DynamicCli.Resource(i.GroupVersionResource).Namespace(i.Namespace).
-			Delete(context.TODO(), i.Name, metav1.DeleteOptions{})
+			Delete(ctx, i.Name, metav1.DeleteOptions{})
 		if err != nil {
 			return "", err
 		}
@@ -84,7 +84,8 @@ func (t YamlInstaller) Uninstall(ctx context.Context, options ...helm.HelmOption
 }
 
 func (t YamlInstaller) ForceDelete(ctx context.Context, options ...helm.HelmOption) error {
-	return nil
+	_, err := t.Uninstall(ctx, options...)
+	return err
 }
 
 func (t YamlInstaller) Release(options ...helm.HelmOption) (*helmrelease.Release, error) {

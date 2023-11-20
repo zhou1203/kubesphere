@@ -19,6 +19,7 @@ package v2
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"kubesphere.io/api/constants"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
@@ -69,4 +70,11 @@ func getValue(m map[string]string, key string) string {
 		return ""
 	}
 	return m[key]
+}
+
+func (in *Application) GetCategory() string {
+	return getValue(in.Labels, AppCategoryLabelKey)
+}
+func (in *Application) GetWorkspace() string {
+	return getValue(in.Labels, constants.WorkspaceLabelKey)
 }

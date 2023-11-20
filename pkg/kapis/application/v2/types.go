@@ -13,12 +13,19 @@ limitations under the License.
 
 package v2
 
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+)
+
 type CreateAppRequest struct {
-	Icon        []byte `json:"icon,omitempty"`
+	CategoryID  string `json:"category_id,omitempty"`
+	Icon        string `json:"icon,omitempty"`
 	Name        string `json:"name,omitempty"`
 	AppType     string `json:"app_type,omitempty"`
 	Package     []byte `json:"package,omitempty"`
 	VersionName string `json:"version_name,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 type CreateAppVersionRequest struct {
@@ -29,3 +36,21 @@ type CreateAppVersionRequest struct {
 	Package     []byte `json:"package,omitempty"`
 	VersionName string `json:"version_name,omitempty"`
 }
+
+type AppResp struct {
+	Name                string               `json:"name,omitempty"`
+	DisplayName         corev1alpha1.Locales `json:"display_name,omitempty"`
+	AppType             string               `json:"app_type,omitempty"`
+	CategoryDisplayName corev1alpha1.Locales `json:"category_display_name,omitempty"`
+	Workspace           string               `json:"workspace,omitempty"`
+	Description         corev1alpha1.Locales `json:"description,omitempty"`
+	Icon                string               `json:"icon,omitempty"`
+	LatestAppVersion    string               `json:"latest_app_version,omitempty"`
+	Maintainers         string               `json:"maintainers,omitempty"`
+	State               string               `json:"state,omitempty"`
+	UpdateTime          *metav1.Time         `json:"update_time,omitempty"`
+}
+
+const (
+	Status = "status"
+)

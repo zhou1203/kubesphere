@@ -16,41 +16,34 @@ package v2
 import (
 	"github.com/emicklei/go-restful/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/klog/v2"
 	appv2 "kubesphere.io/api/application/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 )
 
 func (h *appHandler) CreateOrUpdateCategory(req *restful.Request, resp *restful.Response) {
 	createCategoryRequest := &appv2.Category{}
 	err := req.ReadEntity(createCategoryRequest)
-	if err != nil {
-		klog.V(4).Infoln(err)
-		api.HandleBadRequest(resp, nil, err)
+	if requestDone(err, resp) {
 		return
 	}
+
 	category := &appv2.Category{}
 	category.Name = createCategoryRequest.Name
 	MutateFn := func() error {
-		category.Spec.Icon = createCategoryRequest.Spec.Icon
-		category.Spec.DisplayName = createCategoryRequest.Spec.DisplayName
-		category.Spec.Description = createCategoryRequest.Spec.Description
+		createCategoryRequest.DeepCopyInto(category)
 		return nil
 	}
 	_, err = controllerutil.CreateOrUpdate(req.Request.Context(), h.client, category, MutateFn)
-	if err != nil {
-		klog.Errorln(err)
-		handleError(resp, err)
+	if requestDone(err, resp) {
 		return
 	}
-	data := map[string]interface{}{"category_id": createCategoryRequest.Name}
 
-	resp.WriteAsJson(data)
+	resp.WriteAsJson(category)
 }
+
 func (h *appHandler) DeleteCategory(req *restful.Request, resp *restful.Response) {
 	categoryId := req.PathParameter("category")
 
@@ -74,6 +67,7 @@ func (h *appHandler) DescribeCategory(req *restful.Request, resp *restful.Respon
 
 	resp.WriteEntity(result)
 }
+
 func (h *appHandler) ListCategories(req *restful.Request, resp *restful.Response) {
 	cList := &appv2.CategoryList{}
 	err := h.client.List(req.Request.Context(), cList)

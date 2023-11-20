@@ -265,7 +265,7 @@ webhooks:
       service:
         name: ks-controller-manager
         namespace: kubesphere-system
-        path: /mutate-application-kubesphere-io-v1alpha2-applicationrelease
+        path: /mutate-application-kubesphere-io-v2-applicationrelease
         port: 443
     failurePolicy: Fail
     matchPolicy: Exact
@@ -276,7 +276,7 @@ webhooks:
       - apiGroups:
           - application.kubesphere.io
         apiVersions:
-          - v1alpha2
+          - v2
         operations:
           - CREATE
           - UPDATE

@@ -191,16 +191,16 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 		addControllerWithSetup(mgr, "secret", &secret.Reconciler{TokenIssuer: issuer})
 	}
 
-	if cmOptions.IsControllerEnabled("apprelease-helminstaller") {
-		ins := &application.AppReleaseReconciler{
-			KubeConfigPath: cmOptions.KubernetesOptions.KubeConfig,
-			HelmImage:      cmOptions.HelmImage,
-		}
-		addControllerWithSetup(mgr, "apprelease-helminstaller", ins)
+	if cmOptions.IsControllerEnabled("apprelease") {
+		addControllerWithSetup(mgr, "apprelease", &application.AppReleaseReconciler{HelmImage: cmOptions.HelmImage})
 	}
 
 	if cmOptions.IsControllerEnabled("apprepo") {
 		addControllerWithSetup(mgr, "apprepo", &application.HelmRepoReconciler{})
+	}
+
+	if cmOptions.IsControllerEnabled("appcategory") {
+		addControllerWithSetup(mgr, "appcategory", &application.AppCategoryReconciler{})
 	}
 
 	// log all controllers process result

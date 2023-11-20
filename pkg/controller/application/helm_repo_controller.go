@@ -89,7 +89,7 @@ func (r *HelmRepoReconciler) sync(ctx context.Context, helmRepo *appv2.HelmRepo)
 		if err != nil {
 			return err
 		}
-		if err = application.CreateOrUpdateApp(ctx, r.Client, request, vRequests); err != nil {
+		if err = application.CreateOrUpdateApp(ctx, r.Client, helmRepo, request, vRequests); err != nil {
 			return err
 		}
 	}

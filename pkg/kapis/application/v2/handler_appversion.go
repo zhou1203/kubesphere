@@ -2,6 +2,7 @@ package v2
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 
 	"github.com/emicklei/go-restful/v3"
@@ -14,8 +15,11 @@ import (
 	appv2 "kubesphere.io/api/application/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	resv1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
+	"kubesphere.io/kubesphere/pkg/server/params"
+
 	"kubesphere.io/kubesphere/pkg/api"
-	"kubesphere.io/kubesphere/pkg/apiserver/request"
+	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 	"kubesphere.io/kubesphere/pkg/simple/client/application"
@@ -24,42 +28,38 @@ import (
 func (h *appHandler) CreateOrUpdateAppVersion(req *restful.Request, resp *restful.Response) {
 	var createAppVersionRequest CreateAppVersionRequest
 	err := req.ReadEntity(&createAppVersionRequest)
-	if err != nil {
-		klog.V(4).Infoln(err)
-		api.HandleBadRequest(resp, nil, err)
+	if requestDone(err, resp) {
 		return
 	}
-	createAppVersionRequest.AppId = req.PathParameter("app")
 
+	validate, _ := strconv.ParseBool(req.QueryParameter("validate"))
+	chartPack, err := loader.LoadArchive(bytes.NewReader(createAppVersionRequest.Package))
+	if requestDone(err, resp) {
+		return
+	}
+	if validate {
+		resp.WriteAsJson(chartPack)
+		return
+	}
+
+	createAppVersionRequest.AppId = req.PathParameter("app")
 	app := appv2.Application{}
 	err = h.client.Get(req.Request.Context(), runtimeclient.ObjectKey{Name: createAppVersionRequest.AppId}, &app)
 	if requestDone(err, resp) {
 		return
 	}
 
+	workspace := req.PathParameter("workspace")
+	if workspace == "" {
+		workspace = appv2.SystemWorkspace
+	}
+
 	var (
 		appRequest application.NewAppRequest
 		vRequest   []application.VersionRequest
 	)
-
-	validate, _ := strconv.ParseBool(req.QueryParameter("validate"))
-	chartPack, err := loader.LoadArchive(bytes.NewReader(createAppVersionRequest.Package))
-	if err != nil {
-		klog.V(4).Infoln(err)
-		api.HandleBadRequest(resp, nil, err)
-	}
-	if validate {
-		data := map[string]interface{}{
-			"description":  chartPack.Metadata.Description,
-			"name":         chartPack.Name(),
-			"version_name": chartPack.AppVersion(),
-		}
-		resp.WriteAsJson(data)
-		return
-	}
-
 	if createAppVersionRequest.AppType == appv2.AppTypeHelm {
-		appRequest, vRequest, err = h.helmRequest(chartPack, createAppVersionRequest.Package)
+		appRequest, vRequest, err = h.helmRequest(chartPack, workspace, createAppVersionRequest.Package)
 		if err != nil {
 			api.HandleInternalError(resp, nil, err)
 			return
@@ -69,16 +69,14 @@ func (h *appHandler) CreateOrUpdateAppVersion(req *restful.Request, resp *restfu
 		appRequest, vRequest = yamlRequest(
 			createAppVersionRequest.AppId,
 			createAppVersionRequest.VersionName,
-			req.PathParameter("workspace"),
+			workspace,
 			createAppVersionRequest.AppType,
 			createAppVersionRequest.Package,
 		)
 	}
 
 	err = application.CreateOrUpdateAppVersion(context.TODO(), h.client, appRequest, app, vRequest[0])
-	if err != nil {
-		klog.Errorln(err)
-		handleError(resp, err)
+	if requestDone(err, resp) {
 		return
 	}
 	data := map[string]interface{}{
@@ -190,25 +188,50 @@ func (h *appHandler) GetAppVersionFiles(req *restful.Request, resp *restful.Resp
 }
 
 func (h *appHandler) AppVersionAction(req *restful.Request, resp *restful.Response) {
+	versionID := req.PathParameter("version")
 	var doActionRequest appv2.ApplicationVersionStatus
 	err := req.ReadEntity(&doActionRequest)
-	if err != nil {
-		klog.V(4).Infoln(err)
-		api.HandleBadRequest(resp, nil, err)
+	if requestDone(err, resp) {
 		return
 	}
-	doActionRequest.UserName = req.HeaderParameter(appv2.UserNameHeader)
 
-	user, _ := request.UserFrom(req.Request.Context())
-	if user != nil {
-		doActionRequest.UserName = user.GetName()
+	appVersion := &appv2.ApplicationVersion{}
+	err = h.client.Get(context.Background(), runtimeclient.ObjectKey{Name: versionID}, appVersion)
+	if requestDone(err, resp) {
+		return
 	}
-	versionId := req.PathParameter("version")
 
-	err = DoAppVersionAction(versionId, doActionRequest, h.client)
-	if err != nil {
-		klog.Errorln(err)
-		api.HandleError(resp, nil, err)
+	// app version check state draft -> submitted -> (rejected -> submitted ) -> passed-> active -> (suspended -> active), draft -> submitted -> active
+	switch doActionRequest.State {
+	case appv2.ReviewStatusSubmitted:
+		if appVersion.Status.State != appv2.ReviewStatusDraft {
+			err = fmt.Errorf("app %s is not in draft status", appVersion.Name)
+		}
+	case appv2.ReviewStatusPassed, appv2.ReviewStatusRejected:
+		if appVersion.Status.State != appv2.ReviewStatusSubmitted {
+			err = fmt.Errorf("app %s is not in submitted status", appVersion.Name)
+		}
+	case appv2.ReviewStatusActive:
+		if appVersion.Status.State != appv2.ReviewStatusPassed &&
+			appVersion.Status.State != appv2.ReviewStatusSuspended &&
+			appVersion.Status.State != appv2.ReviewStatusSubmitted {
+			err = fmt.Errorf("app %s is not in passed or suspended or submitted status", appVersion.Name)
+		}
+	case appv2.ReviewStatusSuspended:
+		if appVersion.Status.State != appv2.ReviewStatusActive {
+			err = fmt.Errorf("app %s is not in active status", appVersion.Name)
+		}
+	}
+	if requestDone(err, resp) {
+		return
+	}
+
+	appVersion.Status.State = doActionRequest.State
+	appVersion.Status.Message = doActionRequest.Message
+	appVersion.Status.UserName = doActionRequest.UserName
+	appVersion.Status.Updated = &metav1.Time{Time: metav1.Now().Time}
+	err = h.client.Status().Update(context.TODO(), appVersion)
+	if requestDone(err, resp) {
 		return
 	}
 
@@ -227,7 +250,34 @@ func DoAppVersionAction(versionId string, actionReq appv2.ApplicationVersionStat
 	version.Status.State = actionReq.State
 	version.Status.Message = actionReq.Message
 	version.Status.UserName = actionReq.UserName
+	version.Status.Updated = &metav1.Time{Time: metav1.Now().Time}
 	err = client.Status().Update(context.TODO(), version)
 
 	return err
+}
+
+func (h *appHandler) ListReviews(req *restful.Request, resp *restful.Response) {
+	var err error
+	queryParams := query.ParseQueryParameter(req)
+	conditions, err := params.ParseConditions(req)
+
+	if requestDone(err, resp) {
+		return
+	}
+
+	appVersions := appv2.ApplicationVersionList{}
+	err = h.client.List(req.Request.Context(), &appVersions)
+	if requestDone(err, resp) {
+		return
+	}
+
+	if conditions == nil || len(conditions.Match) == 0 {
+		resp.WriteEntity(convertToListResult(&appVersions, req))
+		return
+	}
+
+	filtered := appReviewsStatusFilter(appVersions.Items, conditions)
+	items, _, totalCount := resv1beta1.DefaultList(filtered, queryParams, resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+
+	resp.WriteEntity(api.ListResult{Items: items, TotalItems: int(*totalCount)})
 }

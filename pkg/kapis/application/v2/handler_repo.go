@@ -26,7 +26,6 @@ import (
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/controller/application/installer"
 	"kubesphere.io/kubesphere/pkg/server/errors"
@@ -38,9 +37,7 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 
 	repoRequest := &appv2.HelmRepo{}
 	err := req.ReadEntity(repoRequest)
-	if err != nil {
-		klog.V(4).Infoln(err)
-		api.HandleBadRequest(resp, nil, err)
+	if requestDone(err, resp) {
 		return
 	}
 
@@ -53,8 +50,7 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 	repo := &appv2.HelmRepo{}
 	repo.Name = repoId
 	parsedUrl, err := url.Parse(repoRequest.Spec.Url)
-	if err != nil {
-		api.HandleBadRequest(resp, nil, err)
+	if requestDone(err, resp) {
 		return
 	}
 
@@ -64,9 +60,7 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 	}
 
 	_, err = installer.LoadRepoIndex(repoRequest.Spec.Url, repoRequest.Spec.Credential)
-	if err != nil {
-		klog.Errorf("validate repo failed, err: %s", err)
-		api.HandleBadRequest(resp, nil, err)
+	if requestDone(err, resp) {
 		return
 	}
 
@@ -75,7 +69,11 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 		resp.WriteAsJson(data)
 		return
 	}
+
 	workspace := req.QueryParameter("workspace")
+	if workspace == "" {
+		workspace = appv2.SystemWorkspace
+	}
 	mutateFn := func() error {
 		repo.Spec = appv2.HelmRepoSpec{
 			Name:        repo.Name,
@@ -87,17 +85,13 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 			repo.Spec.Credential.Username = parsedUrl.User.Username()
 			repo.Spec.Credential.Password, _ = parsedUrl.User.Password()
 		}
-		if workspace != "" {
-			repo.SetLabels(map[string]string{constants.WorkspaceLabelKey: workspace})
-		}
+		repo.SetLabels(map[string]string{constants.WorkspaceLabelKey: workspace})
 
 		return nil
 	}
 
 	_, err = controllerutil.CreateOrUpdate(req.Request.Context(), h.client, repo, mutateFn)
-	if err != nil {
-		klog.Errorln(err)
-		handleError(resp, err)
+	if requestDone(err, resp) {
 		return
 	}
 	data := map[string]interface{}{"repo_id": repoId}
@@ -109,9 +103,7 @@ func (h *appHandler) DeleteRepo(req *restful.Request, resp *restful.Response) {
 	repoId := req.PathParameter("repo")
 
 	err := h.client.Delete(req.Request.Context(), &appv2.HelmRepo{ObjectMeta: metav1.ObjectMeta{Name: repoId}})
-	if err != nil {
-		klog.Errorln(err)
-		handleError(resp, err)
+	if requestDone(err, resp) {
 		return
 	}
 	klog.V(4).Info("delete repo: ", repoId)

@@ -6,6 +6,7 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
 	appv2 "kubesphere.io/api/application/v2"
@@ -19,35 +20,20 @@ import (
 )
 
 func (h *appHandler) CreateOrUpdateAppRls(req *restful.Request, resp *restful.Response) {
-	workspace := req.QueryParameter("workspace")
-	cluster := req.QueryParameter("cluster")
 	var createRlsRequest appv2.ApplicationRelease
 	err := req.ReadEntity(&createRlsRequest)
-	if err != nil {
-		klog.V(4).Infoln(err)
-		api.HandleBadRequest(resp, nil, err)
+	if requestDone(err, resp) {
 		return
 	}
 
 	apprls := appv2.ApplicationRelease{}
 	apprls.Name = createRlsRequest.Name
 	mutateFn := func() error {
-		apprls.Spec.AppID = createRlsRequest.Spec.AppID
-		apprls.Spec.AppVersionID = createRlsRequest.Spec.AppVersionID
-		apprls.Spec.AppType = createRlsRequest.Spec.AppType
-		apprls.Spec.Values = createRlsRequest.Spec.Values
-		apprls.SetLabels(map[string]string{
-			constants.ClusterNameLabelKey: cluster,
-			constants.WorkspaceLabelKey:   workspace,
-			appv2.AppIDLabelKey:           createRlsRequest.Spec.AppID,
-			constants.NamespaceLabelKey:   createRlsRequest.GetLabels()[constants.NamespaceLabelKey],
-		})
+		createRlsRequest.DeepCopyInto(&apprls)
 		return nil
 	}
 	_, err = controllerutil.CreateOrUpdate(req.Request.Context(), h.client, &apprls, mutateFn)
-	if err != nil {
-		klog.Errorln(err)
-		api.HandleInternalError(resp, nil, err)
+	if requestDone(err, resp) {
 		return
 	}
 
@@ -136,8 +122,27 @@ func (h *appHandler) DeleteAppRls(req *restful.Request, resp *restful.Response) 
 
 func (h *appHandler) ListAppRls(req *restful.Request, resp *restful.Response) {
 
+	cluster := req.PathParameter("cluster")
+	workspace := req.PathParameter("workspace")
+	ns := req.PathParameter("namespace")
+	appID := req.QueryParameter("app_id")
+	lbSet := labels.Set{}
+	if appID != "" {
+		lbSet[appv2.AppIDLabelKey] = appID
+	}
+	if ns != "" {
+		lbSet[constants.NamespaceLabelKey] = ns
+	}
+	if workspace != "" {
+		lbSet[constants.WorkspaceLabelKey] = workspace
+	}
+	if cluster != "" {
+		lbSet[constants.ClusterNameLabelKey] = cluster
+	}
+
+	opt := runtimeclient.ListOptions{LabelSelector: labels.SelectorFromSet(lbSet)}
 	appList := appv2.ApplicationReleaseList{}
-	err := h.client.List(req.Request.Context(), &appList)
+	err := h.client.List(req.Request.Context(), &appList, &opt)
 
 	if requestDone(err, resp) {
 		return

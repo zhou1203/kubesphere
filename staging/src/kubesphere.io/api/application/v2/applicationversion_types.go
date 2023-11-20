@@ -34,13 +34,15 @@ type ApplicationVersionSpec struct {
 	Created     *metav1.Time         `json:"created,omitempty"`
 	Digest      string               `json:"digest,omitempty"`
 	AppType     string               `json:"appType,omitempty"`
+	Maintainer  []Maintainer         `json:"maintainer,omitempty"`
 }
 
 // ApplicationVersionStatus defines the observed state of ApplicationVersion
 type ApplicationVersionStatus struct {
-	State    string `json:"state,omitempty"`
-	Message  string `json:"message,omitempty"`
-	UserName string `json:"user_name,omitempty"`
+	State    string       `json:"state,omitempty"`
+	Message  string       `json:"message,omitempty"`
+	UserName string       `json:"user_name,omitempty"`
+	Updated  *metav1.Time `json:"updated,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -94,4 +96,8 @@ func (in *ApplicationVersion) GetCreator() string {
 
 func (in *ApplicationVersion) GetWorkspace() string {
 	return getValue(in.Labels, constants.WorkspaceLabelKey)
+}
+
+func (in *ApplicationVersion) GetAppID() string {
+	return getValue(in.Labels, AppIDLabelKey)
 }
