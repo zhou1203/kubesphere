@@ -21,12 +21,7 @@ data:
 {{- else }}
       jwtSecret: "{{ .Values.config.jwtSecret }}"
 {{- end }}
-{{- if .Values.config.authentication.oauthOptions }}
-      {{- with .Values.config.authentication.oauthOptions }}
-      oauthOptions:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-{{- else if eq (default .Values.role "none") "member" }}
+{{- if eq .Values.role "member" }}
       oauthOptions:
         accessTokenMaxAge: 0
 {{- end }}
