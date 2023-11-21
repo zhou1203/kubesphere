@@ -55,6 +55,7 @@ import (
 	"kubesphere.io/utils/helm"
 
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
@@ -1229,11 +1230,23 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(ctx context.Context
 		}
 	}
 
+	clusterRole := "member"
+	if clusterutils.IsHostCluster(&cluster) {
+		clusterRole = "host"
+	}
+
+	overrides := []string{
+		"tags.agent=true",
+		"tags.extension=false",
+		"global.clusterInfo.name=" + cluster.Name,
+		"global.clusterInfo.role=" + clusterRole,
+	}
+
 	helmOptions := []helm.HelmOption{
 		helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)),
 		helm.SetInstall(true),
 		helm.SetKubeAsUser(fmt.Sprintf("system:serviceaccount:%s:default", targetNamespace)),
-		helm.SetOverrides([]string{"tags.agent=true", "tags.extension=false"}),
+		helm.SetOverrides(overrides),
 		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: plan.Spec.Extension.Name}),
 	}
 
