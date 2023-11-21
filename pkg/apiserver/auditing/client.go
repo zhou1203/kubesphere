@@ -28,8 +28,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/modern-go/reflect2"
+
+	"k8s.io/apimachinery/pkg/types"
+
+	"kubesphere.io/kubesphere/pkg/apiserver/auditing/internal"
+	"kubesphere.io/kubesphere/pkg/apiserver/auditing/log"
+
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/auditing/webhook"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 
@@ -37,7 +45,6 @@ import (
 	v1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/apis/audit"
 	"k8s.io/klog/v2"
 	"kubesphere.io/api/iam/v1beta1"
@@ -49,6 +56,9 @@ import (
 const (
 	DefaultCacheCapacity = 10000
 	CacheTimeout         = time.Second
+
+	DefaultBatchSize     = 100
+	DefaultBatchInterval = time.Second * 3
 )
 
 type Auditing interface {
@@ -59,29 +69,60 @@ type Auditing interface {
 
 type auditing struct {
 	kubernetesClient k8s.Client
-	opts             *Options
+	stopCh           <-chan struct{}
+	auditLevel       audit.Level
 	events           chan *Event
-	backend          *Backend
+	backend          []internal.Backend
 
-	host    *Instance
-	cluster string
+	hostname string
+	hostip   string
+	cluster  string
+
+	eventBatchSize     int
+	eventBatchInterval time.Duration
 }
 
 func NewAuditing(kubernetesClient k8s.Client, opts *Options, stopCh <-chan struct{}) Auditing {
 
 	a := &auditing{
-		kubernetesClient: kubernetesClient,
-		opts:             opts,
-		events:           make(chan *Event, DefaultCacheCapacity),
-		host:             getHostInstance(),
+		kubernetesClient:   kubernetesClient,
+		stopCh:             stopCh,
+		auditLevel:         opts.AuditLevel,
+		events:             make(chan *Event, DefaultCacheCapacity),
+		hostname:           os.Getenv("HOSTNAME"),
+		hostip:             getHostIP(),
+		eventBatchInterval: opts.EventBatchInterval,
+		eventBatchSize:     opts.EventBatchSize,
+	}
+
+	if a.eventBatchInterval == 0 {
+		a.eventBatchInterval = DefaultBatchInterval
+	}
+
+	if a.eventBatchSize == 0 {
+		a.eventBatchSize = DefaultBatchSize
 	}
 
 	a.cluster = a.getClusterName()
-	a.backend = NewBackend(opts, a.events, stopCh)
+
+	if opts.WebhookOptions.WebhookUrl != "" {
+		a.backend = append(a.backend, webhook.NewBackend(opts.WebhookOptions.WebhookUrl,
+			opts.WebhookOptions.EventSendersNum))
+	}
+
+	if opts.LogOptions.Path != "" {
+		a.backend = append(a.backend, log.NewBackend(opts.LogOptions.Path,
+			opts.LogOptions.MaxAge,
+			opts.LogOptions.MaxBackups,
+			opts.LogOptions.MaxSize))
+	}
+
+	go a.Start()
+
 	return a
 }
 
-func getHostInstance() *Instance {
+func getHostIP() string {
 	addrs, err := net.InterfaceAddrs()
 	hostip := ""
 	if err == nil {
@@ -95,10 +136,7 @@ func getHostInstance() *Instance {
 		}
 	}
 
-	return &Instance{
-		Name: os.Getenv("HOSTNAME"),
-		IP:   hostip,
-	}
+	return hostip
 }
 
 func (a *auditing) getClusterName() string {
@@ -116,9 +154,8 @@ func (a *auditing) getClusterName() string {
 }
 
 func (a *auditing) getAuditLevel() audit.Level {
-	if a.opts != nil &&
-		a.opts.AuditLevel != "" {
-		return a.opts.AuditLevel
+	if a.auditLevel != "" {
+		return a.auditLevel
 	}
 
 	return audit.LevelMetadata
@@ -153,7 +190,8 @@ func (a *auditing) LogRequestObject(req *http.Request, info *request.RequestInfo
 	}
 
 	e := &Event{
-		Instance:  a.host,
+		HostName:  a.hostname,
+		HostIP:    a.hostip,
 		Workspace: info.Workspace,
 		Cluster:   a.cluster,
 		Event: audit.Event{
@@ -273,6 +311,80 @@ func (a *auditing) cacheEvent(e Event) {
 		klog.V(8).Infof("cache audit event %s timeout", e.AuditID)
 		break
 	}
+}
+
+func (a *auditing) Start() {
+	for {
+		events, exit := a.getEvents()
+		if exit {
+			break
+		}
+
+		if len(events) == 0 {
+			continue
+		}
+
+		byteEvents := a.eventToBytes(events)
+		if len(byteEvents) == 0 {
+			continue
+		}
+
+		for _, b := range a.backend {
+			if reflect2.IsNil(b) {
+				continue
+			}
+
+			b.ProcessEvents(byteEvents...)
+		}
+	}
+}
+
+func (a *auditing) getEvents() ([]*Event, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), a.eventBatchInterval)
+	defer cancel()
+
+	var events []*Event
+	for {
+		select {
+		case event := <-a.events:
+			if event == nil {
+				break
+			}
+			events = append(events, event)
+			if len(events) >= a.eventBatchSize {
+				return events, false
+			}
+		case <-ctx.Done():
+			return events, false
+		case <-a.stopCh:
+			return nil, true
+		}
+	}
+}
+
+func (a *auditing) eventToBytes(events []*Event) [][]byte {
+	var res [][]byte
+	for _, event := range events {
+		bs, err := json.Marshal(event)
+		if err != nil {
+			// Normally, the serialization failure is caused by the failure of ResponseObject serialization.
+			// To ensure the integrity of the auditing event to the greatest extent,
+			// it is necessary to delete ResponseObject and and then try to serialize again.
+			if event.ResponseObject != nil {
+				event.ResponseObject = nil
+				bs, err = json.Marshal(event)
+			}
+		}
+
+		if err != nil {
+			klog.Error("serialize audit event error: %s", err)
+			continue
+		}
+
+		res = append(res, bs)
+	}
+
+	return res
 }
 
 type ResponseCapture struct {
