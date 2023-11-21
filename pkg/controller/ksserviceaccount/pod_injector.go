@@ -50,7 +50,7 @@ func (i *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 	}
 
 	sa := &corev1alpha1.ServiceAccount{}
-	err = i.Client.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: saName}, sa)
+	err = i.Client.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: saName}, sa)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return admission.Errored(http.StatusNotFound, err)
@@ -89,7 +89,7 @@ func (i *PodInjector) injectServiceAccountToken(ctx context.Context, pod *v1.Pod
 	tokenName = sa.Secrets[0].Name
 
 	secret := &v1.Secret{}
-	err := i.Client.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: tokenName}, secret)
+	err := i.Client.Get(ctx, types.NamespacedName{Namespace: sa.Namespace, Name: tokenName}, secret)
 	if err != nil {
 		return err
 	}
