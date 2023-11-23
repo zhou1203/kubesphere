@@ -29,50 +29,46 @@ func parseTime(timeString string) *metav1.Time {
 	return &Time
 }
 
-func CreateOrUpdateSubscription(ctx context.Context, client runtimeclient.Client, extension *corev1alpha1.Extension, subscription Subscription) error {
-	subCR := &marketplacev1alpha1.Subscription{
+func CreateOrUpdateSubscription(ctx context.Context, client runtimeclient.Client, extensionName string, subscription Subscription) error {
+	storedSubscription := &marketplacev1alpha1.Subscription{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("%s-%s", extension.Name, subscription.SubscriptionID),
+			Name: fmt.Sprintf("%s-%s", extensionName, subscription.SubscriptionID),
 		},
 	}
 
 	mutateFn := func() error {
-		subCR.Labels = map[string]string{
+		storedSubscription.Labels = map[string]string{
 			marketplacev1alpha1.ExtensionID:      subscription.ExtensionID,
-			corev1alpha1.ExtensionReferenceLabel: extension.Name,
+			corev1alpha1.ExtensionReferenceLabel: extensionName,
 		}
-		subCR.SubscriptionSpec.ExtensionName = extension.Name
-		subCR.SubscriptionStatus.ExpiredAt = parseTime(subscription.ExpiredAt)
-		subCR.SubscriptionStatus.StartedAt = parseTime(subscription.StartedAt)
-		subCR.SubscriptionStatus.CreatedAt = parseTime(subscription.CreatedAt)
-		subCR.SubscriptionStatus.ExtensionID = subscription.ExtensionID
-		subCR.SubscriptionStatus.ExtraInfo = subscription.ExtraInfo
-		subCR.SubscriptionStatus.OrderID = subscription.OrderID
-		subCR.SubscriptionStatus.UpdatedAt = parseTime(subscription.UpdatedAt)
-		subCR.SubscriptionStatus.UserID = subscription.UserID
-		subCR.SubscriptionStatus.SubscriptionID = subscription.SubscriptionID
-		subCR.SubscriptionStatus.UserSubscriptionID = subscription.UserSubscriptionID
+		storedSubscription.SubscriptionSpec.ExtensionName = extensionName
+		storedSubscription.SubscriptionStatus.ExpiredAt = parseTime(subscription.ExpiredAt)
+		storedSubscription.SubscriptionStatus.StartedAt = parseTime(subscription.StartedAt)
+		storedSubscription.SubscriptionStatus.CreatedAt = parseTime(subscription.CreatedAt)
+		storedSubscription.SubscriptionStatus.ExtensionID = subscription.ExtensionID
+		storedSubscription.SubscriptionStatus.ExtraInfo = subscription.ExtraInfo
+		storedSubscription.SubscriptionStatus.OrderID = subscription.OrderID
+		storedSubscription.SubscriptionStatus.UpdatedAt = parseTime(subscription.UpdatedAt)
+		storedSubscription.SubscriptionStatus.UserID = subscription.UserID
+		storedSubscription.SubscriptionStatus.SubscriptionID = subscription.SubscriptionID
+		storedSubscription.SubscriptionStatus.UserSubscriptionID = subscription.UserSubscriptionID
 		return nil
 	}
-	op, err := controllerutil.CreateOrUpdate(ctx, client, subCR, mutateFn)
+	op, err := controllerutil.CreateOrUpdate(ctx, client, storedSubscription, mutateFn)
 	if err != nil {
 		return err
 	}
-	klog.Infof("Subscription %s has been %s", subCR.Name, op)
+	klog.Infof("Subscription %s has been %s", storedSubscription.Name, op)
 	return nil
 }
 
-func RemoveSubscription(ctx context.Context, client runtimeclient.Client, extension *corev1alpha1.Extension) error {
+func RemoveSubscriptions(ctx context.Context, client runtimeclient.Client, extension *corev1alpha1.Extension) error {
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := client.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
 			return err
 		}
 		expected := extension.DeepCopy()
-		if expected.Status.State == "" {
-			delete(expected.Labels, marketplacev1alpha1.Subscribed)
-		} else if expected.Labels[marketplacev1alpha1.Subscribed] == "true" {
-			expected.Labels[marketplacev1alpha1.Subscribed] = "false"
-		}
+		delete(expected.Labels, marketplacev1alpha1.Subscribed)
 		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
 			return client.Update(ctx, expected)
 		}

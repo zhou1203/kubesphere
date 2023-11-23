@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,6 +35,16 @@ type Account struct {
 	Email        string    `json:"email" yaml:"email"`
 	HeadImageURL string    `json:"headImageURL" yaml:"headImageURL"`
 	Username     string    `json:"username" yaml:"username"`
+}
+
+func (a *Account) IsValid() bool {
+	if a == nil {
+		return false
+	}
+	if a.UserID != "" && a.AccessToken != "" && a.ExpiresAt.After(time.Now()) {
+		return true
+	}
+	return false
 }
 
 type Bind struct {
@@ -78,7 +89,7 @@ func LoadOptions(ctx context.Context, client runtimeclient.Client) (*Options, er
 	optionsSecret := &corev1.Secret{}
 	if err := client.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: ConfigurationSecretName}, optionsSecret); err != nil {
 		if errors.IsNotFound(err) {
-			return nil, errors.NewBadRequest("marketplace configuration not exists")
+			return nil, errors.NewNotFound(schema.GroupResource{Group: "config.kubesphere.io", Resource: "configs"}, ConfigurationSecretName)
 		}
 		return nil, fmt.Errorf("failed to load marketplace configuration: %s", err)
 	}
@@ -102,7 +113,6 @@ func SaveOptions(ctx context.Context, client runtimeclient.Client, options *Opti
 		if err != nil {
 			return fmt.Errorf("failed to encode marketplace configuration: %s", err)
 		}
-
 		optionsSecret.Data[ConfigurationFileKey] = data
 		return client.Update(ctx, optionsSecret)
 	})
