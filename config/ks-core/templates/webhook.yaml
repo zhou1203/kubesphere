@@ -195,11 +195,7 @@ webhooks:
     failurePolicy: Fail
     matchPolicy: Exact
     name: validator.config.kubesphere.io
-    namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: In
-          values: [ "kubesphere-system" ]
+    namespaceSelector: {}
     objectSelector:
       matchExpressions:
         - key: config.kubesphere.io/type
@@ -337,11 +333,7 @@ webhooks:
     failurePolicy: Fail
     matchPolicy: Exact
     name: defaulter.config.kubesphere.io
-    namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: In
-          values: [ "kubesphere-system" ]
+    namespaceSelector: {}
     objectSelector:
       matchExpressions:
         - key: config.kubesphere.io/type

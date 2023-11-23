@@ -97,12 +97,12 @@ func (w *WebhookHandler) exist(ctx context.Context, clientName string) (bool, er
 		w.getter = identityprovider.NewConfigurationGetter(w.Client)
 	})
 
-	authClient, err := w.getter.GetConfiguration(ctx, clientName)
+	_, err := w.getter.GetConfiguration(ctx, clientName)
 	if err != nil {
+		if err == identityprovider.ErrorIdentityProviderNotFound {
+			return false, nil
+		}
 		return false, err
-	}
-	if authClient == nil {
-		return false, nil
 	}
 	return true, nil
 }

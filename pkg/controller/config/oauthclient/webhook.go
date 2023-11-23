@@ -120,13 +120,12 @@ func (v *WebhookHandler) clientExist(ctx context.Context, clientName string) (bo
 	once.Do(func() {
 		v.getter = oauth.NewOAuthClientGetter(v.Client)
 	})
-
-	authClient, err := v.getter.GetOAuthClient(ctx, clientName)
+	_, err := v.getter.GetOAuthClient(ctx, clientName)
 	if err != nil {
+		if err == oauth.ErrorClientNotFound {
+			return false, nil
+		}
 		return false, err
-	}
-	if authClient == nil {
-		return false, nil
 	}
 	return true, nil
 }
