@@ -2,7 +2,7 @@
 ## @param global.tag Global Docker image tag
 global:
   imageRegistry: registry.cn-beijing.aliyuncs.com
-  tag: v4.0.0
+  tag: ksc
   imagePullSecrets: []
 
 ## @section Common parameters
@@ -89,7 +89,7 @@ apiserver:
     repository: kse/ks-apiserver
     tag: ""
     digest: ""
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     ## Optionally specify an array of imagePullSecrets.
     ## Secrets must be manually created in the namespace.
     ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
@@ -103,7 +103,7 @@ apiserver:
   containerPorts:
     - protocol: TCP
       containerPort: 9090
-  nodePort:
+  nodePort: 30881
   ## ks-apiserver resource requests and limits
   ## ref: https://kubernetes.io/docs/user-guide/compute-resources/
   ## @param resources.limits The resources limits for the haproxy containers
@@ -142,7 +142,7 @@ console:
     repository: kse/ks-console
     tag: ""
     digest: ""
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     ## Optionally specify an array of imagePullSecrets.
     ## Secrets must be manually created in the namespace.
     ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
@@ -186,7 +186,7 @@ controller:
     repository: kse/ks-controller-manager
     tag: ""
     digest: ""
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     ## Optionally specify an array of imagePullSecrets.
     ## Secrets must be manually created in the namespace.
     ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
@@ -284,7 +284,7 @@ nodeShell:
     pullPolicy: IfNotPresent
 
 upgrade:
-  enabled: false
+  disabled: false
   image:
     registry: ""
     repository: kse/ks-upgrade

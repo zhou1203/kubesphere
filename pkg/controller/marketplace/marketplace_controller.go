@@ -194,6 +194,7 @@ func (r *Controller) syncSubscriptions(ctx context.Context) func() {
 				if err := r.cleanup(ctx); err != nil {
 					return fmt.Errorf("failed cleanup marketplace account related resources: %s", err)
 				}
+				return nil
 			}
 
 			marketplaceClient := marketplace.NewClient(options)
