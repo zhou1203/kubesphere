@@ -282,3 +282,35 @@ nodeShell:
     repository: alpine
     tag: "3.18.4"
     pullPolicy: IfNotPresent
+
+upgrade:
+  enabled: false
+  image:
+    registry: ""
+    repository: kse/ks-upgrade
+    tag: ""
+    pullPolicy: IfNotPresent
+  storage:
+    s3:
+      endpoint: ""
+      bucket: ""
+      region: ""
+      disableSSL: true
+      access_key_id: ""
+      secret_access_key: ""
+    local:
+      path: /tmp/ks-upgrade
+  persistenceVolume:
+    name: ks-upgrade
+    storageClassName: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
+  jobs:
+    iam:
+      disabled: false
+      priority: 10
+      dynamicOptions: {}
+    devops:
+      disabled: false
+      priority: 11
+      dynamicOptions: {}

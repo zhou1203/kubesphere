@@ -25,6 +25,10 @@ Return the proper image name
 {{ include "common.images.image" (dict "imageRoot" .Values.helm.image "global" .Values.global) }}
 {{- end -}}
 
+{{- define "upgrade.image" -}}
+{{ include "common.images.image" (dict "imageRoot" .Values.upgrade.image "global" .Values.global) }}
+{{- end -}}
+
 {{- define "common.images.image" -}}
 {{- $registryName := .global.imageRegistry -}}
 {{- $repositoryName := .imageRoot.repository -}}
