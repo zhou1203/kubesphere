@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,8 +54,7 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	options, err := marketplace.LoadOptions(ctx, r.Client)
 	if err != nil {
-		logger.Error(err, "failed to load marketplace configuration")
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] != options.RepositorySyncOptions.RepoName {
@@ -67,12 +67,17 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 	}
 
-	if options.Account != nil && options.Account.AccessToken != "" {
+	if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
+		r.logger.V(4).Info("extension ID not exists")
+		return reconcile.Result{}, nil
+	}
+
+	if options.Account.IsValid() {
 		if err := r.syncSubscription(ctx, options, extension); err != nil {
 			return reconcile.Result{}, err
 		}
 	} else {
-		if err := marketplace.RemoveSubscription(ctx, r.Client, extension); err != nil {
+		if err := marketplace.RemoveSubscriptions(ctx, r.Client, extension); err != nil {
 			return reconcile.Result{}, err
 		}
 	}
@@ -87,8 +92,8 @@ func (r *Controller) Start(ctx context.Context) error {
 	if err := r.initMarketplaceRepository(ctx, options); err != nil {
 		return err
 	}
-	go wait.Until(r.syncSubscriptions, max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
-	go wait.Until(r.syncCategories, max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
+	go wait.Until(r.syncSubscriptions(ctx), max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
+	go wait.Until(r.syncCategories(ctx), max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
 	return nil
 }
 
@@ -166,6 +171,7 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func max(a time.Duration, b time.Duration) time.Duration {
+
 	if a-b > 0 {
 		return a
 	} else {
@@ -173,64 +179,82 @@ func max(a time.Duration, b time.Duration) time.Duration {
 	}
 }
 
-func (r *Controller) syncSubscriptions() {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
-	defer cancel()
-	options, err := marketplace.LoadOptions(ctx, r.Client)
-	if err != nil {
-		r.logger.Error(err, "failed to load marketplace configuration")
-		return
-	}
+func (r *Controller) syncSubscriptions(ctx context.Context) func() {
+	return func() {
+		err := retry.OnError(retry.DefaultRetry, func(err error) bool {
+			return true
+		}, func() error {
+			options, err := marketplace.LoadOptions(ctx, r.Client)
+			if err != nil {
+				return fmt.Errorf("failed to load marketplace configuration: %s", err)
+			}
 
-	if options.Account == nil || options.Account.AccessToken == "" {
-		r.logger.V(4).Info("marketplace account not bound, skip synchronization")
-		extensions := &corev1alpha1.ExtensionList{}
-		if err := r.List(ctx, extensions,
-			client.MatchingLabels{corev1alpha1.RepositoryReferenceLabel: options.RepositorySyncOptions.RepoName}); err != nil {
-			for _, item := range extensions.Items {
-				if err := marketplace.RemoveSubscription(ctx, r.Client, &item); err != nil {
-					klog.Errorf("failed to update extension status: %s", err)
-					continue
+			if !options.Account.IsValid() {
+				r.logger.V(4).Info("marketplace account not bound")
+				if err := r.cleanup(ctx); err != nil {
+					return fmt.Errorf("failed cleanup marketplace account related resources: %s", err)
 				}
 			}
-		}
-		return
-	}
-	marketplaceClient := marketplace.NewClient(options)
-	subscriptions, err := marketplaceClient.ListSubscriptions("")
-	if err != nil {
-		r.logger.Error(err, "failed to sync subscriptions")
-		return
-	}
-	for _, subscription := range subscriptions {
-		var extension *corev1alpha1.Extension
-		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			extensions := &corev1alpha1.ExtensionList{}
-			if err := r.List(ctx, extensions,
-				client.MatchingLabels{marketplacev1alpha1.ExtensionID: subscription.ExtensionID}); err != nil {
-				return err
+
+			marketplaceClient := marketplace.NewClient(options)
+			subscriptions, err := marketplaceClient.ListSubscriptions("")
+			if err != nil {
+				return fmt.Errorf("failed to fetch subscriptions: %s", err)
 			}
-			if len(extensions.Items) > 0 {
-				expected := &extensions.Items[0]
-				if expected.Labels[marketplacev1alpha1.Subscribed] != "true" {
-					expected.Labels[marketplacev1alpha1.Subscribed] = "true"
-					if err := r.Update(ctx, expected); err != nil {
-						return err
+			for _, subscription := range subscriptions {
+				extensions := &corev1alpha1.ExtensionList{}
+				if err := r.List(ctx, extensions,
+					client.MatchingLabels{marketplacev1alpha1.ExtensionID: subscription.ExtensionID}); err != nil {
+					return fmt.Errorf("failed to list extensions: %s", err)
+				}
+
+				if len(extensions.Items) == 0 {
+					r.logger.Info("subscribed extension not found", "subscription ID", subscription.SubscriptionID, "extension ID", subscription.ExtensionID)
+					continue
+				}
+
+				if len(extensions.Items) > 1 {
+					r.logger.Info("extension conflict found", "extension ID", subscription.SubscriptionID)
+					continue
+				}
+
+				extension := extensions.Items[0]
+				if err = marketplace.CreateOrUpdateSubscription(ctx, r.Client, extension.Name, subscription); err != nil {
+					return fmt.Errorf("failed to update subscription: %s", err)
+				}
+				if extension.Labels[marketplacev1alpha1.Subscribed] != "true" {
+					extension.Labels[marketplacev1alpha1.Subscribed] = "true"
+					if err := r.Update(ctx, &extension); err != nil {
+						return fmt.Errorf("failed to update extension %s: %s", extension.Name, err)
 					}
 				}
 			}
+
+			storedSubscriptions := &marketplacev1alpha1.SubscriptionList{}
+			if err := r.List(ctx, storedSubscriptions, client.MatchingLabels{}); err != nil {
+				return fmt.Errorf("failed to list subscriptions: %s", err)
+			}
+
+			outOfDateSubscriptions := make([]*marketplacev1alpha1.Subscription, 0)
+			for _, sub := range storedSubscriptions.Items {
+				if !slices.ContainsFunc(subscriptions, func(subscription marketplace.Subscription) bool {
+					return sub.SubscriptionStatus.SubscriptionID == subscription.SubscriptionID
+				}) {
+					outOfDateSubscriptions = append(outOfDateSubscriptions, &sub)
+				}
+			}
+
+			for _, subscription := range outOfDateSubscriptions {
+				r.logger.V(4).Info("delete out of date subscription", "subscription", subscription.Name)
+				if err := r.Client.Delete(ctx, subscription); err != nil {
+					return fmt.Errorf("failed to delete subscription %s: %s", subscription.Name, err)
+				}
+			}
+
 			return nil
 		})
 		if err != nil {
-			r.logger.Error(err, "failed to update extension status")
-			continue
-		}
-		if extension == nil {
-			r.logger.Error(err, "subscription related extension not found", "subscription ID", subscription.SubscriptionID, "extension ID", subscription.ExtensionID)
-			continue
-		}
-		if err = marketplace.CreateOrUpdateSubscription(ctx, r.Client, extension, subscription); err != nil {
-			r.logger.Error(err, "failed to update subscription")
+			r.logger.Error(err, "failed to sync subscriptions")
 		}
 	}
 }
@@ -264,83 +288,92 @@ func (r *Controller) syncExtensionID(ctx context.Context, options *marketplace.O
 		return err
 	}
 	if extensionInfo.ExtensionID == "" {
+		r.logger.V(4).Info("extensionID not exists", "extension", extension.Name)
 		return nil
 	}
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
 			return err
 		}
-		expected := extension.DeepCopy()
-		if expected.Labels == nil {
+		if extension.Labels == nil {
 			extension.Labels = make(map[string]string, 0)
 		}
-		expected.Labels[marketplacev1alpha1.ExtensionID] = extensionInfo.ExtensionID
-		if expected.Annotations == nil {
-			expected.Annotations = make(map[string]string, 0)
-		}
-		if !reflect.DeepEqual(expected.Labels, extension.Labels) || !reflect.DeepEqual(expected.Annotations, extension.Annotations) {
-			return r.Update(ctx, expected, &client.UpdateOptions{})
+		extension.Labels[marketplacev1alpha1.ExtensionID] = extensionInfo.ExtensionID
+		if !reflect.DeepEqual(extension.Labels, extension.Labels) {
+			return r.Update(ctx, extension, &client.UpdateOptions{})
 		}
 		return nil
 	})
 }
 
 func (r *Controller) syncSubscription(ctx context.Context, options *marketplace.Options, extension *corev1alpha1.Extension) error {
-	subscriptions, err := marketplace.NewClient(options).ListSubscriptions(extension.Labels[marketplacev1alpha1.ExtensionID])
+	extensionID := extension.Labels[marketplacev1alpha1.ExtensionID]
+	subscriptions, err := marketplace.NewClient(options).ListSubscriptions(extensionID)
 	if err != nil {
 		return err
 	}
 
 	subscribed := len(subscriptions) > 0
-	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
+	for _, subscription := range subscriptions {
+		if err := marketplace.CreateOrUpdateSubscription(ctx, r.Client, extension.Name, subscription); err != nil {
 			return err
 		}
-		expected := extension.DeepCopy()
-		if subscribed {
-			expected.Labels[marketplacev1alpha1.Subscribed] = "true"
-		} else if expected.Status.State == "" {
-			delete(expected.Labels, marketplacev1alpha1.Subscribed)
-		} else {
-			expected.Labels[marketplacev1alpha1.Subscribed] = "false"
-		}
-		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
-			return r.Update(ctx, expected)
-		}
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to update extension: %s", err)
 	}
 
+	if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
+		return err
+	}
+	extension = extension.DeepCopy()
 	if subscribed {
-		for _, subscription := range subscriptions {
-			if err := marketplace.CreateOrUpdateSubscription(ctx, r.Client, extension, subscription); err != nil {
-				return err
-			}
+		extension.Labels[marketplacev1alpha1.Subscribed] = "true"
+	} else {
+		delete(extension.Labels, marketplacev1alpha1.Subscribed)
+	}
+	if !reflect.DeepEqual(extension.Labels, extension.Labels) {
+		if err := r.Update(ctx, extension); err != nil {
+			return fmt.Errorf("failed to update extension %s: %s", extension.Name, err)
+		}
+	}
+
+	storedSubscriptions := &marketplacev1alpha1.SubscriptionList{}
+	if err := r.List(ctx, storedSubscriptions, client.MatchingLabels{marketplacev1alpha1.ExtensionID: extensionID}); err != nil {
+		return fmt.Errorf("failed to list subscriptions: %s", err)
+	}
+
+	outOfDateSubscriptions := make([]*marketplacev1alpha1.Subscription, 0)
+	for _, sub := range storedSubscriptions.Items {
+		if !slices.ContainsFunc(subscriptions, func(subscription marketplace.Subscription) bool {
+			return sub.SubscriptionStatus.SubscriptionID == subscription.SubscriptionID
+		}) {
+			outOfDateSubscriptions = append(outOfDateSubscriptions, &sub)
+		}
+	}
+
+	for _, subscription := range outOfDateSubscriptions {
+		r.logger.V(4).Info("delete out of date subscription", "subscription", subscription.Name)
+		if err := r.Client.Delete(ctx, subscription); err != nil {
+			return fmt.Errorf("failed to delete subscription %s: %s", subscription.Name, err)
 		}
 	}
 	return nil
 }
 
-func (r *Controller) syncCategories() {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
-	defer cancel()
-	options, err := marketplace.LoadOptions(context.Background(), r.Client)
-	if err != nil {
-		r.logger.Error(err, "failed to sync categories")
-		return
-	}
-	categories, err := marketplace.NewClient(options).ListCategories()
-	if err != nil {
-		r.logger.Error(err, "failed to list categories")
-	}
-
-	for _, category := range categories {
-		if err := r.createOrUpdateCategory(ctx, &category); err != nil {
-			klog.Errorf("failed to update category: %s", err)
-			continue
+func (r *Controller) syncCategories(ctx context.Context) func() {
+	return func() {
+		options, err := marketplace.LoadOptions(context.Background(), r.Client)
+		if err != nil {
+			r.logger.Error(err, "failed to sync categories")
+			return
+		}
+		categories, err := marketplace.NewClient(options).ListCategories()
+		if err != nil {
+			r.logger.Error(err, "failed to list categories")
+		}
+		for _, category := range categories {
+			if err := r.createOrUpdateCategory(ctx, &category); err != nil {
+				klog.Errorf("failed to update category: %s", err)
+				continue
+			}
 		}
 	}
 }
@@ -363,5 +396,25 @@ func (r *Controller) createOrUpdateCategory(ctx context.Context, origin *marketp
 		return err
 	}
 	klog.V(4).Infof("Update category %s successfully: %s", origin.NormalizedName, op)
+	return nil
+}
+
+func (r *Controller) cleanup(ctx context.Context) error {
+	if err := r.DeleteAllOf(ctx, &marketplacev1alpha1.Subscription{}); err != nil {
+		return fmt.Errorf("failed to delete subscriptions: %s", err)
+	}
+
+	extensions := &corev1alpha1.ExtensionList{}
+	if err := r.List(ctx, extensions,
+		client.MatchingLabels{marketplacev1alpha1.Subscribed: "true"}); err != nil {
+		return fmt.Errorf("failed to list extensions: %s", err)
+	}
+
+	for _, extension := range extensions.Items {
+		delete(extension.Labels, marketplacev1alpha1.Subscribed)
+		if err := r.Update(ctx, &extension); err != nil {
+			return fmt.Errorf("failed to update extension %s: %s", extension.Name, err)
+		}
+	}
 	return nil
 }

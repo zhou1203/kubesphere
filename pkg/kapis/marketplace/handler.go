@@ -181,7 +181,7 @@ func (h *handler) unbind(request *restful.Request, response *restful.Response) {
 	if err := h.client.List(request.Request.Context(), extensions,
 		runtimeclient.MatchingLabels{corev1alpha1.RepositoryReferenceLabel: options.RepositorySyncOptions.RepoName}); err != nil {
 		for _, item := range extensions.Items {
-			if err := marketplace.RemoveSubscription(request.Request.Context(), h.client, &item); err != nil {
+			if err := marketplace.RemoveSubscriptions(request.Request.Context(), h.client, &item); err != nil {
 				klog.Errorf("failed to update extension status: %s", err)
 				continue
 			}
@@ -237,7 +237,7 @@ func (h *handler) sync(request *restful.Request, response *restful.Response) {
 			continue
 		}
 
-		if err = marketplace.CreateOrUpdateSubscription(request.Request.Context(), h.client, extension, subscription); err != nil {
+		if err = marketplace.CreateOrUpdateSubscription(request.Request.Context(), h.client, extension.Name, subscription); err != nil {
 			api.HandleError(response, request, fmt.Errorf("failed to update subscription: %s", err))
 			return
 		}
