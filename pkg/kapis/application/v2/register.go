@@ -303,14 +303,6 @@ func (h *appHandler) AddToContainer(c *restful.Container) error {
 		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}).
 		Doc("List all applications within the specified workspace"))
 
-	webservice.Route(webservice.GET("/workspaces/{workspace}/clusters/{cluster}/namespaces/{namespace}/applications").
-		To(h.ListAppRls).
-		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}).
-		Doc("List all applications within the specified cluster and workspace").
-		Param(webservice.PathParameter("namespace", "namespace")).
-		Param(webservice.PathParameter("cluster", "cluster")).
-		Param(webservice.PathParameter("workspace", "workspace").Required(true)))
-
 	webservice.Route(webservice.POST("/applications/{application}").
 		Consumes(mimePatch...).
 		To(h.CreateOrUpdateAppRls).
@@ -333,6 +325,41 @@ func (h *appHandler) AddToContainer(c *restful.Container) error {
 		To(h.DeleteAppRls).
 		Doc("Delete the specified application").
 		Returns(http.StatusOK, api.StatusOK, errors.Error{}).
+		Param(webservice.PathParameter("application", "the id of the application").Required(true)))
+
+	// API called under namespace
+	webservice.Route(webservice.GET("/namespaces/{namespace}/applications").
+		To(h.ListAppRls).
+		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}).
+		Doc("List all applications within the specified cluster and workspace").
+		Param(webservice.PathParameter("namespace", "namespace").Required(true)))
+
+	webservice.Route(webservice.POST("/namespaces/{namespace}/applications/{application}").
+		Consumes(mimePatch...).
+		To(h.CreateOrUpdateAppRls).
+		Doc("Upgrade application").
+		Returns(http.StatusOK, api.StatusOK, errors.Error{}).
+		Param(webservice.PathParameter("namespace", "namespace").Required(true)).
+		Param(webservice.PathParameter("application", "the id of the application").Required(true)))
+
+	webservice.Route(webservice.POST("/namespaces/{namespace}/applications").
+		Consumes(mimePatch...).
+		To(h.CreateOrUpdateAppRls).
+		Doc("Create application").
+		Param(webservice.PathParameter("namespace", "namespace").Required(true)).
+		Returns(http.StatusOK, api.StatusOK, errors.Error{}))
+
+	webservice.Route(webservice.GET("/namespaces/{namespace}/applications/{application}").
+		To(h.DescribeAppRls).
+		Doc("Describe the specified application of the namespace").
+		Param(webservice.PathParameter("namespace", "namespace").Required(true)).
+		Param(webservice.PathParameter("application", "the id of the application").Required(true)))
+
+	webservice.Route(webservice.DELETE("/namespaces/{namespace}/applications/{application}").
+		To(h.DeleteAppRls).
+		Doc("Delete the specified application").
+		Returns(http.StatusOK, api.StatusOK, errors.Error{}).
+		Param(webservice.PathParameter("namespace", "namespace").Required(true)).
 		Param(webservice.PathParameter("application", "the id of the application").Required(true)))
 
 	// category

@@ -146,20 +146,6 @@ spec:
       - 'applications'
     verbs:
       - '*'
-  # 创建边缘 app 需要的权限
-  - apiGroups:
-      - resources.kubesphere.io
-    resources:
-      - 'deployments'
-    verbs:
-      - '*'
-  - apiGroups:
-      - ''
-    resources:
-      - 'secrets'
-      - 'limitranges'
-    verbs:
-      - '*'
 
 # namespace scope role templates
 ---
@@ -206,11 +192,11 @@ metadata:
   name: namespace-manage-app-releases
 spec:
   description:
-    en: 'Namespace App Releases View'
+    en: 'Namespace App Releases Management'
     zh: '项目下部署升级应用实例。'
   displayName:
-    en: 'Namespace App Releases View'
-    zh: '应用实例'
+    en: 'Namespace App Releases Management'
+    zh: '应用实例部署升级'
   rules:
   - apiGroups:
       - application.kubesphere.io

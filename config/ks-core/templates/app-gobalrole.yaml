@@ -7,7 +7,32 @@ rules:
       - application.kubesphere.io
     resources:
       - 'apps'
+      - 'categories'
       - 'apps/versions'
+    verbs:
+      - get
+      - list
+  # Permissions required to create edge app
+  - apiGroups:
+      - resources.kubesphere.io
+    resources:
+      - 'deployments'
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - ''
+    resources:
+      - 'secrets'
+      - 'limitranges'
+    verbs:
+      - get
+      - list
+  # Permissions required to install the edge app release
+  - apiGroups:
+      - infra.kubesphere.io
+    resources:
+      - 'nodetrees'
     verbs:
       - get
       - list

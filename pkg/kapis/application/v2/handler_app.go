@@ -182,13 +182,13 @@ func (h *appHandler) ListApps(req *restful.Request, resp *restful.Response) {
 	for _, v := range rawAppList {
 		app := v.(*appv2.Application)
 		app.SetManagedFields(nil)
+		if app.Annotations == nil {
+			app.Annotations = map[string]string{}
+		}
 
 		category := &appv2.Category{}
 		err = h.client.Get(req.Request.Context(), runtimeclient.ObjectKey{Name: app.GetCategory()}, category)
-		if err != nil {
-			if app.Annotations == nil {
-				app.Annotations = map[string]string{}
-			}
+		if err == nil {
 			app.Annotations[appv2.AppCategoryNameKey] = category.Spec.DisplayName.Default()
 		}
 
