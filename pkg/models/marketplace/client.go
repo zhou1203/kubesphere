@@ -157,8 +157,11 @@ func (c *client) UserInfo(token string) (*UserInfo, error) {
 }
 
 func (c *client) ListSubscriptions(extensionID string) ([]Subscription, error) {
-	page := 1
+	if !c.options.Account.IsValid() {
+		return nil, fmt.Errorf("marketplace client is not authorized")
+	}
 	subscriptions := make([]Subscription, 0)
+	page := 1
 	for {
 		result := &SubscriptionList{}
 		err := retry.OnError(retry.DefaultRetry, func(err error) bool {

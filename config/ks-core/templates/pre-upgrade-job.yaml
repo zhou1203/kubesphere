@@ -1,4 +1,4 @@
-{{- if .Values.upgrade.enabled }}
+{{- if not .Values.upgrade.disabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -43,7 +43,6 @@ spec:
 {{- end }}
 
 ---
-
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -51,7 +50,7 @@ metadata:
   annotations:
     "helm.sh/hook": pre-upgrade
     "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
 spec:
   template:
     spec:
