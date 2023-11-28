@@ -348,15 +348,17 @@ func (t *tenantOperator) UpdateNamespace(workspace string, namespace *corev1.Nam
 }
 
 func (t *tenantOperator) PatchNamespace(workspace string, namespace *corev1.Namespace) (*corev1.Namespace, error) {
-	old, err := t.DescribeNamespace(workspace, namespace.Name)
+	if _, err := t.DescribeNamespace(workspace, namespace.Name); err != nil {
+		return nil, err
+	}
+	if namespace.Labels != nil {
+		namespace.Labels[tenantv1alpha1.WorkspaceLabel] = workspace
+	}
+	data, err := json.Marshal(namespace)
 	if err != nil {
 		return nil, err
 	}
-	newNamespace := namespace.DeepCopy()
-	if newNamespace.Labels != nil {
-		newNamespace.Labels[tenantv1alpha1.WorkspaceLabel] = workspace
-	}
-	return newNamespace, t.client.Patch(context.Background(), newNamespace, runtimeclient.MergeFrom(old))
+	return namespace, t.client.Patch(context.Background(), namespace, runtimeclient.RawPatch(types.MergePatchType, data))
 }
 
 func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string, data json.RawMessage) (*tenantv1alpha2.WorkspaceTemplate, error) {
