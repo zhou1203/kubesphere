@@ -25,7 +25,7 @@ import (
 const (
 	// defaultKSCloudURL for ksCloud.
 	// test environment is https://clouddev.kubesphere.io. product environment is https://kubesphere.cloud
-	defaultKSCloudURL = "https://clouddev.kubesphere.io"
+	defaultKSCloudURL = "https://kubesphere.cloud"
 
 	// defaultPeriod is when to telemetry
 	defaultPeriod = time.Hour * 24
@@ -37,16 +37,16 @@ const (
 // Options is the config data for telemetry.
 type Options struct {
 	// true enable collect data. false disable collect data.
-	Enabled *bool `json:"enabled" yaml:"enabled" mapstructure:"enabled"`
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty" mapstructure:"enabled"`
 
 	// KSCloudURL for kubesphere cloud
-	KSCloudURL *string `json:"ksCloudUrl" yaml:"ksCloudUrl" mapstructure:"ksCloudUrl"`
+	KSCloudURL *string `json:"ksCloudUrl,omitempty" yaml:"ksCloudUrl,omitempty" mapstructure:"ksCloudUrl"`
 
 	// collect period
-	Period *time.Duration `json:"period" yaml:"period" mapstructure:"period"`
+	Period *time.Duration `json:"period,omitempty" yaml:"period,omitempty" mapstructure:"period"`
 
 	// history data live time
-	ClusterInfoLiveTime *time.Duration `json:"clusterInfoLiveTime" yaml:"clusterInfoLiveTime" mapstructure:"clusterInfoLiveTime"`
+	ClusterInfoLiveTime *time.Duration `json:"clusterInfoLiveTime,omitempty" yaml:"clusterInfoLiveTime,omitempty" mapstructure:"clusterInfoLiveTime"`
 }
 
 func NewTelemetryOptions() *Options {

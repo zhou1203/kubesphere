@@ -60,14 +60,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	if clusterInfo.CreationTimestamp.Add(*r.Options.ClusterInfoLiveTime).Before(time.Now()) {
 		if err := r.Client.Delete(ctx, clusterInfo); err != nil {
 			klog.Errorf("delete expired clusterInfo %s error %s", request.Name, err)
-			return reconcile.Result{}, err
+			return reconcile.Result{}, nil
 		}
 	}
 
 	// sync data to ksCloud.
 	if clusterInfo.Status != nil && clusterInfo.Status.SyncTime == nil {
 		if err := r.syncToKSCloud(ctx, clusterInfo); err != nil {
-			return reconcile.Result{}, err
+			klog.Errorf("sync clusterInfo %s to ksCloud error %s", request.Name, err)
+			return reconcile.Result{}, nil
 		}
 	}
 
