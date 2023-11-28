@@ -501,14 +501,15 @@ func (r *Reconciler) syncClusterMembers(ctx context.Context, cluster *clusterv1a
 	if err := r.List(ctx, users); err != nil {
 		return err
 	}
-	clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
-	if err != nil {
-		return fmt.Errorf("failed to get cluster client: %s", err)
-	}
 
 	grantedUsers := sets.New[string]()
 	clusterName := cluster.Name
 	if cluster.DeletionTimestamp.IsZero() {
+		clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
+		if err != nil {
+			return fmt.Errorf("failed to get cluster client: %s", err)
+		}
+
 		clusterRoleBindings := &iamv1beta1.ClusterRoleBindingList{}
 		if err := clusterClient.List(ctx, clusterRoleBindings, client.HasLabels{iamv1beta1.UserReferenceLabel}); err != nil {
 			return fmt.Errorf("failed to list clusterrolebindings: %s", err)
