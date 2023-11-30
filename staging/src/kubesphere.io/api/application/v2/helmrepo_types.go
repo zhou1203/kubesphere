@@ -17,10 +17,6 @@ limitations under the License.
 package v2
 
 import (
-	"crypto/md5"
-	"encoding/json"
-	"fmt"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kubesphere.io/api/constants"
@@ -57,13 +53,8 @@ type HelmRepoSpec struct {
 
 // HelmRepoStatus defines the observed state of HelmRepo
 type HelmRepoStatus struct {
-	// status last update time
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
-	// current state of the repo, successful, failed or syncing
-	State string `json:"state,omitempty"`
-	// current release spec hash
-	// This is used to compare whether the spec has been modified to determine sync is needed.
-	SpecHash string `json:"specHash,omitempty"`
+	State          string       `json:"state,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -98,9 +89,4 @@ func (in *HelmRepo) GetWorkspace() string {
 
 func (in *HelmRepo) GetCreator() string {
 	return getValue(in.Annotations, constants.CreatorAnnotationKey)
-}
-
-func (in *HelmRepo) HashSpec() string {
-	specJSON, _ := json.Marshal(in.Spec)
-	return fmt.Sprintf("%x", md5.Sum(specJSON))
 }

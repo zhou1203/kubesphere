@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	appv2 "kubesphere.io/api/application/v2"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -78,19 +77,11 @@ func (r *AppCategoryReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	apps := &appv2.ApplicationList{}
-	if err := r.List(ctx, apps, client.MatchingLabels{appv2.AppCategoryLabelKey: category.Name}); err != nil {
+	if err := r.List(ctx, apps, client.MatchingLabels{appv2.AppCategoryNameKey: category.Name}); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	total := 0
-	for _, app := range apps.Items {
-		// just count active application
-		if app.Status.State == appv2.ReviewStatusActive {
-			total++
-		}
-	}
-	if category.Status.Total != total {
-		category.Status.Total = total
+	if category.Status.Total != len(apps.Items) {
+		category.Status.Total = len(apps.Items)
 		if err := r.Status().Update(ctx, category); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -107,9 +98,7 @@ func (r *AppCategoryReconciler) ensureUncategorizedCategory() error {
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
-
 	ctg.Name = appv2.UncategorizedCategoryID
-	ctg.Spec.DisplayName = corev1alpha1.NewLocales("Uncategorized", "未分类")
 
 	return r.Create(context.TODO(), ctg)
 }
@@ -125,11 +114,9 @@ func (r *AppCategoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
 				var requests []reconcile.Request
 				app := object.(*appv2.Application)
-				if categoryID := app.Labels[appv2.AppCategoryLabelKey]; categoryID != "" {
+				if categoryID := app.Labels[appv2.AppCategoryNameKey]; categoryID != "" {
 					requests = append(requests, reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Name: categoryID,
-						},
+						NamespacedName: types.NamespacedName{Name: categoryID},
 					})
 				}
 				return requests

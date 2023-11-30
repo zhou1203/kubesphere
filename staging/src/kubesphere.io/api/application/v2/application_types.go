@@ -20,16 +20,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kubesphere.io/api/constants"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
 // ApplicationSpec defines the desired state of Application
 type ApplicationSpec struct {
-	DisplayName corev1alpha1.Locales `json:"displayName"`
-	Description corev1alpha1.Locales `json:"description,omitempty"`
-	AppHome     string               `json:"appHome,omitempty"`
-	AppType     string               `json:"appType,omitempty"`
-	Icon        string               `json:"icon,omitempty"`
+	AppHome string `json:"appHome,omitempty"`
+	AppType string `json:"appType,omitempty"`
+	Icon    string `json:"icon,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application
@@ -42,7 +39,6 @@ type ApplicationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=app
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="application name",type=string,JSONPath=`.spec.displayName.en`
 // +kubebuilder:printcolumn:name="workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
@@ -72,9 +68,6 @@ func getValue(m map[string]string, key string) string {
 	return m[key]
 }
 
-func (in *Application) GetCategory() string {
-	return getValue(in.Labels, AppCategoryLabelKey)
-}
 func (in *Application) GetWorkspace() string {
 	return getValue(in.Labels, constants.WorkspaceLabelKey)
 }

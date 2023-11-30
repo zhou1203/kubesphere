@@ -5,12 +5,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-
-	gopkgyaml "gopkg.in/yaml.v2"
-
+	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
+
+	"github.com/blang/semver/v4"
+	gopkgyaml "gopkg.in/yaml.v2"
+	"k8s.io/apimachinery/pkg/labels"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -21,67 +24,71 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	appv2 "kubesphere.io/api/application/v2"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
-type VersionRequest struct {
-	RepoName    string   `json:"RepoName"`
-	Name        string   `json:"Name,omitempty"`
-	AppName     string   `json:"appName,omitempty"`
-	Home        string   `json:"home,omitempty"`
-	Version     string   `json:"version,omitempty"`
-	Icon        string   `json:"icon,omitempty"`
-	Sources     []string `json:"sources,omitempty"`
-	Digest      string   `json:"digest,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Data        []byte
-	AppType     string             `json:"app_type,omitempty"`
-	Maintainers []appv2.Maintainer `json:"maintainers,omitempty"`
+type AppRequest struct {
+	RepoName     string                   `json:"repoName,omitempty"`
+	AppName      string                   `json:"appName,omitempty"`
+	AliasName    string                   `json:"aliasName,omitempty"`
+	VersionName  string                   `json:"versionName,omitempty"`
+	AppHome      string                   `json:"appHome,omitempty"`
+	Url          string                   `json:"url,omitempty"`
+	Icon         string                   `json:"icon,omitempty"`
+	Digest       string                   `json:"digest,omitempty"`
+	Workspace    string                   `json:"workspace,omitempty"`
+	Description  string                   `json:"description,omitempty"`
+	CategoryName string                   `json:"categoryName,omitempty"`
+	AppType      string                   `json:"appType,omitempty"`
+	Package      []byte                   `json:"package,omitempty"`
+	Credential   appv2.HelmRepoCredential `json:"credential,omitempty"`
+	Maintainers  []appv2.Maintainer       `json:"maintainers,omitempty"`
 }
 
-type NewAppRequest struct {
-	RepoName    string
-	AppName     string
-	Url         string
-	Icon        string
-	AppHome     string
-	Workspace   string
-	Description string
-	AppType     string                   `json:"appType,omitempty"`
-	Credential  appv2.HelmRepoCredential `json:"credential,omitempty"`
-}
-
-func CreateOrUpdateApp(ctx context.Context, client client.Client, owner metav1.Object, request NewAppRequest, vRequests []VersionRequest) error {
+func CreateOrUpdateApp(ctx context.Context, client client.Client, request AppRequest, vRequests []AppRequest) error {
 
 	app := appv2.Application{}
 	app.Name = request.AppName
 
 	operationResult, err := controllerutil.CreateOrUpdate(ctx, client, &app, func() error {
-
-		if owner != nil {
-			if err := controllerutil.SetControllerReference(owner, &app, scheme.Scheme); err != nil {
-				klog.Errorf("%s SetControllerReference failed, err:%v", app.Name, err)
-				return err
-			}
-		}
-
 		app.Spec = appv2.ApplicationSpec{
-			DisplayName: corev1alpha1.NewLocales(request.AppName, request.AppName),
-			Description: corev1alpha1.NewLocales(request.Description, request.Description),
-			Icon:        request.Icon,
-			AppHome:     request.AppHome,
-			AppType:     request.AppType,
+			Icon:    request.Icon,
+			AppHome: request.AppHome,
+			AppType: request.AppType,
 		}
-		app.Labels = map[string]string{
-			appv2.RepoIDLabelKey:        request.RepoName,
-			appv2.AppTypeLabelKey:       request.AppType,
-			constants.WorkspaceLabelKey: request.Workspace,
+		labels := app.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
 		}
+		labels[appv2.RepoIDLabelKey] = request.RepoName
+		labels[appv2.AppTypeLabelKey] = request.AppType
+
+		if request.CategoryName != "" {
+			labels[appv2.AppCategoryNameKey] = request.CategoryName
+		} else {
+			labels[appv2.AppCategoryNameKey] = appv2.UncategorizedCategoryID
+		}
+
+		labels[constants.WorkspaceLabelKey] = request.Workspace
+		app.SetLabels(labels)
+
+		ant := app.GetAnnotations()
+		if ant == nil {
+			ant = make(map[string]string)
+		}
+		ant[constants.DisplayNameAnnotationKey] = request.AliasName
+		ant[constants.DescriptionAnnotationKey] = request.Description
+		if len(request.Maintainers) > 0 {
+			ant[appv2.AppMaintainersKey] = request.Maintainers[0].Name
+		}
+
+		app.SetAnnotations(ant)
+
 		return nil
 	})
 	if err != nil {
@@ -98,7 +105,7 @@ func CreateOrUpdateApp(ctx context.Context, client client.Client, owner metav1.O
 	}
 
 	for _, vRequest := range vRequests {
-		if err = CreateOrUpdateAppVersion(ctx, client, request, app, vRequest); err != nil {
+		if err = CreateOrUpdateAppVersion(ctx, client, app, vRequest); err != nil {
 			return err
 		}
 	}
@@ -106,38 +113,47 @@ func CreateOrUpdateApp(ctx context.Context, client client.Client, owner metav1.O
 	return nil
 }
 
-func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, request NewAppRequest, app appv2.Application, vRequest VersionRequest) error {
+func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, app appv2.Application, vRequest AppRequest) error {
 
 	//1. create or update app version
 	appVersion := appv2.ApplicationVersion{}
-	appVersion.Name = vRequest.Name
+	appVersion.Name = fmt.Sprintf("%s-%s-%s", vRequest.RepoName, app.Name, vRequest.VersionName)
 
 	mutateFn := func() error {
-
 		if err := controllerutil.SetControllerReference(&app, &appVersion, scheme.Scheme); err != nil {
 			klog.Errorf("%s SetControllerReference failed, err:%v", appVersion.Name, err)
 			return err
 		}
-
 		appVersion.Spec = appv2.ApplicationVersionSpec{
-			DisplayName: corev1alpha1.NewLocales(vRequest.AppName, vRequest.AppName),
-			Version:     vRequest.Version,
-			Home:        vRequest.Home,
+			VersionName: vRequest.VersionName,
+			AppHome:     vRequest.AppHome,
 			Icon:        vRequest.Icon,
-			Description: corev1alpha1.NewLocales(vRequest.Description, vRequest.Description),
-			Sources:     vRequest.Sources,
 			Created:     &metav1.Time{Time: time.Now()},
 			Digest:      vRequest.Digest,
-			AppType:     request.AppType,
+			AppType:     vRequest.AppType,
 			Maintainer:  vRequest.Maintainers,
 		}
 
-		appVersion.Labels = map[string]string{
-			appv2.RepoIDLabelKey:        request.RepoName,
-			appv2.AppIDLabelKey:         request.AppName,
-			appv2.AppTypeLabelKey:       request.AppType,
-			constants.WorkspaceLabelKey: request.Workspace,
+		labels := appVersion.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
 		}
+		labels[appv2.RepoIDLabelKey] = vRequest.RepoName
+		labels[appv2.AppIDLabelKey] = vRequest.AppName
+		labels[appv2.AppTypeLabelKey] = vRequest.AppType
+		labels[constants.WorkspaceLabelKey] = vRequest.Workspace
+		appVersion.SetLabels(labels)
+
+		ant := appVersion.GetAnnotations()
+		if ant == nil {
+			ant = make(map[string]string)
+		}
+		ant[constants.DisplayNameAnnotationKey] = vRequest.AliasName
+		ant[constants.DescriptionAnnotationKey] = vRequest.Description
+		if len(vRequest.Maintainers) > 0 {
+			ant[appv2.AppMaintainersKey] = vRequest.Maintainers[0].Name
+		}
+		appVersion.SetAnnotations(ant)
 		return nil
 	}
 	operationResult, err := controllerutil.CreateOrUpdate(ctx, client, &appVersion, mutateFn)
@@ -151,13 +167,12 @@ func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, request
 	cm := &corev1.ConfigMap{}
 	cm.Name = appVersion.Name
 	cm.Namespace = constants.KubeSphereNamespace
-
 	_, err = controllerutil.CreateOrUpdate(ctx, client, cm, func() error {
 		if err = controllerutil.SetControllerReference(&appVersion, cm, scheme.Scheme); err != nil {
 			klog.Errorf("%s SetControllerReference failed, err:%v", cm.Name, err)
 			return err
 		}
-		cm.BinaryData = map[string][]byte{appv2.BinaryKey: vRequest.Data}
+		cm.BinaryData = map[string][]byte{appv2.BinaryKey: vRequest.Package}
 		label := map[string]string{"appType": vRequest.AppType}
 		cm.SetLabels(label)
 		return nil
@@ -169,6 +184,32 @@ func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, request
 	}
 	appVersion.Status.Updated = &metav1.Time{Time: time.Now()}
 	err = client.Status().Update(ctx, &appVersion)
+
+	//4. update app latest version
+	appVersionList := appv2.ApplicationVersionList{}
+	lbs := labels.SelectorFromSet(labels.Set{appv2.AppIDLabelKey: app.Name})
+	opt := runtimeclient.ListOptions{LabelSelector: lbs}
+	err = client.List(ctx, &appVersionList, &opt)
+	if err != nil {
+		return err
+	}
+
+	latestAppVersion := "0.0.0"
+	for _, v := range appVersionList.Items {
+		parsedVersion, err := semver.Make(strings.TrimPrefix(v.Spec.VersionName, "v"))
+		if err != nil {
+			klog.Info("Failed to parse version: ", v.Spec.VersionName)
+			continue
+		}
+		if parsedVersion.GT(semver.MustParse(strings.TrimPrefix(latestAppVersion, "v"))) {
+			latestAppVersion = v.Spec.VersionName
+		}
+	}
+
+	ant := app.GetAnnotations()
+	ant[appv2.LatestAppVersionKey] = latestAppVersion
+	app.SetAnnotations(ant)
+	err = client.Update(ctx, &app)
 
 	return err
 }

@@ -68,7 +68,7 @@ func (h *appHandler) AddToContainer(c *restful.Container) error {
 		Doc("Describe the specified global repository").
 		Param(webservice.PathParameter("repo", "repo id")))
 
-	webservice.Route(webservice.POST("/repos/{repo}").
+	webservice.Route(webservice.PATCH("/repos/{repo}").
 		Consumes(mimePatch...).
 		To(h.CreateOrUpdateRepo).
 		Doc("Patch the specified repository in the specified workspace").
@@ -106,7 +106,7 @@ func (h *appHandler) AddToContainer(c *restful.Container) error {
 		Param(webservice.PathParameter("workspace", "workspace")).
 		Param(webservice.PathParameter("repo", "repo id")))
 
-	webservice.Route(webservice.POST("/workspaces/{workspace}/repos/{repo}").
+	webservice.Route(webservice.PATCH("/workspaces/{workspace}/repos/{repo}").
 		Consumes(mimePatch...).
 		To(h.CreateOrUpdateRepo).
 		Doc("Patch the specified repository in the specified workspace").
@@ -296,6 +296,13 @@ func (h *appHandler) AddToContainer(c *restful.Container) error {
 		Param(webservice.PathParameter("version", "app template version id")).
 		Param(webservice.PathParameter("app", "app template id")))
 
+	webservice.Route(webservice.POST("/workspaces/{workspace}/apps/{app}/versions/{version}/action").
+		To(h.AppVersionAction).
+		Doc("Perform submit or other operations on app").
+		Returns(http.StatusOK, api.StatusOK, errors.Error{}).
+		Param(webservice.PathParameter("version", "app template version id")).
+		Param(webservice.PathParameter("app", "app template id")))
+
 	// application release
 
 	webservice.Route(webservice.GET("/applications").
@@ -329,6 +336,11 @@ func (h *appHandler) AddToContainer(c *restful.Container) error {
 
 	// API called under namespace
 	webservice.Route(webservice.GET("/namespaces/{namespace}/applications").
+		To(h.ListAppRls).
+		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}).
+		Doc("List all applications within the specified cluster and workspace").
+		Param(webservice.PathParameter("namespace", "namespace").Required(true)))
+	webservice.Route(webservice.GET("/workspaces/{workspace}/applications").
 		To(h.ListAppRls).
 		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}).
 		Doc("List all applications within the specified cluster and workspace").
@@ -374,7 +386,7 @@ func (h *appHandler) AddToContainer(c *restful.Container) error {
 		Returns(http.StatusOK, api.StatusOK, errors.Error{}).
 		Param(webservice.PathParameter("category", "category id")))
 
-	webservice.Route(webservice.PUT("/categories/{category}").
+	webservice.Route(webservice.POST("/categories/{category}").
 		Consumes(mimePatch...).
 		To(h.CreateOrUpdateCategory).
 		Doc("Patch the specified category").

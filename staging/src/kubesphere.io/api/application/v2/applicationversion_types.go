@@ -20,35 +20,30 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kubesphere.io/api/constants"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
 // ApplicationVersionSpec defines the desired state of ApplicationVersion
 type ApplicationVersionSpec struct {
-	DisplayName corev1alpha1.Locales `json:"displayName"`
-	Version     string               `json:"version"`
-	Home        string               `json:"home,omitempty"`
-	Icon        string               `json:"icon,omitempty"`
-	Description corev1alpha1.Locales `json:"description,omitempty"`
-	Sources     []string             `json:"sources,omitempty"`
-	Created     *metav1.Time         `json:"created,omitempty"`
-	Digest      string               `json:"digest,omitempty"`
-	AppType     string               `json:"appType,omitempty"`
-	Maintainer  []Maintainer         `json:"maintainer,omitempty"`
+	VersionName string       `json:"versionName"`
+	AppHome     string       `json:"appHome,omitempty"`
+	Icon        string       `json:"icon,omitempty"`
+	Created     *metav1.Time `json:"created,omitempty"`
+	Digest      string       `json:"digest,omitempty"`
+	AppType     string       `json:"appType,omitempty"`
+	Maintainer  []Maintainer `json:"maintainer,omitempty"`
 }
 
 // ApplicationVersionStatus defines the observed state of ApplicationVersion
 type ApplicationVersionStatus struct {
 	State    string       `json:"state,omitempty"`
 	Message  string       `json:"message,omitempty"`
-	UserName string       `json:"user_name,omitempty"`
+	UserName string       `json:"userName,omitempty"`
 	Updated  *metav1.Time `json:"updated,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=appver
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="application name",type=string,JSONPath=`.spec.displayName.en`
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
@@ -63,22 +58,17 @@ type ApplicationVersion struct {
 
 // Maintainer describes a Chart maintainer.
 type Maintainer struct {
-	// Name is a user name or organization name
-	Name string `json:"name,omitempty"`
-	// Email is an optional email address to contact the named maintainer
+	Name  string `json:"name,omitempty"`
 	Email string `json:"email,omitempty"`
-	// URL is an optional URL to an address for the named maintainer
-	URL string `json:"url,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
 // Metadata for a Application detail.
 type Metadata struct {
-	DisplayName corev1alpha1.Locales `json:"displayName"`
-	Version     string               `json:"version"`
-	Home        string               `json:"home,omitempty"`
-	Icon        string               `json:"icon,omitempty"`
-	Description corev1alpha1.Locales `json:"description,omitempty"`
-	Sources     []string             `json:"sources,omitempty"`
+	Version string   `json:"version"`
+	Home    string   `json:"home,omitempty"`
+	Icon    string   `json:"icon,omitempty"`
+	Sources []string `json:"sources,omitempty"`
 }
 
 // +kubebuilder:object:root=true

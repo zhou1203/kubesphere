@@ -14,7 +14,6 @@ limitations under the License.
 package v2
 
 import (
-	"fmt"
 	"net/url"
 
 	"github.com/emicklei/go-restful/v3"
@@ -29,7 +28,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/controller/application/installer"
 	"kubesphere.io/kubesphere/pkg/server/errors"
-	"kubesphere.io/kubesphere/pkg/utils/idutils"
 	"kubesphere.io/kubesphere/pkg/utils/stringutils"
 )
 
@@ -43,10 +41,8 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 
 	repoId := req.PathParameter("repo")
 	if repoId == "" {
-		prefix := fmt.Sprintf("%s-", repoRequest.Name)
-		repoId = idutils.GetUuid36(prefix)
+		repoId = repoRequest.Name
 	}
-
 	repo := &appv2.HelmRepo{}
 	repo.Name = repoId
 	parsedUrl, err := url.Parse(repoRequest.Spec.Url)
@@ -85,7 +81,10 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 			repo.Spec.Credential.Username = parsedUrl.User.Username()
 			repo.Spec.Credential.Password, _ = parsedUrl.User.Password()
 		}
-		repo.SetLabels(map[string]string{constants.WorkspaceLabelKey: workspace})
+		if repo.GetLabels() == nil {
+			repo.SetLabels(map[string]string{})
+		}
+		repo.Labels[constants.WorkspaceLabelKey] = workspace
 
 		return nil
 	}

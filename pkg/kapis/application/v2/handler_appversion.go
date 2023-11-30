@@ -3,7 +3,7 @@ package v2
 import (
 	"bytes"
 	"fmt"
-	"strconv"
+	"strings"
 
 	"github.com/emicklei/go-restful/v3"
 	"golang.org/x/net/context"
@@ -15,36 +15,26 @@ import (
 	appv2 "kubesphere.io/api/application/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	resv1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
+	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
+
 	"kubesphere.io/kubesphere/pkg/server/params"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 	"kubesphere.io/kubesphere/pkg/simple/client/application"
 )
 
 func (h *appHandler) CreateOrUpdateAppVersion(req *restful.Request, resp *restful.Response) {
-	var createAppVersionRequest CreateAppVersionRequest
+	var createAppVersionRequest application.AppRequest
 	err := req.ReadEntity(&createAppVersionRequest)
 	if requestDone(err, resp) {
 		return
 	}
 
-	validate, _ := strconv.ParseBool(req.QueryParameter("validate"))
-	chartPack, err := loader.LoadArchive(bytes.NewReader(createAppVersionRequest.Package))
-	if requestDone(err, resp) {
-		return
-	}
-	if validate {
-		resp.WriteAsJson(chartPack)
-		return
-	}
-
-	createAppVersionRequest.AppId = req.PathParameter("app")
+	createAppVersionRequest.AppName = req.PathParameter("app")
 	app := appv2.Application{}
-	err = h.client.Get(req.Request.Context(), runtimeclient.ObjectKey{Name: createAppVersionRequest.AppId}, &app)
+	err = h.client.Get(req.Request.Context(), runtimeclient.ObjectKey{Name: createAppVersionRequest.AppName}, &app)
 	if requestDone(err, resp) {
 		return
 	}
@@ -54,33 +44,17 @@ func (h *appHandler) CreateOrUpdateAppVersion(req *restful.Request, resp *restfu
 		workspace = appv2.SystemWorkspace
 	}
 
-	var (
-		appRequest application.NewAppRequest
-		vRequest   []application.VersionRequest
-	)
-	if createAppVersionRequest.AppType == appv2.AppTypeHelm {
-		appRequest, vRequest, err = h.helmRequest(chartPack, workspace, createAppVersionRequest.Package)
-		if err != nil {
-			api.HandleInternalError(resp, nil, err)
-			return
-		}
-	}
-	if createAppVersionRequest.AppType == appv2.AppTypeYaml || createAppVersionRequest.AppType == appv2.AppTypeEdge {
-		appRequest, vRequest = yamlRequest(
-			createAppVersionRequest.AppId,
-			createAppVersionRequest.VersionName,
-			workspace,
-			createAppVersionRequest.AppType,
-			createAppVersionRequest.Package,
-		)
+	_, vRequest, err := parseRequest(createAppVersionRequest, workspace)
+	if requestDone(err, resp) {
+		return
 	}
 
-	err = application.CreateOrUpdateAppVersion(context.TODO(), h.client, appRequest, app, vRequest[0])
+	err = application.CreateOrUpdateAppVersion(context.TODO(), h.client, app, vRequest)
 	if requestDone(err, resp) {
 		return
 	}
 	data := map[string]interface{}{
-		"version_id": vRequest[0].Version,
+		"versionID": vRequest.VersionName,
 	}
 
 	resp.WriteAsJson(data)
@@ -146,9 +120,9 @@ func (h *appHandler) GetAppVersionPackage(req *restful.Request, resp *restful.Re
 		return
 	}
 	data := map[string]interface{}{
-		"version_id": versionId,
-		"package":    configMap.BinaryData[appv2.BinaryKey],
-		"app_id":     app,
+		"versionID": versionId,
+		"package":   configMap.BinaryData[appv2.BinaryKey],
+		"appID":     app,
 	}
 
 	resp.WriteAsJson(data)
@@ -226,11 +200,7 @@ func (h *appHandler) AppVersionAction(req *restful.Request, resp *restful.Respon
 		return
 	}
 
-	appVersion.Status.State = doActionRequest.State
-	appVersion.Status.Message = doActionRequest.Message
-	appVersion.Status.UserName = doActionRequest.UserName
-	appVersion.Status.Updated = &metav1.Time{Time: metav1.Now().Time}
-	err = h.client.Status().Update(context.TODO(), appVersion)
+	err = DoAppVersionAction(versionID, doActionRequest, h.client)
 	if requestDone(err, resp) {
 		return
 	}
@@ -257,8 +227,6 @@ func DoAppVersionAction(versionId string, actionReq appv2.ApplicationVersionStat
 }
 
 func (h *appHandler) ListReviews(req *restful.Request, resp *restful.Response) {
-	var err error
-	queryParams := query.ParseQueryParameter(req)
 	conditions, err := params.ParseConditions(req)
 
 	if requestDone(err, resp) {
@@ -276,8 +244,18 @@ func (h *appHandler) ListReviews(req *restful.Request, resp *restful.Response) {
 		return
 	}
 
-	filtered := appReviewsStatusFilter(appVersions.Items, conditions)
-	items, _, totalCount := resv1beta1.DefaultList(filtered, queryParams, resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
+	filteredAppVersions := appv2.ApplicationVersionList{}
+	for _, version := range appVersions.Items {
+		curVersion := version
+		if conditions.Match[Status] != "" {
+			states := strings.Split(conditions.Match[Status], "|")
+			state := curVersion.Status.State
+			if !sliceutil.HasString(states, state) {
+				continue
+			}
+		}
+		filteredAppVersions.Items = append(filteredAppVersions.Items, curVersion)
+	}
 
-	resp.WriteEntity(api.ListResult{Items: items, TotalItems: int(*totalCount)})
+	resp.WriteEntity(convertToListResult(&filteredAppVersions, req))
 }

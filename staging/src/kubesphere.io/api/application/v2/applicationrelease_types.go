@@ -28,10 +28,10 @@ import (
 
 // ApplicationReleaseSpec defines the desired state of ApplicationRelease
 type ApplicationReleaseSpec struct {
-	AppID        string `json:"app_id"`
-	AppVersionID string `json:"appVersion_id"`
+	AppID        string `json:"appID"`
+	AppVersionID string `json:"appVersionID"`
 	Values       []byte `json:"values,omitempty"`
-	AppType      string `json:"app_type,omitempty"`
+	AppType      string `json:"appType,omitempty"`
 }
 
 // ApplicationReleaseStatus defines the observed state of ApplicationRelease
@@ -94,12 +94,12 @@ func (in *ApplicationRelease) GetRlsCluster() string {
 	return "host"
 }
 
-func (in *ApplicationRelease) GetWorkspace() string {
-	return getValue(in.Labels, constants.WorkspaceLabelKey)
-}
-
 func (in *ApplicationRelease) GetRlsNamespace() string {
-	return getValue(in.Labels, constants.NamespaceLabelKey)
+	ns := getValue(in.Labels, constants.NamespaceLabelKey)
+	if ns == "" {
+		return "default"
+	}
+	return ns
 }
 
 func (in *ApplicationRelease) HashSpec() string {

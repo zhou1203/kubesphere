@@ -46,25 +46,14 @@ spec:
           spec:
             description: CategorySpec defines the desired state of HelmRepo
             properties:
-              description:
-                additionalProperties:
-                  type: string
-                type: object
-              displayName:
-                additionalProperties:
-                  type: string
-                type: object
               icon:
                 type: string
               locale:
                 type: string
-            required:
-            - displayName
             type: object
           status:
             properties:
               total:
-                description: total helmapplications belong to this category
                 type: integer
             required:
             - total

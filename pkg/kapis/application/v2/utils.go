@@ -17,45 +17,41 @@ limitations under the License.
 package v2
 
 import (
-	"strings"
+	"bytes"
+	"errors"
 
-	"k8s.io/apimachinery/pkg/runtime"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	appv2 "kubesphere.io/api/application/v2"
 
-	"kubesphere.io/kubesphere/pkg/server/params"
-	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
+	"kubesphere.io/kubesphere/pkg/simple/client/application"
 )
 
-func appReviewsStatusFilter(versions []appv2.ApplicationVersion, conditions *params.Conditions) []runtime.Object {
-	filtered := make([]runtime.Object, 0)
-	for _, version := range versions {
-		curVersion := version
-		if conditions.Match[Status] != "" {
-			states := strings.Split(conditions.Match[Status], "|")
-			state := curVersion.Status.State
-			if !sliceutil.HasString(states, state) {
-				continue
-			}
+const (
+	Status = "status"
+)
+
+func parseRequest(createRequest application.AppRequest, workspace string) (appRequest, vRequest application.AppRequest, err error) {
+
+	appRequest.Description = createRequest.Description
+	appRequest.AliasName = createRequest.AliasName
+	appRequest.Icon = createRequest.Icon
+
+	if createRequest.AppType == appv2.AppTypeHelm {
+		if createRequest.Package == nil || len(createRequest.Package) == 0 {
+			return appRequest, vRequest, errors.New("package is empty")
 		}
-		filtered = append(filtered, &curVersion)
+		chartPack, err := loader.LoadArchive(bytes.NewReader(createRequest.Package))
+		if err != nil {
+			return appRequest, vRequest, err
+		}
+		appRequest, vRequest = helmRequest(chartPack, workspace, createRequest.Package)
+		return appRequest, vRequest, nil
+	}
+	if createRequest.AppType == appv2.AppTypeYaml || createRequest.AppType == appv2.AppTypeEdge {
+		createRequest.Workspace = workspace
+		createRequest.RepoName = "configyaml"
+		return createRequest, createRequest, nil
 	}
 
-	return filtered
-}
-
-func appStatusFilter(apps []appv2.Application, conditions *params.Conditions) []runtime.Object {
-	filtered := make([]runtime.Object, 0)
-	for _, app := range apps {
-		curApp := app
-		if conditions.Match[Status] != "" {
-			states := strings.Split(conditions.Match[Status], "|")
-			state := curApp.Status.State
-			if !sliceutil.HasString(states, state) {
-				continue
-			}
-		}
-		filtered = append(filtered, &curApp)
-	}
-
-	return filtered
+	return appRequest, vRequest, errors.New("not support app type")
 }

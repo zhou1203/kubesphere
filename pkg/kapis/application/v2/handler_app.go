@@ -1,33 +1,27 @@
 package v2
 
 import (
-	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
+
 	"helm.sh/helm/v3/pkg/chart"
 
-	"github.com/blang/semver/v4"
 	"github.com/emicklei/go-restful/v3"
 	"golang.org/x/net/context"
-	"helm.sh/helm/v3/pkg/chart/loader"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 	appv2 "kubesphere.io/api/application/v2"
 
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/constants"
-	resv1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
-
-	"strconv"
-
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/server/errors"
 	"kubesphere.io/kubesphere/pkg/server/params"
@@ -35,111 +29,78 @@ import (
 )
 
 func (h *appHandler) CreateOrUpdateApp(req *restful.Request, resp *restful.Response) {
-	createAppRequest := &CreateAppRequest{}
-	err := req.ReadEntity(createAppRequest)
+	createAppRequest := application.AppRequest{}
+	err := req.ReadEntity(&createAppRequest)
+	if requestDone(err, resp) {
+		return
+	}
+
+	workspace := req.PathParameter("workspace")
+	if workspace == "" {
+		workspace = appv2.SystemWorkspace
+	}
+	appRequest, vRequest, err := parseRequest(createAppRequest, workspace)
 	if requestDone(err, resp) {
 		return
 	}
 
 	validate, _ := strconv.ParseBool(req.QueryParameter("validate"))
 	if validate {
-		if createAppRequest.AppType == appv2.AppTypeHelm {
-			chartPack, err := loader.LoadArchive(bytes.NewReader(createAppRequest.Package))
-			if requestDone(err, resp) {
-				return
-			}
-			resp.WriteAsJson(chartPack)
-			return
-		} else {
-			resp.WriteEntity(errors.None)
-			return
-		}
+		rv := ValidatePackage(appRequest)
+		resp.WriteAsJson(rv)
+		return
 	}
 
-	var (
-		appRequest application.NewAppRequest
-		vRequest   []application.VersionRequest
-	)
-
-	workspace := req.PathParameter("workspace")
-	if workspace == "" {
-		workspace = appv2.SystemWorkspace
-	}
-
-	if createAppRequest.AppType == appv2.AppTypeHelm {
-		chartPack, err := loader.LoadArchive(bytes.NewReader(createAppRequest.Package))
-		if requestDone(err, resp) {
-			return
-		}
-		appRequest, vRequest, err = h.helmRequest(chartPack, workspace, createAppRequest.Package)
-		if requestDone(err, resp) {
-			return
-		}
-	}
-	if createAppRequest.AppType == appv2.AppTypeYaml || createAppRequest.AppType == appv2.AppTypeEdge {
-		appRequest, vRequest = yamlRequest(
-			createAppRequest.Name,
-			createAppRequest.VersionName,
-			workspace,
-			createAppRequest.AppType,
-			createAppRequest.Package,
-		)
-	}
-
-	appRequest.Description = createAppRequest.Description
-	err = application.CreateOrUpdateApp(context.TODO(), h.client, nil, appRequest, vRequest)
+	v := []application.AppRequest{vRequest}
+	err = application.CreateOrUpdateApp(context.TODO(), h.client, appRequest, v)
 	if requestDone(err, resp) {
 		return
 	}
 	data := map[string]interface{}{
-		"app_id":     appRequest.AppName,
-		"version_id": vRequest[0].Name,
+		"appID":     appRequest.AppName,
+		"versionID": vRequest.VersionName,
 	}
 
 	resp.WriteAsJson(data)
 }
 
-func yamlRequest(name, versionName, workspace, appType string, data []byte) (application.NewAppRequest, []application.VersionRequest) {
-
-	appRequest := application.NewAppRequest{
-		RepoName:  "configyaml",
-		AppName:   name,
-		Workspace: workspace,
-		AppType:   appType,
-	}
-
-	vRequest := []application.VersionRequest{{
-		RepoName: "configyaml",
-		AppName:  appRequest.AppName,
-		Name:     fmt.Sprintf("%s-%s", name, versionName),
-		Version:  versionName,
-		Data:     data,
-		AppType:  appType,
-	}}
-
-	return appRequest, vRequest
+type ValidatePackageResponse struct {
+	Description string
+	Name        string
+	VersionName string
 }
 
-func (h *appHandler) helmRequest(chartPack *chart.Chart, workspace string, data []byte) (application.NewAppRequest, []application.VersionRequest, error) {
+func ValidatePackage(req application.AppRequest) (result application.AppRequest) {
 
-	appRequest := application.NewAppRequest{
-		RepoName:  "upload",
-		AppName:   chartPack.Metadata.Name,
-		Icon:      chartPack.Metadata.Icon,
-		AppHome:   chartPack.Metadata.Home,
-		AppType:   appv2.AppTypeHelm,
-		Workspace: workspace,
+	result.AppName = req.AppName
+	result.VersionName = req.VersionName
+	result.Description = req.Description
+	result.Icon = req.Icon
+
+	return result
+}
+
+func helmRequest(chartPack *chart.Chart, workspace string, data []byte) (appRequest, vRequest application.AppRequest) {
+
+	appRequest = application.AppRequest{
+		RepoName:    "upload",
+		AppName:     chartPack.Metadata.Name,
+		Icon:        chartPack.Metadata.Icon,
+		AppHome:     chartPack.Metadata.Home,
+		AppType:     appv2.AppTypeHelm,
+		Workspace:   workspace,
+		VersionName: chartPack.AppVersion(),
 	}
 
-	vRequest := []application.VersionRequest{{
-		RepoName: "upload",
-		Name:     fmt.Sprintf("%s-%s", chartPack.Metadata.Name, chartPack.AppVersion()),
-		AppName:  appRequest.AppName,
-		Home:     chartPack.Metadata.Home,
-		Version:  chartPack.AppVersion(),
-		Icon:     chartPack.Metadata.Icon,
-		Data:     data,
-		AppType:  appv2.AppTypeHelm,
+	vRequest = application.AppRequest{
+		RepoName:    "upload",
+		VersionName: chartPack.AppVersion(),
+		AppName:     appRequest.AppName,
+		AppHome:     chartPack.Metadata.Home,
+		Icon:        chartPack.Metadata.Icon,
+		Package:     data,
+		AppType:     appv2.AppTypeHelm,
+		Workspace:   workspace,
 		Maintainers: func() []appv2.Maintainer {
 			maintainers := make([]appv2.Maintainer, len(chartPack.Metadata.Maintainers))
 			for i, maintainer := range chartPack.Metadata.Maintainers {
@@ -151,14 +112,13 @@ func (h *appHandler) helmRequest(chartPack *chart.Chart, workspace string, data 
 			}
 			return maintainers
 		}(),
-	}}
+	}
 
-	return appRequest, vRequest, nil
+	return appRequest, vRequest
 }
 
 func (h *appHandler) ListApps(req *restful.Request, resp *restful.Response) {
 	workspace := req.PathParameter("workspace")
-	queryParams := query.ParseQueryParameter(req)
 	conditions, err := params.ParseConditions(req)
 	if requestDone(err, resp) {
 		return
@@ -175,58 +135,20 @@ func (h *appHandler) ListApps(req *restful.Request, resp *restful.Response) {
 		return
 	}
 
-	// TODO optimize filtered
-	filtered := appStatusFilter(result.Items, conditions)
-	rawAppList, _, totalCount := resv1beta1.DefaultList(filtered, queryParams, resv1beta1.DefaultCompare, resv1beta1.DefaultFilter)
-
-	for _, v := range rawAppList {
-		app := v.(*appv2.Application)
-		app.SetManagedFields(nil)
-		if app.Annotations == nil {
-			app.Annotations = map[string]string{}
-		}
-
-		category := &appv2.Category{}
-		err = h.client.Get(req.Request.Context(), runtimeclient.ObjectKey{Name: app.GetCategory()}, category)
-		if err == nil {
-			app.Annotations[appv2.AppCategoryNameKey] = category.Spec.DisplayName.Default()
-		}
-
-		opt := runtimeclient.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{appv2.AppIDLabelKey: app.Name})}
-		appVersionList := appv2.ApplicationVersionList{}
-		h.client.List(req.Request.Context(), &appVersionList, &opt)
-
-		if appVersionList.Items == nil || len(appVersionList.Items) == 0 {
-			klog.Info("Failed to get app version list: ", app.Name)
-			continue
-		}
-
-		// set latest app version and maintainers
-		latestAppVersion := "0.0.0"
-		pos := 0
-		for i, v := range appVersionList.Items {
-			parsedVersion, err := semver.Make(v.Spec.Version)
-			if err != nil {
-				klog.Info("Failed to parse version: ", v.Spec.Version)
+	filtered := appv2.ApplicationList{}
+	for _, app := range result.Items {
+		curApp := app
+		if conditions.Match[Status] != "" {
+			states := strings.Split(conditions.Match[Status], "|")
+			state := curApp.Status.State
+			if !sliceutil.HasString(states, state) {
 				continue
 			}
-			if parsedVersion.GT(semver.MustParse(latestAppVersion)) {
-				latestAppVersion = v.Spec.Version
-				pos = i
-			}
 		}
-		app.Annotations[appv2.LatestAppVersionKey] = latestAppVersion
-		maintainers := ""
-		if appVersionList.Items[pos].Spec.Maintainer != nil {
-			for _, m := range appVersionList.Items[pos].Spec.Maintainer {
-				maintainers = maintainers + m.Name + ","
-			}
-			maintainers = strings.TrimRight(maintainers, ",")
-		}
-		app.Annotations[appv2.AppMaintainersKey] = maintainers
+		filtered.Items = append(filtered.Items, curApp)
 	}
 
-	resp.WriteEntity(api.ListResult{Items: rawAppList, TotalItems: int(*totalCount)})
+	resp.WriteEntity(convertToListResult(&filtered, req))
 }
 
 func (h *appHandler) DescribeApp(req *restful.Request, resp *restful.Response) {
@@ -313,11 +235,7 @@ func (h *appHandler) DoAppAction(req *restful.Request, resp *restful.Response) {
 		if app.Labels == nil {
 			app.Labels = map[string]string{}
 		}
-
 		app.Labels[appv2.AppStoreLabelKey] = "true"
-		if app.Labels[appv2.AppCategoryLabelKey] == "" {
-			app.Labels[appv2.AppCategoryLabelKey] = appv2.UncategorizedCategoryID
-		}
 		h.client.Update(context.Background(), app)
 	}
 
@@ -354,7 +272,7 @@ func (h *appHandler) DoAppAction(req *restful.Request, resp *restful.Response) {
 func (h *appHandler) PatchApp(req *restful.Request, resp *restful.Response) {
 	var err error
 	appId := req.PathParameter("app")
-	appBody := &CreateAppRequest{}
+	appBody := &application.AppRequest{}
 	err = req.ReadEntity(appBody)
 	if requestDone(err, resp) {
 		return
@@ -366,20 +284,28 @@ func (h *appHandler) PatchApp(req *restful.Request, resp *restful.Response) {
 	if requestDone(err, resp) {
 		return
 	}
-
-	if appBody.CategoryID != "" {
-		if app.Labels == nil {
-			app.Labels = map[string]string{}
-		}
-		app.Labels[appv2.AppCategoryLabelKey] = appBody.CategoryID
+	if app.GetLabels() == nil {
+		app.SetLabels(map[string]string{})
+	}
+	if appBody.CategoryName != "" {
+		app.Labels[appv2.AppCategoryNameKey] = appBody.CategoryName
 	}
 
 	if appBody.Icon != "" {
 		app.Spec.Icon = appBody.Icon
 	}
+	ant := app.GetAnnotations()
+	if ant == nil {
+		ant = make(map[string]string)
+	}
 
 	if appBody.Description != "" {
-		app.Spec.Description = corev1alpha1.NewLocales(appBody.Description, appBody.Description)
+		ant[constants.DescriptionAnnotationKey] = appBody.Description
+		app.SetAnnotations(ant)
+	}
+	if appBody.AliasName != "" {
+		ant[constants.DisplayNameAnnotationKey] = appBody.AliasName
+		app.SetAnnotations(ant)
 	}
 
 	err = h.client.Update(context.Background(), app)

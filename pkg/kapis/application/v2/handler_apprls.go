@@ -121,26 +121,20 @@ func (h *appHandler) DeleteAppRls(req *restful.Request, resp *restful.Response) 
 }
 
 func (h *appHandler) ListAppRls(req *restful.Request, resp *restful.Response) {
-
-	cluster := req.PathParameter("cluster")
-	workspace := req.PathParameter("workspace")
-	ns := req.PathParameter("namespace")
-	appID := req.QueryParameter("app_id")
-	lbSet := labels.Set{}
-	if appID != "" {
-		lbSet[appv2.AppIDLabelKey] = appID
+	labelValues := map[string]string{
+		appv2.AppIDLabelKey:           req.QueryParameter("appID"),
+		constants.NamespaceLabelKey:   req.PathParameter("namespace"),
+		constants.WorkspaceLabelKey:   req.PathParameter("workspace"),
+		constants.ClusterNameLabelKey: req.PathParameter("cluster"),
 	}
-	if ns != "" {
-		lbSet[constants.NamespaceLabelKey] = ns
-	}
-	if workspace != "" {
-		lbSet[constants.WorkspaceLabelKey] = workspace
-	}
-	if cluster != "" {
-		lbSet[constants.ClusterNameLabelKey] = cluster
+	labelSet := labels.Set{}
+	for key, value := range labelValues {
+		if value != "" {
+			labelSet[key] = value
+		}
 	}
 
-	opt := runtimeclient.ListOptions{LabelSelector: labels.SelectorFromSet(lbSet)}
+	opt := runtimeclient.ListOptions{LabelSelector: labels.SelectorFromSet(labelSet)}
 	appList := appv2.ApplicationReleaseList{}
 	err := h.client.List(req.Request.Context(), &appList, &opt)
 

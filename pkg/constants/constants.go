@@ -26,6 +26,7 @@ const (
 
 	WorkspaceLabelKey        = "kubesphere.io/workspace"
 	DisplayNameAnnotationKey = "kubesphere.io/alias-name"
+	DescriptionAnnotationKey = "kubesphere.io/description"
 	CreatorAnnotationKey     = "kubesphere.io/creator"
 	UsernameLabelKey         = "kubesphere.io/username"
 	KubefedManagedLabel      = "kubefed.io/managed"

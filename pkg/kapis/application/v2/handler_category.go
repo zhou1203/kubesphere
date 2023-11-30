@@ -20,6 +20,8 @@ import (
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"kubesphere.io/kubesphere/pkg/constants"
+
 	"kubesphere.io/kubesphere/pkg/server/errors"
 )
 
@@ -33,7 +35,15 @@ func (h *appHandler) CreateOrUpdateCategory(req *restful.Request, resp *restful.
 	category := &appv2.Category{}
 	category.Name = createCategoryRequest.Name
 	MutateFn := func() error {
-		createCategoryRequest.DeepCopyInto(category)
+		if category.GetAnnotations() == nil {
+			category.SetAnnotations(map[string]string{})
+		}
+		if createCategoryRequest.GetAnnotations() != nil &&
+			createCategoryRequest.GetAnnotations()[constants.DisplayNameAnnotationKey] != "" {
+			category.Annotations[constants.DisplayNameAnnotationKey] =
+				createCategoryRequest.GetAnnotations()[constants.DisplayNameAnnotationKey]
+		}
+
 		return nil
 	}
 	_, err = controllerutil.CreateOrUpdate(req.Request.Context(), h.client, category, MutateFn)

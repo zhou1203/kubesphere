@@ -58,8 +58,27 @@ func (r *HelmRepoReconciler) Reconcile(ctx context.Context, request reconcile.Re
 	if err := r.Client.Get(ctx, request.NamespacedName, helmRepo); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
+	if helmRepo.Spec.SyncPeriod == 0 {
+		klog.Infof("no sync when SyncPeriod=0, repo: %s", helmRepo.GetName())
+		helmRepo.Status.State = appv2.StatusNosync
+		helmRepo.Status.LastUpdateTime = &metav1.Time{Time: time.Now()}
+		err := r.Client.Status().Update(ctx, helmRepo)
+		if err != nil {
+			klog.Errorf("update status failed, error: %s", err)
+			return reconcile.Result{}, err
+		}
+		return reconcile.Result{}, nil
+	}
 
-	err := r.sync(ctx, helmRepo)
+	helmRepo.Status.State = appv2.StatusUpgrading
+	helmRepo.Status.LastUpdateTime = &metav1.Time{Time: time.Now()}
+	err := r.Client.Status().Update(ctx, helmRepo)
+	if err != nil {
+		klog.Errorf("update status failed, error: %s", err)
+		return reconcile.Result{}, err
+	}
+
+	err = r.sync(ctx, helmRepo)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -84,20 +103,18 @@ func (r *HelmRepoReconciler) sync(ctx context.Context, helmRepo *appv2.HelmRepo)
 			versions = versions[:appv2.MaxNumOfVersions]
 		}
 
-		request := helmAppRequest(helmRepo, versions, name)
-		vRequests, err := helmAppVersionRequest(r.Client, request, versions)
+		request := helmRepoAppRequest(helmRepo, versions, name)
+		vRequests, err := helmRepoVersionRequest(r.Client, request, versions)
 		if err != nil {
 			return err
 		}
-		if err = application.CreateOrUpdateApp(ctx, r.Client, helmRepo, request, vRequests); err != nil {
+		if err = application.CreateOrUpdateApp(ctx, r.Client, request, vRequests); err != nil {
 			return err
 		}
 	}
 
-	helmRepo.Status.SpecHash = helmRepo.HashSpec()
 	helmRepo.Status.State = appv2.StatusSuccessful
 	helmRepo.Status.LastUpdateTime = &metav1.Time{Time: time.Now()}
-
 	err = r.Client.Status().Update(ctx, helmRepo)
 	if err != nil {
 		klog.Errorf("update status failed, error: %s", err)
@@ -109,8 +126,8 @@ func (r *HelmRepoReconciler) sync(ctx context.Context, helmRepo *appv2.HelmRepo)
 	return err
 }
 
-func helmAppRequest(repo *appv2.HelmRepo, versions helmrepo.ChartVersions, name string) application.NewAppRequest {
-	request := application.NewAppRequest{
+func helmRepoAppRequest(repo *appv2.HelmRepo, versions helmrepo.ChartVersions, name string) application.AppRequest {
+	request := application.AppRequest{
 		RepoName:    repo.Name,
 		AppName:     fmt.Sprintf("%s-%s", repo.Name, name),
 		Workspace:   repo.GetWorkspace(),
@@ -125,7 +142,7 @@ func helmAppRequest(repo *appv2.HelmRepo, versions helmrepo.ChartVersions, name 
 	return request
 }
 
-func helmAppVersionRequest(cli client.Client, request application.NewAppRequest, versions helmrepo.ChartVersions) (result []application.VersionRequest, err error) {
+func helmRepoVersionRequest(cli client.Client, request application.AppRequest, versions helmrepo.ChartVersions) (result []application.AppRequest, err error) {
 	appVersionList := &appv2.ApplicationVersionList{}
 
 	opts := client.ListOptions{
@@ -148,14 +165,12 @@ func helmAppVersionRequest(cli client.Client, request application.NewAppRequest,
 		if dig == ver.Digest {
 			continue
 		}
-		vRequest := application.VersionRequest{
+		vRequest := application.AppRequest{
 			RepoName:    request.RepoName,
-			Name:        key,
+			VersionName: ver.Version,
 			AppName:     request.AppName,
-			Home:        ver.Home,
-			Version:     ver.Version,
+			AppHome:     ver.Home,
 			Icon:        ver.Icon,
-			Sources:     ver.Sources,
 			Digest:      ver.Digest,
 			Description: ver.Description,
 			AppType:     appv2.AppTypeHelm,
@@ -165,7 +180,7 @@ func helmAppVersionRequest(cli client.Client, request application.NewAppRequest,
 			klog.Errorf("load chart failed, error: %s", err)
 			continue
 		}
-		vRequest.Data = buf.Bytes()
+		vRequest.Package = buf.Bytes()
 		result = append(result, vRequest)
 	}
 	return result, nil

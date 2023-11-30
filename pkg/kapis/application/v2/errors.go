@@ -17,9 +17,9 @@ limitations under the License.
 package v2
 
 import (
+	goruntime "runtime"
+
 	"github.com/emicklei/go-restful/v3"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,27 +30,15 @@ import (
 	resv1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 )
 
-func handleError(resp *restful.Response, err error) {
-	if status.Code(err) == codes.NotFound {
-		klog.V(4).Infoln(err)
-		api.HandleNotFound(resp, nil, err)
-		return
-	}
-	if status.Code(err) == codes.InvalidArgument || status.Code(err) == codes.FailedPrecondition {
-		klog.V(4).Infoln(err)
-		api.HandleBadRequest(resp, nil, err)
-		return
-	}
-	klog.Errorln(err)
-	api.HandleInternalError(resp, nil, err)
-}
 func requestDone(err error, resp *restful.Response) bool {
+
+	_, file, line, _ := goruntime.Caller(1)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			api.HandleNotFound(resp, nil, err)
 			return true
 		}
-		klog.V(4).Infoln(err)
+		klog.Errorf("%s:%d request done with error: %v", file, line, err)
 		api.HandleInternalError(resp, nil, err)
 		return true
 	}

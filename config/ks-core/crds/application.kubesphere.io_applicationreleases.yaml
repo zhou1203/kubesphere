@@ -56,18 +56,18 @@ spec:
           spec:
             description: ApplicationReleaseSpec defines the desired state of ApplicationRelease
             properties:
-              app_id:
+              appID:
                 type: string
-              app_type:
+              appType:
                 type: string
-              appVersion_id:
+              appVersionID:
                 type: string
               values:
                 format: byte
                 type: string
             required:
-            - appVersion_id
-            - app_id
+            - appID
+            - appVersionID
             type: object
           status:
             description: ApplicationReleaseStatus defines the observed state of ApplicationRelease

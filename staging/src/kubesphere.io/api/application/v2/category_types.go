@@ -18,15 +18,12 @@ package v2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 )
 
 // CategorySpec defines the desired state of HelmRepo
 type CategorySpec struct {
-	DisplayName corev1alpha1.Locales `json:"displayName"`
-	Description corev1alpha1.Locales `json:"description,omitempty"`
-	Icon        string               `json:"icon,omitempty"`
-	Locale      string               `json:"locale,omitempty"`
+	Icon   string `json:"icon,omitempty"`
+	Locale string `json:"locale,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -46,7 +43,6 @@ type Category struct {
 }
 
 type CategoryStatus struct {
-	// total helmapplications belong to this category
 	Total int `json:"total"`
 }
 
