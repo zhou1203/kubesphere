@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
+	"kubesphere.io/kubesphere/pkg/constants"
 )
 
 type ResourceManager interface {
@@ -124,6 +125,10 @@ func DefaultObjectMetaFilter(item metav1.Object, filter query.Filter) bool {
 		return false
 	// /namespaces?page=1&limit=10&name=default
 	case query.FieldName:
+		displayName := item.GetAnnotations()[constants.DisplayNameAnnotationKey]
+		if displayName != "" && strings.Contains(displayName, string(filter.Value)) {
+			return true
+		}
 		return strings.Contains(item.GetName(), string(filter.Value))
 		// /namespaces?page=1&limit=10&uid=a8a8d6cf-f6a5-4fea-9c1b-e57610115706
 	case query.FieldUID:
