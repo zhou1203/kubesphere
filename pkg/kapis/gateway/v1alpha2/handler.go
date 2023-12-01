@@ -18,6 +18,7 @@ package v1alpha2
 
 import (
 	"context"
+	"strings"
 
 	"github.com/emicklei/go-restful/v3"
 	jsonpatch "github.com/evanphx/json-patch/v5"
@@ -41,13 +42,13 @@ type handler struct {
 	cache runtimeclient.Reader
 }
 
-func (h *handler) ListIngressClassScopes(request *restful.Request, response *restful.Response) {
-	currentNs := request.PathParameter("namespace")
+func (h *handler) ListIngressClassScopes(req *restful.Request, resp *restful.Response) {
+	currentNs := req.PathParameter("namespace")
 
 	ingressClassScopeList := v1alpha2.IngressClassScopeList{}
-	err := h.cache.List(context.TODO(), &ingressClassScopeList)
+	err := h.cache.List(req.Request.Context(), &ingressClassScopeList)
 	if err != nil {
-		api.HandleError(response, request, err)
+		api.HandleError(resp, req, err)
 		return
 	}
 
@@ -58,7 +59,7 @@ func (h *handler) ListIngressClassScopes(request *restful.Request, response *res
 
 		// Specify all namespace
 		if len(namespaces) == 0 && nsSelector == "" {
-			_ = h.setStatus(&item)
+			_ = h.setStatus(req.Request.Context(), &item)
 			ret = append(ret, item)
 			continue
 		}
@@ -67,7 +68,7 @@ func (h *handler) ListIngressClassScopes(request *restful.Request, response *res
 		if len(namespaces) > 0 {
 			for _, n := range namespaces {
 				if n == currentNs {
-					_ = h.setStatus(&item)
+					_ = h.setStatus(req.Request.Context(), &item)
 					ret = append(ret, item)
 					break
 				}
@@ -78,10 +79,10 @@ func (h *handler) ListIngressClassScopes(request *restful.Request, response *res
 		// Specify namespaceSelector
 		if nsSelector != "" {
 			nsList := corev1.NamespaceList{}
-			_ = h.cache.List(context.TODO(), &nsList, &runtimeclient.ListOptions{LabelSelector: Selector(nsSelector)})
+			_ = h.cache.List(req.Request.Context(), &nsList, &runtimeclient.ListOptions{LabelSelector: Selector(nsSelector)})
 			for _, n := range nsList.Items {
 				if n.Name == currentNs {
-					_ = h.setStatus(&item)
+					_ = h.setStatus(req.Request.Context(), &item)
 					ret = append(ret, item)
 					break
 				}
@@ -89,7 +90,7 @@ func (h *handler) ListIngressClassScopes(request *restful.Request, response *res
 		}
 	}
 
-	response.WriteEntity(ret)
+	resp.WriteEntity(ret)
 }
 
 func Selector(s string) labels.Selector {
@@ -100,10 +101,10 @@ func Selector(s string) labels.Selector {
 	}
 }
 
-func (h *handler) getMasterNodeIp() []string {
+func (h *handler) getMasterNodeIp(ctx context.Context) []string {
 	internalIps := []string{}
 	masters := &corev1.NodeList{}
-	err := h.cache.List(context.TODO(), masters, &runtimeclient.ListOptions{
+	err := h.cache.List(ctx, masters, &runtimeclient.ListOptions{
 		LabelSelector: labels.SelectorFromSet(
 			labels.Set{
 				MasterLabel: "",
@@ -124,26 +125,33 @@ func (h *handler) getMasterNodeIp() []string {
 	return internalIps
 }
 
-func (h *handler) setStatus(ics *v1alpha2.IngressClassScope) (e error) {
-	if ics.Annotations[SvcNameAnnotation] == "" {
-		klog.Errorf("namespace: %s, name: %s, No %s annotation", ics.Namespace, ics.Name, SvcNameAnnotation)
+func (h *handler) setStatus(ctx context.Context, ics *v1alpha2.IngressClassScope) (e error) {
+	svcKeyStr, exists := ics.Annotations[SvcNameAnnotation]
+	if !exists {
+		klog.Errorf("Name: %s, Annotation %s not found", ics.Name, SvcNameAnnotation)
+		return nil
+	}
+
+	svcKeyParts := strings.SplitN(svcKeyStr, "/", 2)
+	if len(svcKeyParts) != 2 {
+		klog.Errorf("Name: %s, Invalid %s annotation, should follow the namespace/name format", ics.Name, SvcNameAnnotation)
 		return nil
 	}
 
 	svc := corev1.Service{}
 	key := types.NamespacedName{
-		Namespace: ics.Namespace,
-		Name:      ics.Annotations[SvcNameAnnotation],
+		Namespace: svcKeyParts[0],
+		Name:      svcKeyParts[1],
 	}
 
-	if err := h.cache.Get(context.TODO(), key, &svc); err != nil {
-		klog.Errorf("Failed to fetch svc name: %v, %v", ics.Name, err)
+	if err := h.cache.Get(ctx, key, &svc); err != nil {
+		klog.Errorf("Failed to fetch svc %s, %v", key.String(), err)
 		return err
 	}
 
 	// append selected node ip as loadBalancer ingress ip
 	if svc.Spec.Type != corev1.ServiceTypeLoadBalancer && len(svc.Status.LoadBalancer.Ingress) == 0 {
-		rips := h.getMasterNodeIp()
+		rips := h.getMasterNodeIp(ctx)
 		for _, rip := range rips {
 			gIngress := corev1.LoadBalancerIngress{
 				IP: rip,
