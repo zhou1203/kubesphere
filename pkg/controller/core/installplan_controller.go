@@ -56,6 +56,7 @@ import (
 
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
+	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
@@ -226,7 +227,7 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 		for clusterName, clusterSchedulingStatus := range plan.Status.ClusterSchedulingStatuses {
 			if err := r.uninstallClusterAgent(ctx, plan, clusterName); err != nil {
 				updateClusterSchedulingState(plan, clusterName, &clusterSchedulingStatus, corev1alpha1.StateUninstallFailed)
-				updateClusterSchedulingCondition(plan, clusterName, &clusterSchedulingStatus, corev1alpha1.ConditionTypeUninstalled, err.Error(), metav1.ConditionFalse)
+				updateClusterSchedulingCondition(plan, clusterName, &clusterSchedulingStatus, corev1alpha1.ConditionTypeUninstalled, fmt.Sprintf("failed to uninstall cluster agent: %v", err), metav1.ConditionFalse)
 				if err = r.updateInstallPlan(ctx, plan); err != nil {
 					logger.Error(err, "failed to update scheduling state and conditions")
 					return ctrl.Result{}, err
@@ -259,9 +260,9 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 		plan.Status.State != corev1alpha1.StateUninstalled {
 		jobName, err := helmExecutor.Uninstall(ctx)
 		if err != nil {
-			logger.Error(err, "failed to delete helm release")
+			logger.Error(err, "failed to create helm executor")
 			updateState(plan, corev1alpha1.StateUninstallFailed)
-			updateCondition(plan, corev1alpha1.ConditionTypeUninstalled, err.Error(), metav1.ConditionFalse)
+			updateCondition(plan, corev1alpha1.ConditionTypeUninstalled, fmt.Sprintf("failed to create helm executor: %v", err), metav1.ConditionFalse)
 			if err := r.updateInstallPlan(ctx, plan); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -1004,7 +1005,7 @@ func (r *InstallPlanReconciler) updateReadyCondition(ctx context.Context, plan *
 	if ready {
 		updateCondition(plan, corev1alpha1.ConditionTypeReady, "", metav1.ConditionTrue)
 	} else {
-		updateCondition(plan, corev1alpha1.ConditionTypeReady, err.Error(), metav1.ConditionFalse)
+		updateCondition(plan, corev1alpha1.ConditionTypeReady, fmt.Sprintf("timeout waiting for release ready: %s", err), metav1.ConditionFalse)
 	}
 	return r.updateInstallPlan(ctx, plan)
 }
@@ -1127,7 +1128,7 @@ func (r *InstallPlanReconciler) updateClusterReadyCondition(ctx context.Context,
 	if ready {
 		updateClusterSchedulingCondition(plan, clusterName, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, "", metav1.ConditionTrue)
 	} else {
-		updateClusterSchedulingCondition(plan, clusterName, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, err.Error(), metav1.ConditionFalse)
+		updateClusterSchedulingCondition(plan, clusterName, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, fmt.Sprintf("timeout waiting for release ready: %v", err), metav1.ConditionFalse)
 	}
 	return r.updateInstallPlan(ctx, plan)
 }
@@ -1143,13 +1144,14 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, p
 
 	charData, extensionVersion, err := r.loadChartData(ctx, &plan.Spec.Extension)
 	if err != nil {
+		message := fmt.Sprintf("failed to load chart data: %v", err)
 		logger.Error(err, "failed to load chart data")
 		if upgrade {
 			updateState(plan, corev1alpha1.StateUpgradeFailed)
-			updateCondition(plan, corev1alpha1.ConditionTypeUpgraded, err.Error(), metav1.ConditionFalse)
+			updateCondition(plan, corev1alpha1.ConditionTypeUpgraded, message, metav1.ConditionFalse)
 		} else {
 			updateState(plan, corev1alpha1.StateInstallFailed)
-			updateCondition(plan, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
+			updateCondition(plan, corev1alpha1.ConditionTypeInstalled, message, metav1.ConditionFalse)
 		}
 		return r.updateInstallPlan(ctx, plan)
 	}
@@ -1162,7 +1164,7 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, p
 		if err = initTargetNamespace(ctx, r.Client, targetNamespace, clusterRole, role); err != nil {
 			logger.Error(err, "failed to init target namespace", "namespace", targetNamespace)
 			updateState(plan, corev1alpha1.StateInstallFailed)
-			updateCondition(plan, corev1alpha1.ConditionTypeInstalled, err.Error(), metav1.ConditionFalse)
+			updateCondition(plan, corev1alpha1.ConditionTypeInstalled, fmt.Sprintf("failed to init extension namespace: %v", err), metav1.ConditionFalse)
 			return r.updateInstallPlan(ctx, plan)
 		}
 	}
@@ -1223,16 +1225,19 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(ctx context.Context
 
 	if !upgrade {
 		clusterRole, role := usesPermissions(charData)
-
 		if err = initTargetNamespace(ctx, clusterClient, targetNamespace, clusterRole, role); err != nil {
-			logger.WithValues("namespace", targetNamespace).Error(err, "failed to init target namespace")
-			return err
+			logger.Error(err, "failed to init target namespace", "namespace", targetNamespace)
+			updateClusterSchedulingState(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstallFailed)
+			updateClusterSchedulingCondition(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstalled,
+				fmt.Sprintf("failed to init extension namespace: %v", err), metav1.ConditionFalse,
+			)
+			return r.updateInstallPlan(ctx, plan)
 		}
 	}
 
-	clusterRole := "member"
+	clusterRole := multicluster.ClusterRoleMember
 	if clusterutils.IsHostCluster(&cluster) {
-		clusterRole = "host"
+		clusterRole = multicluster.ClusterRoleHost
 	}
 
 	overrides := []string{
@@ -1362,12 +1367,13 @@ func (r *InstallPlanReconciler) syncExtensionInstallationStatus(ctx context.Cont
 	lastExecutorJob := batchv1.Job{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: plan.Status.TargetNamespace, Name: plan.Status.JobName}, &lastExecutorJob); err != nil {
 		if errors.IsNotFound(err) {
+			message := fmt.Sprintf("helm executor job not found: %v", err)
 			if upgrade {
 				updateState(plan, corev1alpha1.StateUpgradeFailed)
-				updateCondition(plan, corev1alpha1.ConditionTypeUpgraded, fmt.Sprintf("helm executor job not found: %s", err.Error()), metav1.ConditionFalse)
+				updateCondition(plan, corev1alpha1.ConditionTypeUpgraded, message, metav1.ConditionFalse)
 			} else {
 				updateState(plan, corev1alpha1.StateInstallFailed)
-				updateCondition(plan, corev1alpha1.ConditionTypeInstalled, fmt.Sprintf("helm executor job not found: %s", err.Error()), metav1.ConditionFalse)
+				updateCondition(plan, corev1alpha1.ConditionTypeInstalled, message, metav1.ConditionFalse)
 			}
 			return r.updateInstallPlan(ctx, plan)
 		}
@@ -1417,18 +1423,13 @@ func (r *InstallPlanReconciler) syncClusterAgentInstallationStatus(
 	lastExecutorJob := batchv1.Job{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: clusterSchedulingStatus.TargetNamespace, Name: clusterSchedulingStatus.JobName}, &lastExecutorJob); err != nil {
 		if errors.IsNotFound(err) {
+			message := fmt.Sprintf("helm executor job not found: %v", err)
 			if upgrade {
 				updateClusterSchedulingState(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateUpgradeFailed)
-				updateClusterSchedulingCondition(
-					plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeUpgraded,
-					fmt.Sprintf("helm executor job not found: %s", err.Error()), metav1.ConditionFalse,
-				)
+				updateClusterSchedulingCondition(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeUpgraded, message, metav1.ConditionFalse)
 			} else {
 				updateClusterSchedulingState(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstallFailed)
-				updateClusterSchedulingCondition(
-					plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled,
-					fmt.Sprintf("helm executor job not found: %s", err.Error()), metav1.ConditionFalse,
-				)
+				updateClusterSchedulingCondition(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeInstalled, message, metav1.ConditionFalse)
 			}
 			return r.updateInstallPlan(ctx, plan)
 		}
