@@ -51,14 +51,12 @@ type tokenOperator struct {
 	cache   cache.Interface
 }
 
-func (t tokenOperator) Revoke(token string) error {
+func (t *tokenOperator) Revoke(token string) error {
 	pattern := fmt.Sprintf("kubesphere:user:*:token:%s", token)
 	if keys, err := t.cache.Keys(pattern); err != nil {
-		klog.Error(err)
 		return err
 	} else if len(keys) > 0 {
 		if err := t.cache.Del(keys...); err != nil {
-			klog.Error(err)
 			return err
 		}
 	}
@@ -92,12 +90,10 @@ func (t *tokenOperator) Verify(tokenStr string) (*token.VerifiedResponse, error)
 func (t *tokenOperator) IssueTo(request *token.IssueRequest) (string, error) {
 	tokenStr, err := t.issuer.IssueTo(request)
 	if err != nil {
-		klog.Error(err)
 		return "", err
 	}
 	if request.ExpiresIn > 0 {
 		if err = t.cacheToken(request.User.GetName(), tokenStr, request.ExpiresIn); err != nil {
-			klog.Error(err)
 			return "", err
 		}
 	}
@@ -108,11 +104,9 @@ func (t *tokenOperator) IssueTo(request *token.IssueRequest) (string, error) {
 func (t *tokenOperator) RevokeAllUserTokens(username string) error {
 	pattern := fmt.Sprintf("kubesphere:user:%s:token:*", username)
 	if keys, err := t.cache.Keys(pattern); err != nil {
-		klog.Error(err)
 		return err
 	} else if len(keys) > 0 {
 		if err := t.cache.Del(keys...); err != nil {
-			klog.Error(err)
 			return err
 		}
 	}

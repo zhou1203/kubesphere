@@ -38,7 +38,7 @@ var (
 	ValidGrantMethods = []string{GrantMethodAuto, GrantMethodPrompt, GrantMethodDeny}
 )
 
-type OAuthClient struct {
+type Client struct {
 	// The name of the OAuth client is used as the client_id parameter when making requests to <master>/oauth/authorize
 	Name string `yaml:"name"`
 
@@ -73,20 +73,20 @@ type OAuthClient struct {
 	AccessTokenInactivityTimeout int64 `yaml:"accessTokenInactivityTimeout,omitempty"`
 }
 
-type OAuthClientGetter interface {
-	GetOAuthClient(ctx context.Context, name string) (*OAuthClient, error)
+type ClientGetter interface {
+	GetOAuthClient(ctx context.Context, name string) (*Client, error)
 }
 
-func NewOAuthClientGetter(cli client.Client) OAuthClientGetter {
-	return &oauthClientGetter{cli}
+func NewOAuthClientGetter(reader client.Reader) ClientGetter {
+	return &oauthClientGetter{reader}
 }
 
 type oauthClientGetter struct {
-	client.Client
+	client.Reader
 }
 
-func (o *oauthClientGetter) GetOAuthClient(ctx context.Context, name string) (*OAuthClient, error) {
-	oauthClient := &OAuthClient{}
+func (o *oauthClientGetter) GetOAuthClient(ctx context.Context, name string) (*Client, error) {
+	oauthClient := &Client{}
 	secrets := &v1.SecretList{}
 	err := o.List(ctx, secrets, client.MatchingLabels{SecretLabelClientName: name})
 	if err != nil {
@@ -104,32 +104,31 @@ func (o *oauthClientGetter) GetOAuthClient(ctx context.Context, name string) (*O
 		return nil, ErrorClientNotFound
 	}
 
-	err = yaml.Unmarshal(secret.Data[SecretDataKey], oauthClient)
-	if err != nil {
+	if err = yaml.Unmarshal(secret.Data[SecretDataKey], oauthClient); err != nil {
 		return nil, err
 	}
 
 	return oauthClient, nil
 }
 
-func ValidateClient(authClient OAuthClient) error {
+func ValidateClient(client Client) error {
 	var es []error
-	if !sliceutil.HasString(ValidGrantMethods, authClient.GrantMethod) {
-		es = append(es, fmt.Errorf("invalid grant method: %s", authClient.GrantMethod))
+	if !sliceutil.HasString(ValidGrantMethods, client.GrantMethod) {
+		es = append(es, fmt.Errorf("invalid grant method: %s", client.GrantMethod))
 	}
-	if authClient.AccessTokenInactivityTimeout != 0 &&
-		authClient.AccessTokenInactivityTimeout < 600 {
-		es = append(es, fmt.Errorf("invalid access token inactivity timeout: %d, The minimum value can only be 600", authClient.AccessTokenInactivityTimeout))
+	if client.AccessTokenInactivityTimeout != 0 &&
+		client.AccessTokenInactivityTimeout < 600 {
+		es = append(es, fmt.Errorf("invalid access token inactivity timeout: %d, The minimum value can only be 600", client.AccessTokenInactivityTimeout))
 	}
-	if authClient.AccessTokenMaxAge != 0 &&
-		authClient.AccessTokenMaxAge < 600 {
-		es = append(es, fmt.Errorf("invalid access token max age: %d, The minimum value can only be 600", authClient.AccessTokenInactivityTimeout))
+	if client.AccessTokenMaxAge != 0 &&
+		client.AccessTokenMaxAge < 600 {
+		es = append(es, fmt.Errorf("invalid access token max age: %d, The minimum value can only be 600", client.AccessTokenInactivityTimeout))
 	}
 
 	return errorsutil.NewAggregate(es)
 }
 
-func (c *OAuthClient) ResolveRedirectURL(expectURL string) (*url.URL, error) {
+func (c *Client) ResolveRedirectURL(expectURL string) (*url.URL, error) {
 	// RedirectURIs is empty
 	if len(c.RedirectURIs) == 0 {
 		return nil, ErrorRedirectURLNotAllowed
@@ -148,11 +147,10 @@ func (c *OAuthClient) ResolveRedirectURL(expectURL string) (*url.URL, error) {
 	if allowAllRedirectURI || sliceutil.HasString(redirectAbleURIs, expectURL) {
 		return url.Parse(expectURL)
 	}
-
 	return nil, ErrorRedirectURLNotAllowed
 }
 
-func (c *OAuthClient) IsValidScope(requestedScope string) bool {
+func (c *Client) IsValidScope(requestedScope string) bool {
 	for _, s := range strings.Split(requestedScope, " ") {
 		if !sliceutil.HasString(c.ScopeRestrictions, s) {
 			return false
@@ -172,8 +170,8 @@ func anyRedirectAbleURI(redirectURIs []string) []string {
 	return uris
 }
 
-func UnmarshalTo(secret v1.Secret) (*OAuthClient, error) {
-	oc := &OAuthClient{}
+func UnmarshalTo(secret v1.Secret) (*Client, error) {
+	oc := &Client{}
 	err := yaml.Unmarshal(secret.Data[SecretDataKey], oc)
 	if err != nil {
 		return nil, err

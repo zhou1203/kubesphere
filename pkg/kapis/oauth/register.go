@@ -32,7 +32,10 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 )
 
-const contentTypeFormData = "application/x-www-form-urlencoded"
+const (
+	contentTypeFormData = "application/x-www-form-urlencoded"
+	root                = "/oauth"
+)
 
 func NewHandler(im im.IdentityManagementInterface,
 	tokenOperator auth.TokenManagementInterface,
@@ -40,14 +43,14 @@ func NewHandler(im im.IdentityManagementInterface,
 	oauth2Authenticator auth.OAuthAuthenticator,
 	loginRecorder auth.LoginRecorder,
 	options *authentication.Options,
-	oauthOperator oauth.OAuthClientGetter) rest.Handler {
+	oauthOperator oauth.ClientGetter) rest.Handler {
 	handler := &handler{im: im,
 		tokenOperator:         tokenOperator,
 		passwordAuthenticator: passwordAuthenticator,
 		oauthAuthenticator:    oauth2Authenticator,
 		loginRecorder:         loginRecorder,
 		options:               options,
-		oauthOperator:         oauthOperator}
+		clientGetter:          oauthOperator}
 	return handler
 }
 
@@ -64,7 +67,7 @@ func FakeHandler() rest.Handler {
 // Requests to <ks-apiserver>/oauth/authorize can come from user-agents that cannot display interactive login pages, such as the CLI.
 func (h *handler) AddToContainer(c *restful.Container) error {
 	ws := &restful.WebService{}
-	ws.Path("/oauth").
+	ws.Path(root).
 		Consumes(restful.MIME_JSON).
 		Produces(restful.MIME_JSON)
 
