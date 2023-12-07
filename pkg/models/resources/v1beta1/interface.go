@@ -113,10 +113,21 @@ func DefaultObjectMetaCompare(left, right metav1.Object, sortBy query.Field) boo
 	}
 }
 
-// Default metadata filter
+// DefaultObjectMetaFilter filters the metadata of Kubernetes objects based on the given filter conditions.
+// Supported filter fields include: FieldNames, FieldName, FieldUID, FieldNamespace,
+// FieldOwnerReference, FieldOwnerKind, FieldAnnotation, FieldLabel, and ParameterFieldSelector.
+// Returns true if the object satisfies the filter conditions; otherwise, returns false.
+//
+// Parameters:
+//   - item: Metadata of the Kubernetes object to be filtered.
+//   - filter: Query object containing filter conditions.
+//
+// Returns:
+//   - bool: True if the object satisfies the filter conditions; false otherwise.
 func DefaultObjectMetaFilter(item metav1.Object, filter query.Filter) bool {
 	switch filter.Field {
 	case query.FieldNames:
+		// Check if the object's name matches any name in the filter.
 		for _, name := range strings.Split(string(filter.Value), ",") {
 			if item.GetName() == name {
 				return true

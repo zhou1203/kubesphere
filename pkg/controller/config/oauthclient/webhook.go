@@ -20,7 +20,7 @@ var once sync.Once
 
 type WebhookHandler struct {
 	client.Client
-	getter oauth.OAuthClientGetter
+	getter oauth.ClientGetter
 }
 
 func (v *WebhookHandler) Default(_ context.Context, secret *v1.Secret) error {
@@ -98,7 +98,7 @@ func (v *WebhookHandler) ConfigType() corev1.SecretType {
 	return oauth.SecretTypeOAuthClient
 }
 
-func validate(oc *oauth.OAuthClient) (admission.Warnings, error) {
+func validate(oc *oauth.Client) (admission.Warnings, error) {
 	if oc.Name == "" {
 		return nil, fmt.Errorf("invalid OAuth client, please ensure that the client name is not empty")
 	}

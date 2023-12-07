@@ -171,7 +171,6 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func max(a time.Duration, b time.Duration) time.Duration {
-
 	if a-b > 0 {
 		return a
 	} else {
@@ -296,11 +295,12 @@ func (r *Controller) syncExtensionID(ctx context.Context, options *marketplace.O
 		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
 			return err
 		}
+		expected := extension.DeepCopy()
 		if extension.Labels == nil {
 			extension.Labels = make(map[string]string, 0)
 		}
 		extension.Labels[marketplacev1alpha1.ExtensionID] = extensionInfo.ExtensionID
-		if !reflect.DeepEqual(extension.Labels, extension.Labels) {
+		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
 			return r.Update(ctx, extension, &client.UpdateOptions{})
 		}
 		return nil
@@ -321,19 +321,26 @@ func (r *Controller) syncSubscription(ctx context.Context, options *marketplace.
 		}
 	}
 
-	if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
-		return err
-	}
-	extension = extension.DeepCopy()
-	if subscribed {
-		extension.Labels[marketplacev1alpha1.Subscribed] = "true"
-	} else {
-		delete(extension.Labels, marketplacev1alpha1.Subscribed)
-	}
-	if !reflect.DeepEqual(extension.Labels, extension.Labels) {
-		if err := r.Update(ctx, extension); err != nil {
-			return fmt.Errorf("failed to update extension %s: %s", extension.Name, err)
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.Get(ctx, types.NamespacedName{Name: extension.Name}, extension); err != nil {
+			return fmt.Errorf("failed to get extension details: %s", err)
 		}
+		expected := extension.DeepCopy()
+		if subscribed {
+			expected.Labels[marketplacev1alpha1.Subscribed] = "true"
+		} else {
+			delete(expected.Labels, marketplacev1alpha1.Subscribed)
+		}
+		if !reflect.DeepEqual(expected.Labels, extension.Labels) {
+			if err := r.Update(ctx, expected); err != nil {
+				return fmt.Errorf("failed to update extension %s: %s", expected.Name, err)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
 	}
 
 	storedSubscriptions := &marketplacev1alpha1.SubscriptionList{}
@@ -352,7 +359,7 @@ func (r *Controller) syncSubscription(ctx context.Context, options *marketplace.
 
 	for _, subscription := range outOfDateSubscriptions {
 		r.logger.V(4).Info("delete out of date subscription", "subscription", subscription.Name)
-		if err := r.Client.Delete(ctx, subscription); err != nil {
+		if err := r.Delete(ctx, subscription); err != nil {
 			return fmt.Errorf("failed to delete subscription %s: %s", subscription.Name, err)
 		}
 	}

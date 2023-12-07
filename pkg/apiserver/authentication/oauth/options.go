@@ -17,7 +17,6 @@ limitations under the License.
 package oauth
 
 import (
-	"errors"
 	"time"
 
 	"kubesphere.io/kubesphere/pkg/server/options"
@@ -36,11 +35,7 @@ const (
 	// not supported yet.
 	MappingMethodMixed MappingMethod = "mixed"
 
-	DefaultIssuer string = "kubesphere"
-)
-
-var (
-	ErrorProviderNotFound = errors.New("the identity provider was not found")
+	DefaultIssuer string = "https://ks-console.kubesphere-system.svc"
 )
 
 type Options struct {
