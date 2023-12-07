@@ -106,8 +106,25 @@ func (h *appHandler) ListAppVersions(req *restful.Request, resp *restful.Respons
 	if requestDone(err, resp) {
 		return
 	}
+	conditions, err := params.ParseConditions(req)
+	if requestDone(err, resp) {
+		return
+	}
 
-	resp.WriteEntity(convertToListResult(&result, req))
+	filtered := appv2.ApplicationVersionList{}
+	for _, app := range result.Items {
+		curApp := app
+		if conditions.Match[Status] != "" {
+			states := strings.Split(conditions.Match[Status], "|")
+			state := curApp.Status.State
+			if !sliceutil.HasString(states, state) {
+				continue
+			}
+		}
+		filtered.Items = append(filtered.Items, curApp)
+	}
+
+	resp.WriteEntity(convertToListResult(&filtered, req))
 }
 
 func (h *appHandler) GetAppVersionPackage(req *restful.Request, resp *restful.Response) {
@@ -221,7 +238,9 @@ func DoAppVersionAction(ctx context.Context, versionId string, actionReq appv2.A
 	}
 	version.Status.State = actionReq.State
 	version.Status.Message = actionReq.Message
-	version.Status.UserName = actionReq.UserName
+	if actionReq.UserName != "" {
+		version.Status.UserName = actionReq.UserName
+	}
 	version.Status.Updated = &metav1.Time{Time: metav1.Now().Time}
 	err = client.Status().Update(ctx, version)
 

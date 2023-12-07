@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/blang/semver/v4"
-	gopkgyaml "gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/labels"
 
 	corev1 "k8s.io/api/core/v1"
@@ -86,7 +86,6 @@ func CreateOrUpdateApp(ctx context.Context, client client.Client, request AppReq
 		if len(request.Maintainers) > 0 {
 			ant[appv2.AppMaintainersKey] = request.Maintainers[0].Name
 		}
-
 		app.SetAnnotations(ant)
 
 		return nil
@@ -262,22 +261,24 @@ func ConvertToUnstructured(obj any) (*unstructured.Unstructured, error) {
 	return &unstructured.Unstructured{Object: objMap}, err
 }
 
-func ConvertJSONToYAMLList(jsonList []json.RawMessage) ([]byte, error) {
-	var yamlBuffer bytes.Buffer
+func ComplianceCheck(values, tempLate []byte, mapper meta.RESTMapper) ([]json.RawMessage, error) {
+	yamlList, yamlTempList := ReadYaml(values), ReadYaml(tempLate)
 
-	for i, jsonData := range jsonList {
-		var yamlData interface{}
-		if err := yaml.Unmarshal(jsonData, &yamlData); err != nil {
-			return nil, err
-		}
-		yamlBytes, err := gopkgyaml.Marshal(yamlData)
+	if len(yamlTempList) != len(yamlList) {
+		return nil, errors.New("yamlList and yamlTempList length not equal")
+	}
+	for idx := range yamlTempList {
+		_, utd, err := GetInfoFromBytes(yamlList[idx], mapper)
 		if err != nil {
 			return nil, err
 		}
-		yamlBuffer.Write(yamlBytes)
-		if i < len(jsonList)-1 {
-			yamlBuffer.WriteString("\n---\n")
+		_, utdTemp, err := GetInfoFromBytes(yamlTempList[idx], mapper)
+		if err != nil {
+			return nil, err
+		}
+		if utdTemp.GetKind() != utd.GetKind() || utdTemp.GetAPIVersion() != utd.GetAPIVersion() {
+			return nil, errors.New("yamlList and yamlTempList not equal")
 		}
 	}
-	return yamlBuffer.Bytes(), nil
+	return yamlList, nil
 }

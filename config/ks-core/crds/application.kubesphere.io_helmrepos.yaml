@@ -77,9 +77,6 @@ spec:
               description:
                 description: chart repo description from frontend
                 type: string
-              name:
-                description: name of the repo
-                type: string
               syncPeriod:
                 description: sync period in seconds, no sync when SyncPeriod=0, the
                   minimum SyncPeriod is 180s
@@ -88,7 +85,6 @@ spec:
                 description: helm repo url
                 type: string
             required:
-            - name
             - url
             type: object
           status:

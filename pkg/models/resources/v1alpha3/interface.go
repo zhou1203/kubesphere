@@ -20,6 +20,8 @@ import (
 	"sort"
 	"strings"
 
+	"kubesphere.io/kubesphere/pkg/constants"
+
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
@@ -119,7 +121,11 @@ func DefaultObjectMetaFilter(item metav1.ObjectMeta, filter query.Filter) bool {
 		return false
 	// /namespaces?page=1&limit=10&name=default
 	case query.FieldName:
-		return strings.Contains(item.Name, string(filter.Value))
+		displayName := item.GetAnnotations()[constants.DisplayNameAnnotationKey]
+		if displayName != "" && strings.Contains(displayName, string(filter.Value)) {
+			return true
+		}
+		return strings.Contains(item.GetName(), string(filter.Value))
 		// /namespaces?page=1&limit=10&uid=a8a8d6cf-f6a5-4fea-9c1b-e57610115706
 	case query.FieldUID:
 		return strings.Compare(string(item.UID), string(filter.Value)) == 0

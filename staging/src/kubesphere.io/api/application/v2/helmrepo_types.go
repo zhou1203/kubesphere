@@ -39,8 +39,6 @@ type HelmRepoCredential struct {
 
 // HelmRepoSpec defines the desired state of HelmRepo
 type HelmRepoSpec struct {
-	// name of the repo
-	Name string `json:"name"`
 	// helm repo url
 	Url string `json:"url"`
 	// helm repo credential

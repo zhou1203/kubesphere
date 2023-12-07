@@ -21,6 +21,7 @@ limitations under the License.
 package v2
 
 import (
+	"encoding/json"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -169,6 +170,17 @@ func (in *ApplicationReleaseStatus) DeepCopyInto(out *ApplicationReleaseStatus) 
 	if in.LastDeployed != nil {
 		in, out := &in.LastDeployed, &out.LastDeployed
 		*out = (*in).DeepCopy()
+	}
+	if in.RealTimeResources != nil {
+		in, out := &in.RealTimeResources, &out.RealTimeResources
+		*out = make([]json.RawMessage, len(*in))
+		for i := range *in {
+			if (*in)[i] != nil {
+				in, out := &(*in)[i], &(*out)[i]
+				*out = make(json.RawMessage, len(*in))
+				copy(*out, *in)
+			}
+		}
 	}
 }
 

@@ -3,7 +3,8 @@ package installer
 import (
 	"context"
 	"encoding/json"
-	"errors"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -39,7 +40,7 @@ func (t YamlInstaller) Install(ctx context.Context, chartName string, chartData,
 }
 
 func (t YamlInstaller) Upgrade(ctx context.Context, chartName string, tempLate, values []byte, options ...helm.HelmOption) (string, error) {
-	yamlList, err := t.complianceCheck(values, tempLate)
+	yamlList, err := application.ComplianceCheck(values, tempLate, t.Mapper)
 	if err != nil {
 		return "", err
 	}
@@ -50,32 +51,13 @@ func (t YamlInstaller) Upgrade(ctx context.Context, chartName string, tempLate, 
 	return "", err
 }
 
-func (t YamlInstaller) complianceCheck(values, tempLate []byte) ([]json.RawMessage, error) {
-	yamlList, yamlTempList := application.ReadYaml(values), application.ReadYaml(tempLate)
-
-	if len(yamlTempList) != len(yamlList) {
-		return nil, errors.New("yamlList and yamlTempList length not equal")
-	}
-	for idx := range yamlTempList {
-		_, utd, err := application.GetInfoFromBytes(yamlList[idx], t.Mapper)
-		if err != nil {
-			return nil, err
-		}
-		_, utdTemp, err := application.GetInfoFromBytes(yamlTempList[idx], t.Mapper)
-		if err != nil {
-			return nil, err
-		}
-		if utdTemp.GetKind() != utd.GetKind() || utdTemp.GetAPIVersion() != utd.GetAPIVersion() {
-			return nil, errors.New("yamlList and yamlTempList not equal")
-		}
-	}
-	return yamlList, nil
-}
-
 func (t YamlInstaller) Uninstall(ctx context.Context, options ...helm.HelmOption) (string, error) {
 	for _, i := range t.GvrListInfo {
 		err := t.DynamicCli.Resource(i.GroupVersionResource).Namespace(i.Namespace).
 			Delete(ctx, i.Name, metav1.DeleteOptions{})
+		if apierrors.IsNotFound(err) {
+			continue
+		}
 		if err != nil {
 			return "", err
 		}

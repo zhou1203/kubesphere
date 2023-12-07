@@ -21,7 +21,10 @@ import (
 	"errors"
 
 	"helm.sh/helm/v3/pkg/chart/loader"
+	"k8s.io/client-go/dynamic"
 	appv2 "kubesphere.io/api/application/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/simple/client/application"
 )
@@ -35,6 +38,7 @@ func parseRequest(createRequest application.AppRequest, workspace string) (appRe
 	appRequest.Description = createRequest.Description
 	appRequest.AliasName = createRequest.AliasName
 	appRequest.Icon = createRequest.Icon
+	appRequest.CategoryName = createRequest.CategoryName
 
 	if createRequest.AppType == appv2.AppTypeHelm {
 		if createRequest.Package == nil || len(createRequest.Package) == 0 {
@@ -54,4 +58,25 @@ func parseRequest(createRequest application.AppRequest, workspace string) (appRe
 	}
 
 	return appRequest, vRequest, errors.New("not support app type")
+}
+
+func (h *appHandler) getCluster(app *appv2.ApplicationRelease) (runtimeclient.Client, *dynamic.DynamicClient, *clusterv1alpha1.Cluster, error) {
+	clusterName := app.GetRlsCluster()
+	runtimeClient, err := h.clusterClient.GetRuntimeClient(clusterName)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	clusterClient, err := h.clusterClient.GetClusterClient(clusterName)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	dynamicClient, err := dynamic.NewForConfig(clusterClient.RestConfig)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cluster, err := h.clusterClient.Get(clusterName)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return runtimeClient, dynamicClient, cluster, nil
 }

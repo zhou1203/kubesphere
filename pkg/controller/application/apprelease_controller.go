@@ -24,9 +24,9 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
@@ -140,7 +140,7 @@ func (r *AppReleaseReconciler) checkHelmReleaseAndUpdateAppReleaseStatus(
 		if apprls.Status.JobName != "" {
 			jobKey := client.ObjectKey{Namespace: apprls.GetRlsNamespace(), Name: apprls.Status.JobName}
 			if r.isJobStatusFailed(ctx, jobKey) {
-				return r.updateStatus(ctx, apprls, appv2.StatusFailed, fmt.Sprintf("job %s failed", apprls.Status.JobName))
+				return r.updateStatus(ctx, apprls, appv2.StatusFailed, fmt.Sprintf("job %s failed %s", apprls.Status.JobName, err.Error()))
 			}
 		}
 
@@ -159,7 +159,7 @@ func (r *AppReleaseReconciler) checkHelmReleaseAndUpdateAppReleaseStatus(
 }
 
 func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (executor helm.Executor, err error) {
-	mapper, dynamicClient, configByte, err := r.getClusterInfo(apprls.GetRlsCluster())
+	runClient, dynamicClient, configByte, err := r.getClusterInfo(apprls.GetRlsCluster())
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (ex
 		jsonList := application.ReadYaml(apprls.Spec.Values)
 		var gvrListInfo []installer.InsInfo
 		for _, i := range jsonList {
-			gvr, utd, err := application.GetInfoFromBytes(i, mapper)
+			gvr, utd, err := application.GetInfoFromBytes(i, runClient.RESTMapper())
 			if err != nil {
 				return nil, err
 			}
@@ -181,7 +181,7 @@ func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (ex
 		}
 
 		executor = installer.YamlInstaller{
-			Mapper:      mapper,
+			Mapper:      runClient.RESTMapper(),
 			DynamicCli:  dynamicClient,
 			GvrListInfo: gvrListInfo,
 		}
@@ -195,14 +195,15 @@ func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (ex
 		return nil, err
 	}
 	// helm chart install need the clusterrolebinding
-	if err = r.generateRoleBinding(context.TODO(), apprls.GetRlsNamespace()); err != nil {
+	if err = r.generateRoleBinding(context.TODO(), runClient, apprls.GetRlsNamespace()); err != nil {
+		klog.Errorf("generate clusterrolebinding fail %s", err)
 		return nil, err
 	}
 
 	return executor, err
 }
 
-func (r *AppReleaseReconciler) getClusterInfo(clusterName string) (meta.RESTMapper, *dynamic.DynamicClient, []byte, error) {
+func (r *AppReleaseReconciler) getClusterInfo(clusterName string) (client.Client, *dynamic.DynamicClient, []byte, error) {
 	c, err := r.clusterClientSet.Get(clusterName)
 	if err != nil {
 		return nil, nil, nil, err
@@ -220,7 +221,7 @@ func (r *AppReleaseReconciler) getClusterInfo(clusterName string) (meta.RESTMapp
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return runtimeClient.RESTMapper(), dynamicClient, c.Spec.Connection.KubeConfig, nil
+	return runtimeClient, dynamicClient, c.Spec.Connection.KubeConfig, nil
 }
 
 func (r *AppReleaseReconciler) isJobStatusFailed(ctx context.Context, jobKey client.ObjectKey) bool {
@@ -272,7 +273,7 @@ func (r *AppReleaseReconciler) createOrUpgradeAppRelease(ctx context.Context, rl
 
 	if rls.Status.JobName, err = executor.Upgrade(ctx, rls.Name, data, rls.Spec.Values, options...); err != nil {
 		klog.Errorf("failed to create executor job, err: %v", err)
-		return r.updateStatus(ctx, rls, appv2.StatusFailed)
+		return r.updateStatus(ctx, rls, appv2.StatusFailed, err.Error())
 	}
 
 	return r.updateStatus(ctx, rls, appv2.StatusCreated)
@@ -287,15 +288,16 @@ func (r *AppReleaseReconciler) updateStatus(ctx context.Context, apprls *appv2.A
 	return r.Status().Update(ctx, apprls)
 }
 
-func (r *AppReleaseReconciler) generateRoleBinding(ctx context.Context, namespace string) error {
-	ns := &corev1.Namespace{}
-	if err := r.Get(ctx, client.ObjectKey{Name: namespace}, ns); err != nil {
+func (r *AppReleaseReconciler) generateRoleBinding(ctx context.Context, client client.Client, namespace string) error {
+	var ns corev1.Namespace
+	err := client.Get(ctx, types.NamespacedName{Name: namespace}, &ns)
+	if err != nil {
 		return err
 	}
 
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
 	clusterRoleBinding.Name = fmt.Sprintf(clusterRoleBindingFormat, namespace)
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, clusterRoleBinding, func() error {
+	_, err = controllerutil.CreateOrUpdate(ctx, client, clusterRoleBinding, func() error {
 		clusterRoleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
 			Kind:     "ClusterRole",

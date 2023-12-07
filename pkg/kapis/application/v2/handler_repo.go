@@ -72,7 +72,6 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 	}
 	mutateFn := func() error {
 		repo.Spec = appv2.HelmRepoSpec{
-			Name:        repo.Name,
 			Url:         parsedUrl.String(),
 			SyncPeriod:  repoRequest.Spec.SyncPeriod,
 			Description: stringutils.ShortenString(repoRequest.Spec.Description, 512),
@@ -85,6 +84,13 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 			repo.SetLabels(map[string]string{})
 		}
 		repo.Labels[constants.WorkspaceLabelKey] = workspace
+
+		if repo.GetAnnotations() == nil {
+			repo.SetAnnotations(map[string]string{})
+		}
+		if repoRequest.GetAnnotations()[constants.DisplayNameAnnotationKey] != "" {
+			repo.Annotations[constants.DisplayNameAnnotationKey] = repoRequest.GetAnnotations()[constants.DisplayNameAnnotationKey]
+		}
 
 		return nil
 	}

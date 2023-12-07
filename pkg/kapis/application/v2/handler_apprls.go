@@ -1,18 +1,27 @@
 package v2
 
 import (
+	"bytes"
 	"encoding/json"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/emicklei/go-restful/v3"
 	"golang.org/x/net/context"
+	"helm.sh/helm/v3/pkg/action"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
 	appv2 "kubesphere.io/api/application/v2"
 	"kubesphere.io/api/constants"
+	"kubesphere.io/utils/helm"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	ksconstants "kubesphere.io/kubesphere/pkg/constants"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/server/errors"
@@ -25,9 +34,40 @@ func (h *appHandler) CreateOrUpdateAppRls(req *restful.Request, resp *restful.Re
 	if requestDone(err, resp) {
 		return
 	}
+	list := []string{appv2.AppIDLabelKey, constants.ClusterNameLabelKey, constants.WorkspaceLabelKey, constants.NamespaceLabelKey}
+	for _, i := range list {
+		value, ok := createRlsRequest.GetLabels()[i]
+		if !ok || value == "" {
+			err = errors.New("must set %s", i)
+			api.HandleBadRequest(resp, nil, err)
+			return
+		}
+	}
 
 	apprls := appv2.ApplicationRelease{}
 	apprls.Name = createRlsRequest.Name
+
+	if createRlsRequest.Spec.AppType != appv2.AppTypeHelm {
+		runtimeClient, _, _, err := h.getCluster(&apprls)
+		if requestDone(err, resp) {
+			return
+		}
+		configMap := &corev1.ConfigMap{}
+		key := types.NamespacedName{
+			Namespace: ksconstants.KubeSphereNamespace,
+			Name:      createRlsRequest.Spec.AppVersionID,
+		}
+		err = h.client.Get(context.TODO(), key, configMap)
+		if requestDone(err, resp) {
+			return
+		}
+		template := configMap.BinaryData[appv2.BinaryKey]
+		_, err = application.ComplianceCheck(createRlsRequest.Spec.Values, template, runtimeClient.RESTMapper())
+		if requestDone(err, resp) {
+			return
+		}
+	}
+
 	mutateFn := func() error {
 		createRlsRequest.DeepCopyInto(&apprls)
 		return nil
@@ -51,59 +91,119 @@ func (h *appHandler) DescribeAppRls(req *restful.Request, resp *restful.Response
 		return
 	}
 	app.SetManagedFields(nil)
-	// When querying, return real-time data for editing to solve the problem of out-of-sync values during editing.
-	// It is only valid when using the ks API query API. If you want kubectl to work, please use the aggregation API for resource abstraction.
 	if app.Spec.AppType == appv2.AppTypeYaml || app.Spec.AppType == appv2.AppTypeEdge {
-		data, err := h.getRealTimeObj(ctx, app)
+		data, err := h.getRealTimeYaml(ctx, app)
 		if err != nil {
-			klog.V(4).Infoln(err)
+			klog.Errorf(err.Error())
 			api.HandleInternalError(resp, nil, err)
+			return
 		}
-		app.Spec.Values = data
-
+		app.Status.RealTimeResources = data
+	} else {
+		data, err := h.getRealTimeHelm(ctx, app)
+		if err != nil {
+			klog.Errorf(err.Error())
+			api.HandleInternalError(resp, nil, err)
+			return
+		}
+		app.Status.RealTimeResources = data
 	}
+
 	resp.WriteEntity(app)
 }
 
-func (h *appHandler) getRealTimeObj(ctx context.Context, app *appv2.ApplicationRelease) ([]byte, error) {
-
-	clusterName := app.GetRlsCluster()
-
-	client, err := h.clusterClient.GetRuntimeClient(clusterName)
-	if err != nil {
-		return nil, err
-	}
-	clusterClient, err := h.clusterClient.GetClusterClient(clusterName)
-	if err != nil {
-		return nil, err
-	}
-
-	DynamicClient, err := dynamic.NewForConfig(clusterClient.RestConfig)
+func (h *appHandler) getRealTimeYaml(ctx context.Context, app *appv2.ApplicationRelease) (data []json.RawMessage, err error) {
+	runtimeClient, dynamicClient, cluster, err := h.getCluster(app)
 	if err != nil {
 		return nil, err
 	}
 
 	jsonList := application.ReadYaml(app.Spec.Values)
-	var realTimeDataList []json.RawMessage
 	for _, i := range jsonList {
-		gvr, utd, err := application.GetInfoFromBytes(i, client.RESTMapper())
+		gvr, utd, err := application.GetInfoFromBytes(i, runtimeClient.RESTMapper())
 		if err != nil {
 			return nil, err
 		}
-		utdRealTime, err := DynamicClient.Resource(gvr).Get(ctx, utd.GetName(), metav1.GetOptions{})
+		var utdRealTime *unstructured.Unstructured
+		utdRealTime, err = dynamicClient.Resource(gvr).Namespace(utd.GetNamespace()).
+			Get(ctx, utd.GetName(), metav1.GetOptions{})
 		if err != nil {
-			return nil, err
+			klog.Errorf("cluster: %s url: %s resource: %s/%s/%s: %s",
+				cluster.Name, cluster.Spec.Connection.KubernetesAPIEndpoint, utd.GetNamespace(), gvr.Resource, utd.GetName(), err)
+			realTimeJson := errorRealTime(utd, err.Error())
+			data = append(data, realTimeJson)
+			continue
 		}
 		utdRealTime.SetManagedFields(nil)
-
-		realTimeData, err := utdRealTime.MarshalJSON()
+		realTimeJson, err := utdRealTime.MarshalJSON()
 		if err != nil {
 			return nil, err
 		}
-		realTimeDataList = append(realTimeDataList, realTimeData)
+		data = append(data, realTimeJson)
 	}
-	data, err := application.ConvertJSONToYAMLList(realTimeDataList)
+
 	return data, err
+}
+
+func (h *appHandler) getRealTimeHelm(ctx context.Context, app *appv2.ApplicationRelease) (data []json.RawMessage, err error) {
+	runtimeClient, dynamicClient, cluster, err := h.getCluster(app)
+	if err != nil {
+		return nil, err
+	}
+	helmConf, err := helm.InitHelmConf(string(cluster.Spec.Connection.KubeConfig), app.GetRlsNamespace())
+	if err != nil {
+		return nil, err
+	}
+	rel, err := action.NewGet(helmConf).Run(app.Name)
+	if err != nil {
+		return nil, err
+	}
+	resources, _ := helmConf.KubeClient.Build(bytes.NewBufferString(rel.Manifest), true)
+
+	for _, i := range resources {
+		utd, err := application.ConvertToUnstructured(i.Object)
+		if err != nil {
+			return nil, err
+		}
+		marshalJSON, err := utd.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		gvr, utd, err := application.GetInfoFromBytes(marshalJSON, runtimeClient.RESTMapper())
+		if err != nil {
+			return nil, err
+		}
+		utdRealTime, err := dynamicClient.Resource(gvr).Namespace(utd.GetNamespace()).
+			Get(ctx, utd.GetName(), metav1.GetOptions{})
+		if err != nil {
+			klog.Errorf("cluster: %s url: %s resource: %s/%s/%s: %s",
+				cluster.Name, cluster.Spec.Connection.KubernetesAPIEndpoint, utd.GetNamespace(), gvr.Resource, utd.GetName(), err)
+			realTimeJson := errorRealTime(utd, err.Error())
+			data = append(data, realTimeJson)
+			continue
+		}
+		utdRealTime.SetManagedFields(nil)
+		realTimeJson, err := utdRealTime.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, realTimeJson)
+	}
+	return data, nil
+}
+
+func errorRealTime(utd *unstructured.Unstructured, msg string) json.RawMessage {
+	fake := &unstructured.Unstructured{}
+	fake.SetKind(utd.GetKind())
+	fake.SetAPIVersion(utd.GetAPIVersion())
+	fake.SetName(utd.GetName())
+	fake.SetNamespace(utd.GetNamespace())
+	fake.SetLabels(utd.GetLabels())
+	fake.SetAnnotations(utd.GetAnnotations())
+	unstructured.SetNestedField(fake.Object, msg, "status", "state")
+	marshalJSON, _ := fake.MarshalJSON()
+
+	return marshalJSON
 }
 
 func (h *appHandler) DeleteAppRls(req *restful.Request, resp *restful.Response) {

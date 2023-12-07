@@ -22,14 +22,12 @@ import (
 
 // CategorySpec defines the desired state of HelmRepo
 type CategorySpec struct {
-	Icon   string `json:"icon,omitempty"`
-	Locale string `json:"locale,omitempty"`
+	Icon string `json:"icon,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=appctg
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="name",type=string,JSONPath=`.spec.DisplayName.en`
 // +kubebuilder:printcolumn:name="total",type=string,JSONPath=`.status.total`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 

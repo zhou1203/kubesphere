@@ -36,21 +36,14 @@ type ApplicationReleaseSpec struct {
 
 // ApplicationReleaseStatus defines the observed state of ApplicationRelease
 type ApplicationReleaseStatus struct {
-	// current state
-	State string `json:"state"`
-	// A human readable message indicating details about why the release is in this state.
+	State   string `json:"state"`
 	Message string `json:"message,omitempty"`
-	// current release version
-	Version int `json:"version,omitempty"`
-	// current release spec hash
 	// This is used to compare whether the spec has been modified to determine if an upgrade is needed.
-	SpecHash string `json:"specHash,omitempty"`
-	// JobName for installation and upgrade
-	JobName string `json:"jobName,omitempty"`
-	// last update time
-	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
-	// last deploy time or upgrade time
-	LastDeployed *metav1.Time `json:"lastDeployed,omitempty"`
+	SpecHash          string            `json:"specHash,omitempty"`
+	JobName           string            `json:"jobName,omitempty"`
+	LastUpdate        metav1.Time       `json:"lastUpdate,omitempty"`
+	LastDeployed      *metav1.Time      `json:"lastDeployed,omitempty"`
+	RealTimeResources []json.RawMessage `json:"realTimeResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true

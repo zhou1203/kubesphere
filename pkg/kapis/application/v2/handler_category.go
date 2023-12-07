@@ -38,11 +38,10 @@ func (h *appHandler) CreateOrUpdateCategory(req *restful.Request, resp *restful.
 		if category.GetAnnotations() == nil {
 			category.SetAnnotations(map[string]string{})
 		}
-		if createCategoryRequest.GetAnnotations() != nil &&
-			createCategoryRequest.GetAnnotations()[constants.DisplayNameAnnotationKey] != "" {
-			category.Annotations[constants.DisplayNameAnnotationKey] =
-				createCategoryRequest.GetAnnotations()[constants.DisplayNameAnnotationKey]
+		if createCategoryRequest.GetAnnotations()[constants.DisplayNameAnnotationKey] != "" {
+			category.Annotations[constants.DisplayNameAnnotationKey] = createCategoryRequest.GetAnnotations()[constants.DisplayNameAnnotationKey]
 		}
+		category.Spec.Icon = createCategoryRequest.Spec.Icon
 
 		return nil
 	}
