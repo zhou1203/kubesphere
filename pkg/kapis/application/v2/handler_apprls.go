@@ -42,10 +42,11 @@ func (h *appHandler) CreateOrUpdateAppRls(req *restful.Request, resp *restful.Re
 
 func (h *appHandler) DescribeAppRls(req *restful.Request, resp *restful.Response) {
 	applicationId := req.PathParameter("application")
+	ctx := req.Request.Context()
 
 	key := runtimeclient.ObjectKey{Name: applicationId}
 	app := &appv2.ApplicationRelease{}
-	err := h.client.Get(req.Request.Context(), key, app)
+	err := h.client.Get(ctx, key, app)
 	if requestDone(err, resp) {
 		return
 	}
@@ -53,7 +54,7 @@ func (h *appHandler) DescribeAppRls(req *restful.Request, resp *restful.Response
 	// When querying, return real-time data for editing to solve the problem of out-of-sync values during editing.
 	// It is only valid when using the ks API query API. If you want kubectl to work, please use the aggregation API for resource abstraction.
 	if app.Spec.AppType == appv2.AppTypeYaml || app.Spec.AppType == appv2.AppTypeEdge {
-		data, err := h.getRealTimeObj(app)
+		data, err := h.getRealTimeObj(ctx, app)
 		if err != nil {
 			klog.V(4).Infoln(err)
 			api.HandleInternalError(resp, nil, err)
@@ -64,7 +65,7 @@ func (h *appHandler) DescribeAppRls(req *restful.Request, resp *restful.Response
 	resp.WriteEntity(app)
 }
 
-func (h *appHandler) getRealTimeObj(app *appv2.ApplicationRelease) ([]byte, error) {
+func (h *appHandler) getRealTimeObj(ctx context.Context, app *appv2.ApplicationRelease) ([]byte, error) {
 
 	clusterName := app.GetRlsCluster()
 
@@ -89,7 +90,7 @@ func (h *appHandler) getRealTimeObj(app *appv2.ApplicationRelease) ([]byte, erro
 		if err != nil {
 			return nil, err
 		}
-		utdRealTime, err := DynamicClient.Resource(gvr).Get(context.Background(), utd.GetName(), metav1.GetOptions{})
+		utdRealTime, err := DynamicClient.Resource(gvr).Get(ctx, utd.GetName(), metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}

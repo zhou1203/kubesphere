@@ -11,7 +11,6 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 
 	"github.com/emicklei/go-restful/v3"
-	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
@@ -52,7 +51,7 @@ func (h *appHandler) CreateOrUpdateApp(req *restful.Request, resp *restful.Respo
 	}
 
 	v := []application.AppRequest{vRequest}
-	err = application.CreateOrUpdateApp(context.TODO(), h.client, appRequest, v)
+	err = application.CreateOrUpdateApp(req.Request.Context(), h.client, appRequest, v)
 	if requestDone(err, resp) {
 		return
 	}
@@ -184,6 +183,7 @@ func (h *appHandler) DoAppAction(req *restful.Request, resp *restful.Response) {
 		api.HandleBadRequest(resp, nil, err)
 		return
 	}
+	ctx := req.Request.Context()
 
 	user, _ := request.UserFrom(req.Request.Context())
 	if user != nil {
@@ -192,7 +192,7 @@ func (h *appHandler) DoAppAction(req *restful.Request, resp *restful.Response) {
 	app := &appv2.Application{}
 	app.Name = req.PathParameter("app")
 
-	err = h.client.Get(context.Background(), runtimeclient.ObjectKey{Name: app.Name}, app)
+	err = h.client.Get(ctx, runtimeclient.ObjectKey{Name: app.Name}, app)
 	if requestDone(err, resp) {
 		return
 	}
@@ -208,7 +208,7 @@ func (h *appHandler) DoAppAction(req *restful.Request, resp *restful.Response) {
 		// active state is only allowed if at least one app version is in active or passed state
 		appVersionList := &appv2.ApplicationVersionList{}
 		opt := &runtimeclient.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{appv2.AppIDLabelKey: app.Name})}
-		h.client.List(context.Background(), appVersionList, opt)
+		h.client.List(ctx, appVersionList, opt)
 		okActive := false
 		if len(appVersionList.Items) > 0 {
 			for _, v := range appVersionList.Items {
@@ -236,12 +236,12 @@ func (h *appHandler) DoAppAction(req *restful.Request, resp *restful.Response) {
 			app.Labels = map[string]string{}
 		}
 		app.Labels[appv2.AppStoreLabelKey] = "true"
-		h.client.Update(context.Background(), app)
+		h.client.Update(ctx, app)
 	}
 
 	app.Status.State = doActionRequest.State
 	app.Status.UpdateTime = &metav1.Time{Time: time.Now()}
-	err = h.client.Status().Update(context.Background(), app)
+	err = h.client.Status().Update(ctx, app)
 	if requestDone(err, resp) {
 		return
 	}
@@ -253,12 +253,12 @@ func (h *appHandler) DoAppAction(req *restful.Request, resp *restful.Response) {
 		LabelSelector: labels.SelectorFromSet(labels.Set{appv2.AppIDLabelKey: app.Name}),
 	}
 
-	err = h.client.List(context.Background(), versions, opt)
+	err = h.client.List(ctx, versions, opt)
 	if requestDone(err, resp) {
 		return
 	}
 	for _, version := range versions.Items {
-		err = DoAppVersionAction(version.Name, doActionRequest, h.client)
+		err = DoAppVersionAction(ctx, version.Name, doActionRequest, h.client)
 		if err != nil {
 			klog.V(4).Infoln(err)
 			api.HandleInternalError(resp, nil, err)
@@ -277,10 +277,11 @@ func (h *appHandler) PatchApp(req *restful.Request, resp *restful.Response) {
 	if requestDone(err, resp) {
 		return
 	}
+	ctx := req.Request.Context()
 
 	app := &appv2.Application{}
 	app.Name = appId
-	err = h.client.Get(context.Background(), runtimeclient.ObjectKey{Name: app.Name}, app)
+	err = h.client.Get(ctx, runtimeclient.ObjectKey{Name: app.Name}, app)
 	if requestDone(err, resp) {
 		return
 	}
@@ -308,7 +309,7 @@ func (h *appHandler) PatchApp(req *restful.Request, resp *restful.Response) {
 		app.SetAnnotations(ant)
 	}
 
-	err = h.client.Update(context.Background(), app)
+	err = h.client.Update(ctx, app)
 	if requestDone(err, resp) {
 		return
 	}

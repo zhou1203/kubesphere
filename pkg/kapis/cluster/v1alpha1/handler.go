@@ -52,11 +52,12 @@ func (h *handler) updateKubeConfig(request *restful.Request, response *restful.R
 		api.HandleBadRequest(response, request, err)
 		return
 	}
+	ctx := request.Request.Context()
 
 	clusterName := request.PathParameter("cluster")
 
 	cluster := &clusterv1alpha1.Cluster{}
-	if err := h.client.Get(context.Background(), types.NamespacedName{Name: clusterName}, cluster); err != nil {
+	if err := h.client.Get(ctx, types.NamespacedName{Name: clusterName}, cluster); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
 	}
@@ -93,18 +94,18 @@ func (h *handler) updateKubeConfig(request *restful.Request, response *restful.R
 		return
 	}
 
-	if _, err = validateKubeSphereAPIServer(clientSet); err != nil {
+	if _, err = validateKubeSphereAPIServer(ctx, clientSet); err != nil {
 		api.HandleBadRequest(response, request, fmt.Errorf("unable validate kubesphere endpoint, %v", err))
 		return
 	}
 
-	if err = h.validateMemberClusterConfiguration(clientSet); err != nil {
+	if err = h.validateMemberClusterConfiguration(ctx, clientSet); err != nil {
 		api.HandleBadRequest(response, request, fmt.Errorf("failed to validate member cluster configuration, err: %v", err))
 		return
 	}
 
 	// Check if the cluster is the same
-	kubeSystem, err := clientSet.CoreV1().Namespaces().Get(context.TODO(), metav1.NamespaceSystem, metav1.GetOptions{})
+	kubeSystem, err := clientSet.CoreV1().Namespaces().Get(ctx, metav1.NamespaceSystem, metav1.GetOptions{})
 	if err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
@@ -119,7 +120,7 @@ func (h *handler) updateKubeConfig(request *restful.Request, response *restful.R
 
 	cluster = cluster.DeepCopy()
 	cluster.Spec.Connection.KubeConfig = req.KubeConfig
-	if err = h.client.Update(context.TODO(), cluster); err != nil {
+	if err = h.client.Update(ctx, cluster); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
 	}
@@ -133,6 +134,7 @@ func (h *handler) validateCluster(request *restful.Request, response *restful.Re
 		api.HandleBadRequest(response, request, err)
 		return
 	}
+	ctx := request.Request.Context()
 
 	if cluster.Spec.Connection.Type != clusterv1alpha1.ConnectionTypeDirect {
 		api.HandleBadRequest(response, request, fmt.Errorf("cluster connection type MUST be direct"))
@@ -156,21 +158,21 @@ func (h *handler) validateCluster(request *restful.Request, response *restful.Re
 		return
 	}
 
-	if err = h.validateKubeConfig(cluster.Name, clientSet); err != nil {
+	if err = h.validateKubeConfig(ctx, cluster.Name, clientSet); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
 	}
 
 	// Check if the cluster is managed by other host cluster
-	if err = clusterIsManaged(clientSet); err != nil {
+	if err = clusterIsManaged(ctx, clientSet); err != nil {
 		api.HandleBadRequest(response, request, err)
 		return
 	}
 	response.WriteHeader(http.StatusOK)
 }
 
-func clusterIsManaged(client kubernetes.Interface) error {
-	kubeSphereNamespace, err := client.CoreV1().Namespaces().Get(context.TODO(), constants.KubeSphereNamespace, metav1.GetOptions{})
+func clusterIsManaged(ctx context.Context, client kubernetes.Interface) error {
+	kubeSphereNamespace, err := client.CoreV1().Namespaces().Get(ctx, constants.KubeSphereNamespace, metav1.GetOptions{})
 	if err != nil {
 		return runtimeclient.IgnoreNotFound(err)
 	}
@@ -182,14 +184,14 @@ func clusterIsManaged(client kubernetes.Interface) error {
 }
 
 // validateKubeConfig takes base64 encoded kubeconfig and check its validity
-func (h *handler) validateKubeConfig(clusterName string, clientSet kubernetes.Interface) error {
-	kubeSystem, err := clientSet.CoreV1().Namespaces().Get(context.TODO(), metav1.NamespaceSystem, metav1.GetOptions{})
+func (h *handler) validateKubeConfig(ctx context.Context, clusterName string, clientSet kubernetes.Interface) error {
+	kubeSystem, err := clientSet.CoreV1().Namespaces().Get(ctx, metav1.NamespaceSystem, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 
 	clusterList := &clusterv1alpha1.ClusterList{}
-	if err := h.client.List(context.Background(), clusterList); err != nil {
+	if err := h.client.List(ctx, clusterList); err != nil {
 		return err
 	}
 
@@ -206,10 +208,10 @@ func (h *handler) validateKubeConfig(clusterName string, clientSet kubernetes.In
 }
 
 // validateKubeSphereAPIServer uses version api to check the accessibility
-func validateKubeSphereAPIServer(clusterClient kubernetes.Interface) (*version.Info, error) {
+func validateKubeSphereAPIServer(ctx context.Context, clusterClient kubernetes.Interface) (*version.Info, error) {
 	response, err := clusterClient.CoreV1().Services(constants.KubeSphereNamespace).
 		ProxyGet("http", constants.KubeSphereAPIServerName, "80", "/version", nil).
-		DoRaw(context.Background())
+		DoRaw(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("invalid response: %s, please make sure %s.%s.svc of member cluster is up and running", response, constants.KubeSphereAPIServerName, constants.KubeSphereNamespace)
 	}
@@ -223,13 +225,13 @@ func validateKubeSphereAPIServer(clusterClient kubernetes.Interface) (*version.I
 
 // validateMemberClusterConfiguration compares host and member cluster jwt, if they are not same, it changes member
 // cluster jwt to host's, then restart member cluster ks-apiserver.
-func (h *handler) validateMemberClusterConfiguration(clientSet kubernetes.Interface) error {
-	hConfig, err := h.getHostClusterConfig()
+func (h *handler) validateMemberClusterConfiguration(ctx context.Context, clientSet kubernetes.Interface) error {
+	hConfig, err := h.getHostClusterConfig(ctx)
 	if err != nil {
 		return err
 	}
 
-	mConfig, err := h.getMemberClusterConfig(clientSet)
+	mConfig, err := h.getMemberClusterConfig(ctx, clientSet)
 	if err != nil {
 		return err
 	}
@@ -242,8 +244,8 @@ func (h *handler) validateMemberClusterConfiguration(clientSet kubernetes.Interf
 }
 
 // getMemberClusterConfig returns KubeSphere running config by the given member cluster kubeconfig
-func (h *handler) getMemberClusterConfig(clientSet kubernetes.Interface) (*config.Config, error) {
-	memberCm, err := clientSet.CoreV1().ConfigMaps(constants.KubeSphereNamespace).Get(context.Background(), constants.KubeSphereConfigName, metav1.GetOptions{})
+func (h *handler) getMemberClusterConfig(ctx context.Context, clientSet kubernetes.Interface) (*config.Config, error) {
+	memberCm, err := clientSet.CoreV1().ConfigMaps(constants.KubeSphereNamespace).Get(ctx, constants.KubeSphereConfigName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -252,10 +254,10 @@ func (h *handler) getMemberClusterConfig(clientSet kubernetes.Interface) (*confi
 }
 
 // getHostClusterConfig returns KubeSphere running config from host cluster ConfigMap
-func (h *handler) getHostClusterConfig() (*config.Config, error) {
+func (h *handler) getHostClusterConfig(ctx context.Context) (*config.Config, error) {
 	hostCm := &corev1.ConfigMap{}
-	if err := h.client.Get(context.Background(),
-		types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: constants.KubeSphereConfigName}, hostCm); err != nil {
+	key := types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: constants.KubeSphereConfigName}
+	if err := h.client.Get(ctx, key, hostCm); err != nil {
 		return nil, fmt.Errorf("failed to get host cluster %s/configmap/%s, err: %s",
 			constants.KubeSphereNamespace, constants.KubeSphereConfigName, err)
 	}

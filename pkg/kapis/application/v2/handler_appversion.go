@@ -31,10 +31,11 @@ func (h *appHandler) CreateOrUpdateAppVersion(req *restful.Request, resp *restfu
 	if requestDone(err, resp) {
 		return
 	}
+	ctx := req.Request.Context()
 
 	createAppVersionRequest.AppName = req.PathParameter("app")
 	app := appv2.Application{}
-	err = h.client.Get(req.Request.Context(), runtimeclient.ObjectKey{Name: createAppVersionRequest.AppName}, &app)
+	err = h.client.Get(ctx, runtimeclient.ObjectKey{Name: createAppVersionRequest.AppName}, &app)
 	if requestDone(err, resp) {
 		return
 	}
@@ -49,7 +50,7 @@ func (h *appHandler) CreateOrUpdateAppVersion(req *restful.Request, resp *restfu
 		return
 	}
 
-	err = application.CreateOrUpdateAppVersion(context.TODO(), h.client, app, vRequest)
+	err = application.CreateOrUpdateAppVersion(ctx, h.client, app, vRequest)
 	if requestDone(err, resp) {
 		return
 	}
@@ -168,9 +169,10 @@ func (h *appHandler) AppVersionAction(req *restful.Request, resp *restful.Respon
 	if requestDone(err, resp) {
 		return
 	}
+	ctx := req.Request.Context()
 
 	appVersion := &appv2.ApplicationVersion{}
-	err = h.client.Get(context.Background(), runtimeclient.ObjectKey{Name: versionID}, appVersion)
+	err = h.client.Get(ctx, runtimeclient.ObjectKey{Name: versionID}, appVersion)
 	if requestDone(err, resp) {
 		return
 	}
@@ -200,7 +202,7 @@ func (h *appHandler) AppVersionAction(req *restful.Request, resp *restful.Respon
 		return
 	}
 
-	err = DoAppVersionAction(versionID, doActionRequest, h.client)
+	err = DoAppVersionAction(ctx, versionID, doActionRequest, h.client)
 	if requestDone(err, resp) {
 		return
 	}
@@ -208,11 +210,11 @@ func (h *appHandler) AppVersionAction(req *restful.Request, resp *restful.Respon
 	resp.WriteEntity(errors.None)
 }
 
-func DoAppVersionAction(versionId string, actionReq appv2.ApplicationVersionStatus, client runtimeclient.Client) error {
+func DoAppVersionAction(ctx context.Context, versionId string, actionReq appv2.ApplicationVersionStatus, client runtimeclient.Client) error {
 
 	key := runtimeclient.ObjectKey{Name: versionId}
 	version := &appv2.ApplicationVersion{}
-	err := client.Get(context.TODO(), key, version)
+	err := client.Get(ctx, key, version)
 	if err != nil {
 		klog.Errorf("get app version %s failed, error: %s", versionId, err)
 		return err
@@ -221,7 +223,7 @@ func DoAppVersionAction(versionId string, actionReq appv2.ApplicationVersionStat
 	version.Status.Message = actionReq.Message
 	version.Status.UserName = actionReq.UserName
 	version.Status.Updated = &metav1.Time{Time: metav1.Now().Time}
-	err = client.Status().Update(context.TODO(), version)
+	err = client.Status().Update(ctx, version)
 
 	return err
 }

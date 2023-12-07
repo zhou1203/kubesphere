@@ -44,9 +44,10 @@ type handler struct {
 
 func (h *handler) ListIngressClassScopes(req *restful.Request, resp *restful.Response) {
 	currentNs := req.PathParameter("namespace")
+	ctx := req.Request.Context()
 
 	ingressClassScopeList := v1alpha2.IngressClassScopeList{}
-	err := h.cache.List(req.Request.Context(), &ingressClassScopeList)
+	err := h.cache.List(ctx, &ingressClassScopeList)
 	if err != nil {
 		api.HandleError(resp, req, err)
 		return
@@ -59,7 +60,7 @@ func (h *handler) ListIngressClassScopes(req *restful.Request, resp *restful.Res
 
 		// Specify all namespace
 		if len(namespaces) == 0 && nsSelector == "" {
-			_ = h.setStatus(req.Request.Context(), &item)
+			_ = h.setStatus(ctx, &item)
 			ret = append(ret, item)
 			continue
 		}
@@ -68,7 +69,7 @@ func (h *handler) ListIngressClassScopes(req *restful.Request, resp *restful.Res
 		if len(namespaces) > 0 {
 			for _, n := range namespaces {
 				if n == currentNs {
-					_ = h.setStatus(req.Request.Context(), &item)
+					_ = h.setStatus(ctx, &item)
 					ret = append(ret, item)
 					break
 				}
@@ -79,10 +80,10 @@ func (h *handler) ListIngressClassScopes(req *restful.Request, resp *restful.Res
 		// Specify namespaceSelector
 		if nsSelector != "" {
 			nsList := corev1.NamespaceList{}
-			_ = h.cache.List(req.Request.Context(), &nsList, &runtimeclient.ListOptions{LabelSelector: Selector(nsSelector)})
+			_ = h.cache.List(ctx, &nsList, &runtimeclient.ListOptions{LabelSelector: Selector(nsSelector)})
 			for _, n := range nsList.Items {
 				if n.Name == currentNs {
-					_ = h.setStatus(req.Request.Context(), &item)
+					_ = h.setStatus(ctx, &item)
 					ret = append(ret, item)
 					break
 				}
