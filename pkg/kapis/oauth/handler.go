@@ -383,9 +383,9 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 		h.refreshTokenGrant(req, response, client)
 	case oauth.GrantTypeCode, oauth.GrantTypeAuthorizationCode:
 		h.codeGrant(req, response, client)
+	default:
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewError(oauth.UnsupportedGrantType, "The provided grant_type is not supported."))
 	}
-
-	_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewError(oauth.UnsupportedGrantType, "The provided grant_type is not supported."))
 }
 
 // passwordGrant handles the Resource Owner Password Credentials Grant.
