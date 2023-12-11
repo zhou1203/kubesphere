@@ -10,6 +10,7 @@ import (
 	"github.com/oliveagle/jsonpath"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
@@ -169,11 +170,24 @@ func DefaultObjectMetaFilter(item metav1.Object, filter query.Filter) bool {
 		// /namespaces?page=1&limit=10&label=kubesphere.io/workspace:system-workspace
 	case query.FieldLabel:
 		return labelMatch(item.GetLabels(), string(filter.Value))
+		// /namespaces?page=1&limit=10&labelSelector=environment in (production, qa)
+	case query.ParameterLabelSelector:
+		return labelSelectorMatch(item.GetLabels(), string(filter.Value))
 	case query.ParameterFieldSelector:
 		return contains(item.(runtime.Object), filter.Value)
 	default:
 		return true
 	}
+}
+
+func labelSelectorMatch(objLabels map[string]string, filter string) bool {
+	selector, err := labels.Parse(filter)
+	if err != nil {
+		klog.V(4).Infof("failed parse labelSelector error: %s", err)
+		return false
+	}
+
+	return selector.Matches(labels.Set(objLabels))
 }
 
 func labelMatch(labels map[string]string, filter string) bool {
@@ -243,6 +257,18 @@ func contains(object runtime.Object, queryValue query.Value) bool {
 			klog.V(4).Infof("failed to lookup jsonpath: %s", err)
 			return false
 		}
+
+		// Values prefixed with ~ support case insensitivity. (e.g. a=~b, can hit b, B)
+		if strings.HasPrefix(value, "~") {
+			value = strings.TrimPrefix(value, "~")
+			if (negative && !strings.EqualFold(fmt.Sprintf("%v", rawValue), value)) ||
+				(!negative && strings.EqualFold(fmt.Sprintf("%v", rawValue), value)) {
+				continue
+			} else {
+				return false
+			}
+		}
+
 		if (negative && fmt.Sprintf("%v", rawValue) != value) || (!negative && fmt.Sprintf("%v", rawValue) == value) {
 			continue
 		} else {
