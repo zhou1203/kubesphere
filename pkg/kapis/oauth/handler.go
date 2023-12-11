@@ -226,31 +226,10 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 		return
 	}
 
-	// If no openid scope value is present, the request may still be a valid OAuth 2.0 request,
-	// but is not an OpenID Connect request.
-	var scopes []string
-	if scope != "" {
-		scopes = strings.Split(scope, " ")
-	}
-	var responseTypes []string
-	if responseType != "" {
-		responseTypes = strings.Split(responseType, " ")
-	}
-
-	if !client.IsValidScope(scope) {
-		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidScope("The requested scope is invalid or not supported."))
-		return
-	}
-
-	// Hybrid flow is not supported now
-	if len(responseTypes) > 1 || !oauth.IsValidResponseTypes(responseTypes) {
-		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewError(oauth.UnsupportedResponseType, fmt.Sprintf("The provided response_type %s is not supported by the authorization server.", responseType)))
-		return
-	}
-
-	// If the resource owner denies the access request or if the request
-	// fails for reasons other than a missing or invalid redirection URI,
-	// the authorization server informs the client by adding the following
+	// Unless the Redirection URI is invalid, the Authorization Server returns the Client to the Redirection URI
+	// specified in the Authorization Request with the appropriate error and state parameters.
+	// Other parameters SHOULD NOT be returned.
+	// The authorization server informs the client by adding the following
 	// parameters to the query component of the redirection URI using the
 	// "application/x-www-form-urlencoded" format
 	informsError := func(err *oauth.Error) {
@@ -266,6 +245,28 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 		http.Redirect(response.ResponseWriter, req.Request, redirectURL.String(), http.StatusFound)
 	}
 
+	// If no openid scope value is present, the request may still be a valid OAuth 2.0 request,
+	// but is not an OpenID Connect request.
+	var scopes []string
+	if scope != "" {
+		scopes = strings.Split(scope, " ")
+	}
+	var responseTypes []string
+	if responseType != "" {
+		responseTypes = strings.Split(responseType, " ")
+	}
+
+	if !client.IsValidScope(scope) {
+		informsError(oauth.NewInvalidScope("The requested scope is invalid or not supported."))
+		return
+	}
+
+	// Hybrid flow is not supported now
+	if len(responseTypes) > 1 || !oauth.IsValidResponseTypes(responseTypes) {
+		informsError(oauth.NewError(oauth.UnsupportedResponseType, fmt.Sprintf("The provided response_type %s is not supported by the authorization server.", responseType)))
+		return
+	}
+
 	if client.GrantMethod == oauth.GrantMethodDeny {
 		informsError(oauth.NewInvalidGrant("The resource owner or authorization server denied the request."))
 		return
@@ -277,12 +278,12 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 			informsError(oauth.NewError(oauth.LoginRequired, "Not authenticated."))
 			return
 		}
-		// TODO redirect
+		// TODO redirect to login page with refer
 		http.Redirect(response.ResponseWriter, req.Request, h.options.OAuthOptions.Issuer, http.StatusFound)
 		return
 	}
 
-	approved := client.GrantMethod == oauth.GrantMethodAuto || client.GrantMethod == oauth.GrantMethodNone
+	approved := client.GrantMethod == oauth.GrantMethodAuto
 	if prompt == "none" && !approved {
 		informsError(oauth.NewError(oauth.InteractionRequired, "Consent is required before proceeding with the request."))
 		return
@@ -313,7 +314,7 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 			state:       state,
 		})
 	default:
-		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewError(oauth.UnsupportedResponseType, "The provided response_type is not supported by the authorization server."))
+		informsError(oauth.NewError(oauth.UnsupportedResponseType, "The provided response_type is not supported by the authorization server."))
 	}
 }
 
@@ -340,16 +341,22 @@ func (h *handler) oauthCallback(req *restful.Request, response *restful.Response
 	_ = response.WriteEntity(result)
 }
 
-// To obtain an Access Token, an ID Token, and optionally a Refresh Token,
-// the RP (Client) sends a Token Request to the Token Endpoint to obtain a Token Response,
-// as described in Section 3.2 of OAuth 2.0 [RFC6749], when using the Authorization Code Flow.
-// Communication with the Token Endpoint MUST utilize TLS.
+// token handles the Token Request to obtain an Access Token, an ID Token, and optionally a Refresh Token.
+// This is used in the Authorization Code Flow, where the RP (Client) sends a Token Request to the Token Endpoint
+// (described in Section 3.2 of OAuth 2.0 [RFC6749]) to obtain a Token Response.
+// Communication with the Token Endpoint is required to utilize TLS for security.
 func (h *handler) token(req *restful.Request, response *restful.Response) {
-	// TODO(hongming) support basic auth
-	// https://datatracker.ietf.org/doc/html/rfc6749#section-2.3
 	clientID, _ := req.BodyParameter("client_id")
 	clientSecret, _ := req.BodyParameter("client_secret")
+	grantType, _ := req.BodyParameter("grant_type")
 
+	// All Token Responses containing sensitive information MUST include the following HTTP response header fields and values:
+	// Cache-Control: no-store
+	// Pragma: no-cache
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Pragma", "no-cache")
+
+	// Retrieve the OAuth client associated with the provided client_id.
 	client, err := h.clientGetter.GetOAuthClient(req.Request.Context(), clientID)
 	if err != nil {
 		if err == oauth.ErrorClientNotFound {
@@ -361,72 +368,85 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 		return
 	}
 
+	// Check if the client_secret matches the one associated with the retrieved client.
 	if client.Secret != clientSecret {
 		_ = response.WriteHeaderAndEntity(http.StatusUnauthorized, oauth.NewError(oauth.UnauthorizedClient, "Invalid client credential."))
 		return
 	}
 
-	grantType, _ := req.BodyParameter("grant_type")
-
-	response.Header().Set("Cache-Control", "no-store")
-	response.Header().Set("Pragma", "no-cache")
 	switch grantType {
 	case oauth.GrantTypePassword:
-		username, _ := req.BodyParameter("username")
-		password, _ := req.BodyParameter("password")
-		h.passwordGrant("", username, password, req, response)
+		if client.Trusted {
+			h.passwordGrant(req, response)
+		}
 	case oauth.GrantTypeRefreshToken:
 		h.refreshTokenGrant(req, response, client)
 	case oauth.GrantTypeCode, oauth.GrantTypeAuthorizationCode:
 		h.codeGrant(req, response, client)
-	default:
-		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewError(oauth.UnsupportedGrantType, "The provided grant_type is not supported."))
 	}
+
+	_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewError(oauth.UnsupportedGrantType, "The provided grant_type is not supported."))
 }
 
-// passwordGrant handle Resource Owner Password Credentials Grant
-// for more details: https://datatracker.ietf.org/doc/html/rfc6749#section-4.3
-// The resource owner password credentials grant type is suitable in
-// cases where the resource owner has a trust relationship with the client,
-// such as the device operating system or a highly privileged application.
-// The authorization server should take special care when enabling this
-// grant type and only allow it when other flows are not viable.
-func (h *handler) passwordGrant(provider, username string, password string, req *restful.Request, response *restful.Response) {
+// passwordGrant handles the Resource Owner Password Credentials Grant.
+// For more details, refer to: https://datatracker.ietf.org/doc/html/rfc6749#section-4.3
+//
+// The resource owner password credentials grant type is suitable in cases where
+// the resource owner has a trust relationship with the client, such as the device
+// operating system or a highly privileged application. The authorization server should
+// take special care when enabling this grant type and only allow it when other flows
+// are not viable.
+func (h *handler) passwordGrant(req *restful.Request, response *restful.Response) {
+	// Extracting parameters from the request body.
+	username, _ := req.BodyParameter("username")
+	password, _ := req.BodyParameter("password")
+	provider, _ := req.BodyParameter("provider")
+
+	// Authenticate the user credentials.
 	authenticated, provider, err := h.passwordAuthenticator.Authenticate(req.Request.Context(), provider, username, password)
 	if err != nil {
 		switch err {
 		case auth.AccountIsNotActiveError:
+			// Account is suspended.
 			_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant("Account suspended."))
 			return
 		case auth.IncorrectPasswordError:
+			// Record unsuccessful login attempt.
 			requestInfo, _ := request.RequestInfoFrom(req.Request.Context())
 			if err := h.loginRecorder.RecordLogin(username, iamv1beta1.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, err); err != nil {
 				klog.Errorf("Failed to record unsuccessful login attempt for user %s, error: %v", username, err)
 			}
+			// Invalid username or password.
 			_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant("Invalid username or password."))
 			return
 		case auth.RateLimitExceededError:
-			_ = response.WriteHeaderAndEntity(http.StatusTooManyRequests, oauth.NewInvalidGrant("Account suspended."))
+			// Rate limit exceeded.
+			_ = response.WriteHeaderAndEntity(http.StatusTooManyRequests, oauth.NewInvalidGrant("Rate limit exceeded."))
 			return
 		default:
-			klog.Errorf("authentication failed: %s", err)
+			// Authentication failed.
+			klog.Errorf("Authentication failed: %s", err)
 			_ = response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(internalServerErrorMessage))
 			return
 		}
 	}
 
+	// Issue token to the authenticated user.
 	result, err := h.issueTokenTo(authenticated, nil)
 	if err != nil {
-		klog.Errorf("failed to issue token: %s", err)
+		// Failed to issue token.
+		klog.Errorf("Failed to issue token: %s", err)
 		_ = response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(internalServerErrorMessage))
 		return
 	}
 
+	// Record successful login.
 	requestInfo, _ := request.RequestInfoFrom(req.Request.Context())
 	if err = h.loginRecorder.RecordLogin(authenticated.GetName(), iamv1beta1.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, nil); err != nil {
 		klog.Errorf("Failed to record successful login for user %s, error: %v", authenticated.GetName(), err)
 	}
 
+	// Respond with the issued token.
 	_ = response.WriteEntity(result)
 }
 
@@ -666,14 +686,6 @@ func (h *handler) userinfo(req *restful.Request, response *restful.Response) {
 		PreferredUsername: userDetails.Name,
 	}
 	_ = response.WriteEntity(result)
-}
-
-func (h *handler) loginByIdentityProvider(req *restful.Request, response *restful.Response) {
-	username, _ := req.BodyParameter("username")
-	password, _ := req.BodyParameter("password")
-	idp := req.PathParameter("identityprovider")
-
-	h.passwordGrant(idp, username, password, req, response)
 }
 
 type authCodeRequest struct {

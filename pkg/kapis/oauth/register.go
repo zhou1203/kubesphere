@@ -204,17 +204,6 @@ func (h *handler) AddToContainer(c *restful.Container) error {
 			Required(false)).
 		Returns(http.StatusOK, http.StatusText(http.StatusOK), ""))
 
-	ws.Route(ws.POST("/login/{identityprovider}").
-		Consumes(contentTypeFormData).
-		To(h.loginByIdentityProvider).
-		Doc("Third-party account login").
-		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAuthentication}).
-		Operation("third-party-login").
-		Param(ws.PathParameter("identityprovider", "The identity provider name.")).
-		Param(ws.FormParameter("username", "Third-party username.")).
-		Param(ws.FormParameter("password", "Third-party user's password.")).
-		Returns(http.StatusOK, http.StatusText(http.StatusOK), oauth.Token{}))
-
 	c.Add(ws)
 	return nil
 }
