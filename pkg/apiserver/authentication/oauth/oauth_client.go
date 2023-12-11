@@ -22,10 +22,8 @@ const (
 	GrantMethodDeny   = "deny"
 
 	SecretTypeOAuthClient = "config.kubesphere.io/oauthclient"
-
 	SecretDataKey         = "configuration.yaml"
 	SecretLabelClientName = "config.kubesphere.io/oauthclient-name"
-	SecretLabelConfigType = "config.kubesphere.io/type"
 )
 
 var (
@@ -215,11 +213,6 @@ func UnmarshalFrom(secret *v1.Secret) (*Client, error) {
 }
 
 func MarshalInto(client *Client, secret *v1.Secret) error {
-	if secret.Labels == nil {
-		secret.Labels = make(map[string]string)
-	}
-	secret.Labels[SecretLabelClientName] = client.Name
-	secret.Labels[SecretLabelConfigType] = SecretTypeOAuthClient
 	data, err := yaml.Marshal(client)
 	if err != nil {
 		return err

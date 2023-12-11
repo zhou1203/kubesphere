@@ -374,17 +374,21 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 		return
 	}
 
+	unsupportedGrantType := oauth.NewError(oauth.UnsupportedGrantType, "The provided grant_type is not supported.")
+
 	switch grantType {
 	case oauth.GrantTypePassword:
 		if client.Trusted {
 			h.passwordGrant(req, response)
+			return
 		}
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, unsupportedGrantType)
 	case oauth.GrantTypeRefreshToken:
 		h.refreshTokenGrant(req, response, client)
 	case oauth.GrantTypeCode, oauth.GrantTypeAuthorizationCode:
 		h.codeGrant(req, response, client)
 	default:
-		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewError(oauth.UnsupportedGrantType, "The provided grant_type is not supported."))
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, unsupportedGrantType)
 	}
 }
 

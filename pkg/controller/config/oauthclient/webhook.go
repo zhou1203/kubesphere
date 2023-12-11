@@ -40,6 +40,10 @@ func (v *WebhookHandler) Default(_ context.Context, secret *v1.Secret) error {
 		oc.AccessTokenInactivityTimeout = 7200
 	}
 
+	if secret.Labels == nil {
+		secret.Labels = make(map[string]string)
+	}
+	secret.Labels[oauth.SecretLabelClientName] = oc.Name
 	return oauth.MarshalInto(oc, secret)
 }
 
