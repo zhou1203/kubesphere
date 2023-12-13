@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func HelmPull(u string, cred appv2.HelmRepoCredential) (*bytes.Buffer, error) {
+func HelmPull(u string, cred appv2.RepoCredential) (*bytes.Buffer, error) {
 	parsedURL, err := url.Parse(u)
 	if err != nil {
 		return nil, err
@@ -38,7 +38,7 @@ func HelmPull(u string, cred appv2.HelmRepoCredential) (*bytes.Buffer, error) {
 	return resp, err
 }
 
-func LoadRepoIndex(u string, cred appv2.HelmRepoCredential) (idx helmrepo.IndexFile, err error) {
+func LoadRepoIndex(u string, cred appv2.RepoCredential) (idx helmrepo.IndexFile, err error) {
 	if !strings.HasSuffix(u, "/") {
 		u = fmt.Sprintf("%s/index.yaml", u)
 	} else {

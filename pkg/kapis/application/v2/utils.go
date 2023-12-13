@@ -54,6 +54,10 @@ func parseRequest(createRequest application.AppRequest, workspace string) (appRe
 	if createRequest.AppType == appv2.AppTypeYaml || createRequest.AppType == appv2.AppTypeEdge {
 		createRequest.Workspace = workspace
 		createRequest.RepoName = "configyaml"
+		_, err = application.ReadYaml(createRequest.Package)
+		if err != nil {
+			return application.AppRequest{}, application.AppRequest{}, err
+		}
 		return createRequest, createRequest, nil
 	}
 

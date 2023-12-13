@@ -196,7 +196,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, cmOptions *option
 	}
 
 	if cmOptions.IsControllerEnabled("apprepo") {
-		addControllerWithSetup(mgr, "apprepo", &application.HelmRepoReconciler{})
+		addControllerWithSetup(mgr, "apprepo", &application.RepoReconciler{})
 	}
 
 	if cmOptions.IsControllerEnabled("appcategory") {

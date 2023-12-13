@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
 
@@ -33,21 +32,21 @@ import (
 )
 
 type AppRequest struct {
-	RepoName     string                   `json:"repoName,omitempty"`
-	AppName      string                   `json:"appName,omitempty"`
-	AliasName    string                   `json:"aliasName,omitempty"`
-	VersionName  string                   `json:"versionName,omitempty"`
-	AppHome      string                   `json:"appHome,omitempty"`
-	Url          string                   `json:"url,omitempty"`
-	Icon         string                   `json:"icon,omitempty"`
-	Digest       string                   `json:"digest,omitempty"`
-	Workspace    string                   `json:"workspace,omitempty"`
-	Description  string                   `json:"description,omitempty"`
-	CategoryName string                   `json:"categoryName,omitempty"`
-	AppType      string                   `json:"appType,omitempty"`
-	Package      []byte                   `json:"package,omitempty"`
-	Credential   appv2.HelmRepoCredential `json:"credential,omitempty"`
-	Maintainers  []appv2.Maintainer       `json:"maintainers,omitempty"`
+	RepoName     string               `json:"repoName,omitempty"`
+	AppName      string               `json:"appName,omitempty"`
+	AliasName    string               `json:"aliasName,omitempty"`
+	VersionName  string               `json:"versionName,omitempty"`
+	AppHome      string               `json:"appHome,omitempty"`
+	Url          string               `json:"url,omitempty"`
+	Icon         string               `json:"icon,omitempty"`
+	Digest       string               `json:"digest,omitempty"`
+	Workspace    string               `json:"workspace,omitempty"`
+	Description  string               `json:"description,omitempty"`
+	CategoryName string               `json:"categoryName,omitempty"`
+	AppType      string               `json:"appType,omitempty"`
+	Package      []byte               `json:"package,omitempty"`
+	Credential   appv2.RepoCredential `json:"credential,omitempty"`
+	Maintainers  []appv2.Maintainer   `json:"maintainers,omitempty"`
 }
 
 func CreateOrUpdateApp(ctx context.Context, client client.Client, request AppRequest, vRequests []AppRequest) error {
@@ -213,7 +212,7 @@ func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, app app
 	return err
 }
 
-func ReadYaml(data []byte) (jsonList []json.RawMessage) {
+func ReadYaml(data []byte) (jsonList []json.RawMessage, err error) {
 	reader := bytes.NewReader(data)
 	bufReader := bufio.NewReader(reader)
 	r := yaml.NewYAMLReader(bufReader)
@@ -224,11 +223,15 @@ func ReadYaml(data []byte) (jsonList []json.RawMessage) {
 		}
 		jsonData, err := yaml.ToJSON(d)
 		if err != nil {
-			log.Fatalf("Error converting YAML to JSON: %v", err)
+			return nil, err
+		}
+		_, _, err = Decode(jsonData)
+		if err != nil {
+			return nil, err
 		}
 		jsonList = append(jsonList, jsonData)
 	}
-	return jsonList
+	return jsonList, nil
 }
 
 func Decode(data []byte) (obj runtime.Object, gvk *schema.GroupVersionKind, err error) {
@@ -261,8 +264,15 @@ func ConvertToUnstructured(obj any) (*unstructured.Unstructured, error) {
 	return &unstructured.Unstructured{Object: objMap}, err
 }
 
-func ComplianceCheck(values, tempLate []byte, mapper meta.RESTMapper) ([]json.RawMessage, error) {
-	yamlList, yamlTempList := ReadYaml(values), ReadYaml(tempLate)
+func ComplianceCheck(values, tempLate []byte, mapper meta.RESTMapper, ns string) (result []json.RawMessage, err error) {
+	yamlList, err := ReadYaml(values)
+	if err != nil {
+		return nil, err
+	}
+	yamlTempList, err := ReadYaml(tempLate)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(yamlTempList) != len(yamlList) {
 		return nil, errors.New("yamlList and yamlTempList length not equal")
@@ -278,6 +288,9 @@ func ComplianceCheck(values, tempLate []byte, mapper meta.RESTMapper) ([]json.Ra
 		}
 		if utdTemp.GetKind() != utd.GetKind() || utdTemp.GetAPIVersion() != utd.GetAPIVersion() {
 			return nil, errors.New("yamlList and yamlTempList not equal")
+		}
+		if utd.GetNamespace() != ns {
+			return nil, errors.New("subresource must have same namespace with app release")
 		}
 	}
 	return yamlList, nil

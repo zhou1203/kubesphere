@@ -36,25 +36,25 @@ import (
 	"kubesphere.io/kubesphere/pkg/simple/client/application"
 )
 
-var _ reconcile.Reconciler = &HelmRepoReconciler{}
+var _ reconcile.Reconciler = &RepoReconciler{}
 
-type HelmRepoReconciler struct {
+type RepoReconciler struct {
 	recorder record.EventRecorder
 	client.Client
 }
 
-func (r *HelmRepoReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *RepoReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	r.recorder = mgr.GetEventRecorderFor("helmrepo-controller")
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appv2.HelmRepo{}).
+		For(&appv2.Repo{}).
 		Complete(r)
 }
 
-func (r *HelmRepoReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+func (r *RepoReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 
-	helmRepo := &appv2.HelmRepo{}
+	helmRepo := &appv2.Repo{}
 	if err := r.Client.Get(ctx, request.NamespacedName, helmRepo); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
@@ -88,7 +88,7 @@ func (r *HelmRepoReconciler) Reconcile(ctx context.Context, request reconcile.Re
 	return reconcile.Result{RequeueAfter: requeueAfter}, nil
 }
 
-func (r *HelmRepoReconciler) sync(ctx context.Context, helmRepo *appv2.HelmRepo) (err error) {
+func (r *RepoReconciler) sync(ctx context.Context, helmRepo *appv2.Repo) (err error) {
 	index, err := installer.LoadRepoIndex(helmRepo.Spec.Url, helmRepo.Spec.Credential)
 	if err != nil {
 		klog.Errorf("load index failed, repo: %s, url: %s, err: %s", helmRepo.GetName(), helmRepo.Spec.Url, err)
@@ -126,7 +126,7 @@ func (r *HelmRepoReconciler) sync(ctx context.Context, helmRepo *appv2.HelmRepo)
 	return err
 }
 
-func helmRepoAppRequest(repo *appv2.HelmRepo, versions helmrepo.ChartVersions, name string) application.AppRequest {
+func helmRepoAppRequest(repo *appv2.Repo, versions helmrepo.ChartVersions, name string) application.AppRequest {
 	request := application.AppRequest{
 		RepoName:    repo.Name,
 		AppName:     fmt.Sprintf("%s-%s", repo.Name, name),

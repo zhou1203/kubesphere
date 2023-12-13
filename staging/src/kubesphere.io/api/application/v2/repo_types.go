@@ -22,7 +22,7 @@ import (
 	"kubesphere.io/api/constants"
 )
 
-type HelmRepoCredential struct {
+type RepoCredential struct {
 	// chart repository username
 	Username string `json:"username,omitempty"`
 	// chart repository password
@@ -37,54 +37,54 @@ type HelmRepoCredential struct {
 	InsecureSkipTLSVerify *bool `json:"insecureSkipTLSVerify,omitempty"`
 }
 
-// HelmRepoSpec defines the desired state of HelmRepo
-type HelmRepoSpec struct {
-	// helm repo url
+// RepoSpec defines the desired state of Repo
+type RepoSpec struct {
+	//  repo url
 	Url string `json:"url"`
-	// helm repo credential
-	Credential HelmRepoCredential `json:"credential,omitempty"`
+	//  repo credential
+	Credential RepoCredential `json:"credential,omitempty"`
 	// chart repo description from frontend
 	Description string `json:"description,omitempty"`
 	// sync period in seconds, no sync when SyncPeriod=0, the minimum SyncPeriod is 180s
 	SyncPeriod int `json:"syncPeriod,omitempty"`
 }
 
-// HelmRepoStatus defines the observed state of HelmRepo
-type HelmRepoStatus struct {
+// RepoStatus defines the observed state of Repo
+type RepoStatus struct {
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
 	State          string       `json:"state,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster,path=helmrepos,shortName=hrepo
+// +kubebuilder:resource:scope=Cluster,path=repos,shortName=hrepo
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
 // +kubebuilder:printcolumn:name="url",type=string,JSONPath=`.spec.url`
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
-// HelmRepo is the Schema for the helmrepoes API
-type HelmRepo struct {
+// Repo is the Schema for the repoes API
+type Repo struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   HelmRepoSpec   `json:"spec,omitempty"`
-	Status HelmRepoStatus `json:"status,omitempty"`
+	Spec   RepoSpec   `json:"spec,omitempty"`
+	Status RepoStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// HelmRepoList contains a list of HelmRepo
-type HelmRepoList struct {
+// RepoList contains a list of Repo
+type RepoList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []HelmRepo `json:"items"`
+	Items           []Repo `json:"items"`
 }
 
-func (in *HelmRepo) GetWorkspace() string {
+func (in *Repo) GetWorkspace() string {
 	return getValue(in.Labels, constants.WorkspaceLabelKey)
 }
 
-func (in *HelmRepo) GetCreator() string {
+func (in *Repo) GetCreator() string {
 	return getValue(in.Annotations, constants.CreatorAnnotationKey)
 }

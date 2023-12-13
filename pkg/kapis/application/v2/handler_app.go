@@ -258,11 +258,13 @@ func (h *appHandler) DoAppAction(req *restful.Request, resp *restful.Response) {
 		return
 	}
 	for _, version := range versions.Items {
-		err = DoAppVersionAction(ctx, version.Name, doActionRequest, h.client)
-		if err != nil {
-			klog.V(4).Infoln(err)
-			api.HandleInternalError(resp, nil, err)
-			return
+		if version.Status.State == appv2.StatusActive || version.Status.State == appv2.ReviewStatusSuspended {
+			err = DoAppVersionAction(ctx, version.Name, doActionRequest, h.client)
+			if err != nil {
+				klog.V(4).Infoln(err)
+				api.HandleInternalError(resp, nil, err)
+				return
+			}
 		}
 	}
 

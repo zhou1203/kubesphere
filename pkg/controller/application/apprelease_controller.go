@@ -165,7 +165,10 @@ func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (ex
 	}
 	if apprls.Spec.AppType == appv2.AppTypeYaml || apprls.Spec.AppType == appv2.AppTypeEdge {
 
-		jsonList := application.ReadYaml(apprls.Spec.Values)
+		jsonList, err := application.ReadYaml(apprls.Spec.Values)
+		if err != nil {
+			return nil, err
+		}
 		var gvrListInfo []installer.InsInfo
 		for _, i := range jsonList {
 			gvr, utd, err := application.GetInfoFromBytes(i, runClient.RESTMapper())
@@ -184,6 +187,7 @@ func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (ex
 			Mapper:      runClient.RESTMapper(),
 			DynamicCli:  dynamicClient,
 			GvrListInfo: gvrListInfo,
+			Namespace:   apprls.GetRlsNamespace(),
 		}
 		return executor, nil
 	}

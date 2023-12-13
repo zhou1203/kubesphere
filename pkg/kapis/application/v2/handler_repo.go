@@ -33,7 +33,7 @@ import (
 
 func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Response) {
 
-	repoRequest := &appv2.HelmRepo{}
+	repoRequest := &appv2.Repo{}
 	err := req.ReadEntity(repoRequest)
 	if requestDone(err, resp) {
 		return
@@ -43,7 +43,7 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 	if repoId == "" {
 		repoId = repoRequest.Name
 	}
-	repo := &appv2.HelmRepo{}
+	repo := &appv2.Repo{}
 	repo.Name = repoId
 	parsedUrl, err := url.Parse(repoRequest.Spec.Url)
 	if requestDone(err, resp) {
@@ -71,7 +71,7 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 		workspace = appv2.SystemWorkspace
 	}
 	mutateFn := func() error {
-		repo.Spec = appv2.HelmRepoSpec{
+		repo.Spec = appv2.RepoSpec{
 			Url:         parsedUrl.String(),
 			SyncPeriod:  repoRequest.Spec.SyncPeriod,
 			Description: stringutils.ShortenString(repoRequest.Spec.Description, 512),
@@ -107,7 +107,7 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 func (h *appHandler) DeleteRepo(req *restful.Request, resp *restful.Response) {
 	repoId := req.PathParameter("repo")
 
-	err := h.client.Delete(req.Request.Context(), &appv2.HelmRepo{ObjectMeta: metav1.ObjectMeta{Name: repoId}})
+	err := h.client.Delete(req.Request.Context(), &appv2.Repo{ObjectMeta: metav1.ObjectMeta{Name: repoId}})
 	if requestDone(err, resp) {
 		return
 	}
@@ -120,7 +120,7 @@ func (h *appHandler) DescribeRepo(req *restful.Request, resp *restful.Response) 
 	repoId := req.PathParameter("repo")
 
 	key := runtimeclient.ObjectKey{Name: repoId}
-	repo := &appv2.HelmRepo{}
+	repo := &appv2.Repo{}
 	err := h.client.Get(req.Request.Context(), key, repo)
 	if requestDone(err, resp) {
 		return
@@ -132,7 +132,7 @@ func (h *appHandler) DescribeRepo(req *restful.Request, resp *restful.Response) 
 
 func (h *appHandler) ListRepos(req *restful.Request, resp *restful.Response) {
 
-	helmRepoList := &appv2.HelmRepoList{}
+	helmRepoList := &appv2.RepoList{}
 	err := h.client.List(req.Request.Context(), helmRepoList)
 	if requestDone(err, resp) {
 		return

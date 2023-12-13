@@ -43,7 +43,7 @@ func init() {
 		&ApplicationVersionList{},
 		&ApplicationRelease{},
 		&ApplicationReleaseList{},
-		&HelmRepo{},
-		&HelmRepoList{},
+		&Repo{},
+		&RepoList{},
 	)
 }

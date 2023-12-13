@@ -26,6 +26,7 @@ type YamlInstaller struct {
 	Mapper      meta.RESTMapper
 	DynamicCli  *dynamic.DynamicClient
 	GvrListInfo []InsInfo
+	Namespace   string
 }
 type InsInfo struct {
 	schema.GroupVersionResource
@@ -40,7 +41,7 @@ func (t YamlInstaller) Install(ctx context.Context, chartName string, chartData,
 }
 
 func (t YamlInstaller) Upgrade(ctx context.Context, chartName string, tempLate, values []byte, options ...helm.HelmOption) (string, error) {
-	yamlList, err := application.ComplianceCheck(values, tempLate, t.Mapper)
+	yamlList, err := application.ComplianceCheck(values, tempLate, t.Mapper, t.Namespace)
 	if err != nil {
 		return "", err
 	}

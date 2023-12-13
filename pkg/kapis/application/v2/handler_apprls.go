@@ -62,7 +62,8 @@ func (h *appHandler) CreateOrUpdateAppRls(req *restful.Request, resp *restful.Re
 			return
 		}
 		template := configMap.BinaryData[appv2.BinaryKey]
-		_, err = application.ComplianceCheck(createRlsRequest.Spec.Values, template, runtimeClient.RESTMapper())
+		_, err = application.ComplianceCheck(createRlsRequest.Spec.Values, template,
+			runtimeClient.RESTMapper(), createRlsRequest.GetRlsNamespace())
 		if requestDone(err, resp) {
 			return
 		}
@@ -118,7 +119,10 @@ func (h *appHandler) getRealTimeYaml(ctx context.Context, app *appv2.Application
 		return nil, err
 	}
 
-	jsonList := application.ReadYaml(app.Spec.Values)
+	jsonList, err := application.ReadYaml(app.Spec.Values)
+	if err != nil {
+		return nil, err
+	}
 	for _, i := range jsonList {
 		gvr, utd, err := application.GetInfoFromBytes(i, runtimeClient.RESTMapper())
 		if err != nil {
