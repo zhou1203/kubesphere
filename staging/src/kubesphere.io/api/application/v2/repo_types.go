@@ -56,7 +56,7 @@ type RepoStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster,path=repos,shortName=hrepo
+// +kubebuilder:resource:scope=Cluster,path=repos,shortName=repo
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Workspace",type="string",JSONPath=".metadata.labels.kubesphere\\.io/workspace"
 // +kubebuilder:printcolumn:name="url",type=string,JSONPath=`.spec.url`

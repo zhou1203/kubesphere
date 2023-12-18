@@ -12,7 +12,7 @@ spec:
     listKind: RepoList
     plural: repos
     shortNames:
-    - hrepo
+    - repo
     singular: repo
   scope: Cluster
   versions:
