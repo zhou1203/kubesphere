@@ -183,7 +183,7 @@ func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.Revers
 					ForceAttemptHTTP2:     true,
 					MaxIdleConns:          0,
 					MaxConnsPerHost:       0,
-					MaxIdleConnsPerHost:   0,
+					MaxIdleConnsPerHost:   100,
 					IdleConnTimeout:       90 * time.Second,
 					TLSHandshakeTimeout:   10 * time.Second,
 					ExpectContinueTimeout: 1 * time.Second,
