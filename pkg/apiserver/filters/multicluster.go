@@ -19,10 +19,12 @@ package filters
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/httpstream"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/proxy"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/klog/v2"
@@ -94,18 +96,24 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 
 	transport := http.DefaultTransport
 
-	// change request host to actually cluster hosts
-	u := *req.URL
-	u.Path = strings.Replace(u.Path, fmt.Sprintf("/clusters/%s", info.Cluster), "", 1)
+	location := &url.URL{}
+	location.Path = strings.Replace(req.URL.Path, fmt.Sprintf("/clusters/%s", info.Cluster), "", 1)
+	location.RawQuery = req.URL.Query().Encode()
+
+	// WithContext creates a shallow clone of the request with the same context.
+	newReq := req.WithContext(req.Context())
+	newReq.Header = utilnet.CloneHeader(req.Header)
+	newReq.URL = location
+	newReq.Host = location.Host
 
 	// if cluster connection is direct and kubesphere apiserver endpoint is empty
 	// we use kube-apiserver proxy way
 	if cluster.Spec.Connection.Type == clusterv1alpha1.ConnectionTypeDirect &&
 		len(cluster.Spec.Connection.KubeSphereAPIEndpoint) == 0 {
 
-		u.Scheme = clusterClient.KubernetesURL.Scheme
-		u.Host = clusterClient.KubernetesURL.Host
-		u.Path = fmt.Sprintf(proxyURLFormat, u.Path)
+		location.Scheme = clusterClient.KubernetesURL.Scheme
+		location.Host = clusterClient.KubernetesURL.Host
+		location.Path = fmt.Sprintf(proxyURLFormat, location.Path)
 		transport = clusterClient.Transport
 
 		// The reason we need this is kube-apiserver doesn't behave like a standard proxy, it will strip
@@ -114,20 +122,20 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 		// We first copy req.Header['Authorization'] to req.Header['X-KubeSphere-Authorization'] before sending
 		// designated cluster kube-apiserver, then copy req.Header['X-KubeSphere-Authorization'] to
 		// req.Header['Authorization'] before authentication.
-		req.Header.Set("X-KubeSphere-Authorization", req.Header.Get("Authorization"))
+		newReq.Header.Set("X-KubeSphere-Authorization", req.Header.Get("Authorization"))
 
 		// If cluster kubeconfig using token authentication, transport will not override authorization header,
 		// this will cause requests reject by kube-apiserver since kubesphere authorization header is not
 		// acceptable. Delete this header is safe since we are using X-KubeSphere-Authorization.
 		// https://github.com/kubernetes/client-go/blob/master/transport/round_trippers.go#L285
-		req.Header.Del("Authorization")
+		newReq.Header.Del("Authorization")
 
 		// Dirty trick again. The kube-apiserver apiserver proxy rejects all proxy requests with dryRun parameter
 		// https://github.com/kubernetes/kubernetes/pull/66083
 		// Really don't understand why they do this. And here we are, bypass with replacing 'dryRun'
 		// with dryrun and switch bach before send to kube-apiserver on the other side.
-		if len(u.Query()["dryRun"]) != 0 {
-			req.URL.RawQuery = strings.Replace(req.URL.RawQuery, "dryRun", "dryrun", 1)
+		if len(newReq.URL.Query()["dryRun"]) != 0 {
+			newReq.URL.RawQuery = strings.Replace(req.URL.RawQuery, "dryRun", "dryrun", 1)
 		}
 
 		// kube-apiserver lost query string when proxy websocket requests, there are several issues opened
@@ -135,15 +143,16 @@ func (m *multiclusterDispatcher) ServeHTTP(w http.ResponseWriter, req *http.Requ
 		// PR aim to fix this, but it's unlikely it will get merged soon. So here we are again. Put raw query
 		// string in Header and extract it on member cluster.
 		if httpstream.IsUpgradeRequest(req) && len(req.URL.RawQuery) != 0 {
-			req.Header.Set("X-KubeSphere-Rawquery", req.URL.RawQuery)
+			newReq.Header.Set("X-KubeSphere-Rawquery", req.URL.RawQuery)
 		}
 	} else {
 		// everything else goes to ks-apiserver, since our ks-apiserver has the ability to proxy kube-apiserver requests
-		u.Host = clusterClient.KubeSphereURL.Host
-		u.Scheme = clusterClient.KubeSphereURL.Scheme
+		location.Scheme = clusterClient.KubeSphereURL.Scheme
+		location.Host = clusterClient.KubeSphereURL.Host
 	}
 
-	httpProxy := proxy.NewUpgradeAwareHandler(&u, transport, false, false, &responder{})
+	upgrade := httpstream.IsUpgradeRequest(req)
+	httpProxy := proxy.NewUpgradeAwareHandler(location, transport, false, upgrade, &responder{})
 	httpProxy.UpgradeTransport = proxy.NewUpgradeRequestRoundTripper(transport, transport)
-	httpProxy.ServeHTTP(w, req)
+	httpProxy.ServeHTTP(w, newReq)
 }
