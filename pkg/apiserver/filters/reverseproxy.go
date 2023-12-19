@@ -20,9 +20,12 @@ package filters
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/httpstream"
@@ -31,18 +34,18 @@ import (
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/client-go/transport"
 	"k8s.io/klog/v2"
+	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/utils/directives"
 )
 
 type reverseProxy struct {
-	next  http.Handler
-	cache cache.Cache
+	next               http.Handler
+	cache              cache.Cache
+	proxyRoundTrippers sync.Map
 }
 
 func WithReverseProxy(next http.Handler, cache cache.Cache) http.Handler {
@@ -81,6 +84,7 @@ func (s *reverseProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			responsewriters.WriteRawJSON(http.StatusServiceUnavailable, fmt.Errorf("upstream %s is not available", reverseProxy.Name), w)
 			return
 		}
+
 		s.handleProxyRequest(reverseProxy, w, req)
 		return
 
@@ -119,6 +123,8 @@ func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.Revers
 	newReq := req.WithContext(req.Context())
 	newReq.Header = utilnet.CloneHeader(req.Header)
 	newReq.URL = location
+	newReq.Host = location.Host
+
 	if reverseProxy.Spec.Directives.Method != "" {
 		newReq.Method = reverseProxy.Spec.Directives.Method
 	}
@@ -161,18 +167,40 @@ func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.Revers
 		return
 	}
 
-	proxyRoundTripper, err := transport.New(&transport.Config{
-		TLS: transport.TLSConfig{
-			CAData:   reverseProxy.Spec.Upstream.CABundle,
-			Insecure: reverseProxy.Spec.Upstream.InsecureSkipVerify,
-		},
-	})
-
-	if err != nil {
-		reason := "failed to create transport.TLSConfig"
-		klog.Warningf("%v: %v\n", reason, err)
-		responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
-		return
+	var proxyRoundTripper http.RoundTripper
+	if newProxyRoundTripper, ok := s.proxyRoundTrippers.Load(reverseProxy.Name); !ok {
+		newProxyRoundTripper, err := transport.New(&transport.Config{
+			TLS: transport.TLSConfig{
+				CAData:   reverseProxy.Spec.Upstream.CABundle,
+				Insecure: reverseProxy.Spec.Upstream.InsecureSkipVerify,
+			},
+			WrapTransport: func(rt http.RoundTripper) http.RoundTripper {
+				return &http.Transport{
+					DialContext: (&net.Dialer{
+						Timeout:   30 * time.Second,
+						KeepAlive: 30 * time.Second,
+					}).DialContext,
+					ForceAttemptHTTP2:     true,
+					MaxIdleConns:          0,
+					MaxConnsPerHost:       0,
+					MaxIdleConnsPerHost:   0,
+					IdleConnTimeout:       90 * time.Second,
+					TLSHandshakeTimeout:   10 * time.Second,
+					ExpectContinueTimeout: 1 * time.Second,
+					TLSClientConfig:       rt.(*http.Transport).TLSClientConfig,
+				}
+			},
+		})
+		if err != nil {
+			reason := "failed to create transport.TLSConfig"
+			klog.Warningf("%v: %v\n", reason, err)
+			responsewriters.WriteRawJSON(http.StatusServiceUnavailable, errors.NewServiceUnavailable(reason), w)
+			return
+		}
+		proxyRoundTripper = newProxyRoundTripper
+		s.proxyRoundTrippers.Store(reverseProxy.Name, newProxyRoundTripper)
+	} else {
+		proxyRoundTripper = newProxyRoundTripper.(http.RoundTripper)
 	}
 
 	if reverseProxy.Spec.Directives.AuthProxy {
@@ -185,9 +213,7 @@ func (s *reverseProxy) handleProxyRequest(reverseProxy extensionsv1alpha1.Revers
 	if reverseProxy.Spec.Directives.WrapTransport {
 		handler.WrapTransport = true
 	}
-	if reverseProxy.Spec.Directives.ChangeOrigin {
-		handler.UseLocationHost = true
-	}
+
 	if len(reverseProxy.Spec.Directives.HeaderDown) > 0 {
 		w = &responseWriterWrapper{
 			ResponseWriter: w,
