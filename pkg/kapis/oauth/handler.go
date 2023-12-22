@@ -635,12 +635,23 @@ func (h *handler) buildIDTokenIssueRequest(request *idTokenRequest) (*token.Issu
 }
 
 func (h *handler) logout(req *restful.Request, resp *restful.Response) {
-	authenticated, ok := request.UserFrom(req.Request.Context())
-	if ok {
-		if err := h.tokenOperator.RevokeAllUserTokens(authenticated.GetName()); err != nil {
-			api.HandleInternalError(resp, req, apierrors.NewInternalError(err))
-			return
-		}
+	authHeader := strings.TrimSpace(req.Request.Header.Get("Authorization"))
+	if authHeader == "" {
+		_ = resp.WriteAsJson(errors.None)
+		return
+	}
+	parts := strings.Split(authHeader, " ")
+	if len(parts) < 2 || strings.ToLower(parts[0]) != "bearer" {
+		_ = resp.WriteAsJson(errors.None)
+		return
+	}
+
+	accessToken := parts[1]
+	if err := h.tokenOperator.Revoke(accessToken); err != nil {
+		reason := fmt.Errorf("failed to revoke access token")
+		klog.Errorf("%s: %s", reason, err)
+		api.HandleInternalError(resp, req, reason)
+		return
 	}
 
 	postLogoutRedirectURI := req.QueryParameter("post_logout_redirect_uri")
