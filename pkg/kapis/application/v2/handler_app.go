@@ -88,12 +88,12 @@ func helmRequest(chartPack *chart.Chart, workspace string, data []byte) (appRequ
 		AppHome:     chartPack.Metadata.Home,
 		AppType:     appv2.AppTypeHelm,
 		Workspace:   workspace,
-		VersionName: chartPack.AppVersion(),
+		VersionName: chartPack.Metadata.Version,
 	}
 
 	vRequest = application.AppRequest{
 		RepoName:    "upload",
-		VersionName: chartPack.AppVersion(),
+		VersionName: chartPack.Metadata.Version,
 		AppName:     appRequest.AppName,
 		AppHome:     chartPack.Metadata.Home,
 		Icon:        chartPack.Metadata.Icon,
