@@ -64,7 +64,6 @@ const (
 	installPlanController           = "installplan-controller"
 	installPlanProtection           = "kubesphere.io/installplan-protection"
 	systemWorkspace                 = "system-workspace"
-	targetNamespaceFormat           = "extension-%s"
 	agentReleaseFormat              = "%s-agent"
 	defaultRole                     = "kubesphere:helm-executor"
 	defaultRoleBinding              = "kubesphere:helm-executor"
@@ -118,14 +117,19 @@ func (r *InstallPlanReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(plan))
 	}
 
-	if err := r.syncInstallPlanStatus(ctx, plan); err != nil {
+	targetNamespace := extensionVersion.Spec.Namespace
+	if targetNamespace == "" {
+		targetNamespace = fmt.Sprintf("extension-%s", plan.Spec.Extension.Name)
+	}
+
+	if err := r.syncInstallPlanStatus(ctx, extensionVersion, plan, targetNamespace); err != nil {
 		logger.Error(err, "failed to sync installplan status")
 		return ctrl.Result{}, err
 	}
 
 	// Multi-cluster installation
 	if plan.Spec.ClusterScheduling != nil {
-		if err := r.syncClusterSchedulingStatus(ctx, plan); err != nil {
+		if err := r.syncClusterSchedulingStatus(ctx, extensionVersion, plan, targetNamespace); err != nil {
 			logger.Error(err, "failed to sync scheduling status")
 			return ctrl.Result{}, err
 		}
@@ -328,28 +332,23 @@ func jobStatus(job batchv1.Job) (active, completed, failed bool) {
 	return
 }
 
-func (r *InstallPlanReconciler) loadChartData(ctx context.Context, ref *corev1alpha1.ExtensionRef) ([]byte, *corev1alpha1.ExtensionVersion, error) {
-	extensionVersion := &corev1alpha1.ExtensionVersion{}
-	if err := r.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("%s-%s", ref.Name, ref.Version)}, extensionVersion); err != nil {
-		return nil, extensionVersion, err
-	}
-
+func (r *InstallPlanReconciler) loadChartData(ctx context.Context, extensionVersion *corev1alpha1.ExtensionVersion) ([]byte, error) {
 	// load chart data from
 	if extensionVersion.Spec.ChartDataRef != nil {
 		configMap := &corev1.ConfigMap{}
 		if err := r.Get(ctx, types.NamespacedName{Namespace: extensionVersion.Spec.ChartDataRef.Namespace, Name: extensionVersion.Spec.ChartDataRef.Name}, configMap); err != nil {
-			return nil, extensionVersion, err
+			return nil, err
 		}
 		data := configMap.BinaryData[extensionVersion.Spec.ChartDataRef.Key]
 		if data != nil {
-			return data, extensionVersion, nil
+			return data, nil
 		}
-		return nil, extensionVersion, fmt.Errorf("binary data not found")
+		return nil, fmt.Errorf("binary data not found")
 	}
 
 	repo := &corev1alpha1.Repository{}
 	if err := r.Get(ctx, types.NamespacedName{Name: extensionVersion.Spec.Repository}, repo); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// load chart data from url
@@ -362,12 +361,12 @@ func (r *InstallPlanReconciler) loadChartData(ctx context.Context, ref *corev1al
 		}
 		buf, err := r.helmGetter.Get(extensionVersion.Spec.ChartURL, options...)
 		if err != nil {
-			return nil, extensionVersion, err
+			return nil, err
 		}
-		return buf.Bytes(), extensionVersion, nil
+		return buf.Bytes(), nil
 	}
 
-	return nil, extensionVersion, fmt.Errorf("unable to load chart data")
+	return nil, fmt.Errorf("unable to load chart data")
 }
 
 func updateState(plan *corev1alpha1.InstallPlan, state string) {
@@ -490,7 +489,7 @@ func (r *InstallPlanReconciler) postRemove(ctx context.Context, plan *corev1alph
 	deletePolicy := metav1.DeletePropagationBackground
 	if err := r.DeleteAllOf(ctx, &batchv1.Job{}, &client.DeleteAllOfOptions{
 		ListOptions: client.ListOptions{
-			Namespace:     fmt.Sprintf(targetNamespaceFormat, plan.Spec.Extension.Name),
+			Namespace:     plan.Status.TargetNamespace,
 			LabelSelector: labels.SelectorFromSet(labels.Set{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
 		},
 		DeleteOptions: client.DeleteOptions{PropagationPolicy: &deletePolicy},
@@ -835,7 +834,9 @@ func (r *InstallPlanReconciler) syncExtensionStatus(ctx context.Context, plan *c
 	return r.updateExtensionStatus(ctx, plan.Spec.Extension.Name, expected)
 }
 
-func (r *InstallPlanReconciler) syncClusterSchedulingStatus(ctx context.Context, plan *corev1alpha1.InstallPlan) error {
+func (r *InstallPlanReconciler) syncClusterSchedulingStatus(
+	ctx context.Context, extensionVersion *corev1alpha1.ExtensionVersion, plan *corev1alpha1.InstallPlan, targetNamespace string,
+) error {
 	logger := klog.FromContext(ctx)
 	if plan.Status.State != corev1alpha1.StateInstalled {
 		return nil
@@ -867,7 +868,7 @@ func (r *InstallPlanReconciler) syncClusterSchedulingStatus(ctx context.Context,
 	}
 
 	for _, cluster := range targetClusters {
-		if err := r.syncClusterStatus(ctx, plan, cluster); err != nil {
+		if err := r.syncClusterStatus(ctx, extensionVersion, plan, cluster, targetNamespace); err != nil {
 			return err
 		}
 	}
@@ -884,10 +885,11 @@ func (r *InstallPlanReconciler) syncClusterSchedulingStatus(ctx context.Context,
 }
 
 // syncInstallPlanStatus syncs the installation status of an extension.
-func (r *InstallPlanReconciler) syncInstallPlanStatus(ctx context.Context, plan *corev1alpha1.InstallPlan) error {
+func (r *InstallPlanReconciler) syncInstallPlanStatus(
+	ctx context.Context, extensionVersion *corev1alpha1.ExtensionVersion, plan *corev1alpha1.InstallPlan, targetNamespace string,
+) error {
 	logger := klog.FromContext(ctx)
 
-	targetNamespace := fmt.Sprintf(targetNamespaceFormat, plan.Spec.Extension.Name)
 	releaseName := plan.Spec.Extension.Name
 	options := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
@@ -960,7 +962,7 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(ctx context.Context, plan 
 
 	switch realStatus {
 	case "":
-		return r.installOrUpgradeExtension(ctx, plan, executor, false)
+		return r.installOrUpgradeExtension(ctx, extensionVersion, plan, targetNamespace, executor, false)
 	case corev1alpha1.StatePreparing:
 		return nil
 	case corev1alpha1.StateInstalling:
@@ -970,7 +972,7 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(ctx context.Context, plan 
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
 		if configChanged(plan, "") || versionChanged(plan, "") {
-			return r.installOrUpgradeExtension(ctx, plan, executor, true)
+			return r.installOrUpgradeExtension(ctx, extensionVersion, plan, targetNamespace, executor, true)
 		}
 		if err = syncExtendedAPIStatus(ctx, r.Client, plan); err != nil {
 			return err
@@ -1010,7 +1012,10 @@ func (r *InstallPlanReconciler) updateReadyCondition(ctx context.Context, plan *
 	return r.updateInstallPlan(ctx, plan)
 }
 
-func (r *InstallPlanReconciler) syncClusterStatus(ctx context.Context, plan *corev1alpha1.InstallPlan, cluster clusterv1alpha1.Cluster) error {
+func (r *InstallPlanReconciler) syncClusterStatus(
+	ctx context.Context, extensionVersion *corev1alpha1.ExtensionVersion, plan *corev1alpha1.InstallPlan, cluster clusterv1alpha1.Cluster,
+	targetNamespace string,
+) error {
 	logger := klog.FromContext(ctx).WithValues("cluster", cluster.Name)
 	clusterSchedulingStatus := plan.Status.ClusterSchedulingStatuses[cluster.Name]
 
@@ -1022,7 +1027,6 @@ func (r *InstallPlanReconciler) syncClusterStatus(ctx context.Context, plan *cor
 		return err
 	}
 
-	targetNamespace := fmt.Sprintf(targetNamespaceFormat, plan.Spec.Extension.Name)
 	releaseName := fmt.Sprintf(agentReleaseFormat, plan.Spec.Extension.Name)
 
 	options := []helm.ExecutorOption{
@@ -1096,7 +1100,9 @@ func (r *InstallPlanReconciler) syncClusterStatus(ctx context.Context, plan *cor
 
 	switch realStatus {
 	case "":
-		return r.installOrUpgradeClusterAgent(ctx, plan, cluster, clusterClient, &clusterSchedulingStatus, executor, false)
+		return r.installOrUpgradeClusterAgent(
+			ctx, extensionVersion, plan, cluster, clusterClient, &clusterSchedulingStatus, targetNamespace, executor, false,
+		)
 	case corev1alpha1.StatePreparing:
 		return nil
 	case corev1alpha1.StateInstalling:
@@ -1107,7 +1113,9 @@ func (r *InstallPlanReconciler) syncClusterStatus(ctx context.Context, plan *cor
 	case corev1alpha1.StateInstalled:
 		// upgrade after configuration changes
 		if configChanged(plan, cluster.Name) || versionChanged(plan, cluster.Name) {
-			return r.installOrUpgradeClusterAgent(ctx, plan, cluster, clusterClient, &clusterSchedulingStatus, executor, true)
+			return r.installOrUpgradeClusterAgent(
+				ctx, extensionVersion, plan, cluster, clusterClient, &clusterSchedulingStatus, targetNamespace, executor, true,
+			)
 		}
 		if err = syncExtendedAPIStatus(ctx, clusterClient, plan); err != nil {
 			return err
@@ -1133,7 +1141,10 @@ func (r *InstallPlanReconciler) updateClusterReadyCondition(ctx context.Context,
 	return r.updateInstallPlan(ctx, plan)
 }
 
-func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, plan *corev1alpha1.InstallPlan, executor helm.Executor, upgrade bool) error {
+func (r *InstallPlanReconciler) installOrUpgradeExtension(
+	ctx context.Context, extensionVersion *corev1alpha1.ExtensionVersion, plan *corev1alpha1.InstallPlan,
+	targetNamespace string, executor helm.Executor, upgrade bool,
+) error {
 	logger := klog.FromContext(ctx)
 
 	updateState(plan, corev1alpha1.StatePreparing)
@@ -1142,7 +1153,7 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, p
 		return err
 	}
 
-	charData, extensionVersion, err := r.loadChartData(ctx, &plan.Spec.Extension)
+	charData, err := r.loadChartData(ctx, extensionVersion)
 	if err != nil {
 		message := fmt.Sprintf("failed to load chart data: %v", err)
 		logger.Error(err, "failed to load chart data")
@@ -1156,7 +1167,6 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, p
 		return r.updateInstallPlan(ctx, plan)
 	}
 
-	targetNamespace := fmt.Sprintf(targetNamespaceFormat, plan.Spec.Extension.Name)
 	releaseName := plan.Spec.Extension.Name
 
 	if !upgrade {
@@ -1203,9 +1213,11 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(ctx context.Context, p
 	return r.updateInstallPlan(ctx, plan)
 }
 
-func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(ctx context.Context, plan *corev1alpha1.InstallPlan,
+func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(
+	ctx context.Context, extensionVersion *corev1alpha1.ExtensionVersion, plan *corev1alpha1.InstallPlan,
 	cluster clusterv1alpha1.Cluster, clusterClient client.Client, clusterSchedulingStatus *corev1alpha1.InstallationStatus,
-	executor helm.Executor, upgrade bool) error {
+	targetNamespace string, executor helm.Executor, upgrade bool,
+) error {
 	logger := klog.FromContext(ctx)
 
 	updateClusterSchedulingState(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.StatePreparing)
@@ -1214,13 +1226,12 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(ctx context.Context
 		return err
 	}
 
-	charData, _, err := r.loadChartData(ctx, &plan.Spec.Extension)
+	charData, err := r.loadChartData(ctx, extensionVersion)
 	if err != nil {
 		logger.Error(err, "failed to load chart data")
 		return err
 	}
 
-	targetNamespace := fmt.Sprintf(targetNamespaceFormat, plan.Spec.Extension.Name)
 	releaseName := fmt.Sprintf(agentReleaseFormat, plan.Spec.Extension.Name)
 
 	if !upgrade {
