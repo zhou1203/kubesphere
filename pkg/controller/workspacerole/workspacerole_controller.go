@@ -100,7 +100,7 @@ func (r *Reconciler) mapper(ctx context.Context, o client.Object) []reconcile.Re
 		workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
 		workspaceName := workspaceRole.Labels[tenantv1alpha1.WorkspaceLabel]
 		if err := r.Get(ctx, types.NamespacedName{Name: workspaceName}, workspaceTemplate); err != nil {
-			klog.Errorf("failed to get workspace template %s: %s", workspaceName, err)
+			klog.Warningf("failed to get workspace template %s: %s", workspaceName, err)
 			continue
 		}
 		if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, cluster) {
