@@ -1,5 +1,7 @@
 ### Upgrade from KSE 3.X
 
+Preparing for upgrade.
+
 ```bash
 ITEMS=(
     "globalroles.iam.kubesphere.io/anonymous"
@@ -12,6 +14,7 @@ ITEMS=(
     "globalrolebindings.iam.kubesphere.io/authenticated"
     "globalrolebindings.iam.kubesphere.io/pre-registration"
     "workspacetemplate.tenant.kubesphere.io/system-workspace"
+    "-n kubesphere-system configmap/kubesphere-config"
 )
 for i in "${ITEMS[@]}"
 do
