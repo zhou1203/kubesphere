@@ -1002,6 +1002,10 @@ func needUpdateReadyCondition(conditions []metav1.Condition, ready bool) bool {
 func (r *InstallPlanReconciler) updateReadyCondition(ctx context.Context, plan *corev1alpha1.InstallPlan, executor helm.Executor) error {
 	ready, err := executor.IsReleaseReady(time.Second * 30)
 	if !needUpdateReadyCondition(plan.Status.Conditions, ready) {
+		if !ready {
+			// force the controller to resync the ready condition
+			return err
+		}
 		return nil
 	}
 	if ready {
@@ -1130,6 +1134,10 @@ func (r *InstallPlanReconciler) updateClusterReadyCondition(ctx context.Context,
 	ready, err := executor.IsReleaseReady(time.Second * 30)
 
 	if !needUpdateReadyCondition(clusterSchedulingStatus.Conditions, ready) {
+		if !ready {
+			// force the controller to resync the ready condition
+			return err
+		}
 		return nil
 	}
 
