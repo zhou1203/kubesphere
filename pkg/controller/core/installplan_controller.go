@@ -17,14 +17,18 @@ limitations under the License.
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/getter"
 	helmrelease "helm.sh/helm/v3/pkg/release"
 	batchv1 "k8s.io/api/batch/v1"
@@ -38,6 +42,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"kubesphere.io/utils/helm"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,16 +57,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
-	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	"kubesphere.io/utils/helm"
-
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/scheme"
+	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
@@ -70,6 +74,8 @@ const (
 	defaultClusterRoleFormat        = "kubesphere:%s:helm-executor"
 	permissionDefinitionFile        = "permissions.yaml"
 	defaultClusterRoleBindingFormat = defaultClusterRoleFormat
+	tagAgent                        = "agent"
+	tagExtension                    = "extension"
 )
 
 var _ reconcile.Reconciler = &InstallPlanReconciler{}
@@ -1175,10 +1181,15 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(
 		return r.updateInstallPlan(ctx, plan)
 	}
 
-	releaseName := plan.Spec.Extension.Name
+	mainChart, err := loader.LoadArchive(bytes.NewReader(charData))
+	if err != nil {
+		logger.Error(err, "failed to load chart data")
+		return err
+	}
 
+	releaseName := plan.Spec.Extension.Name
 	if !upgrade {
-		clusterRole, role := usesPermissions(charData)
+		clusterRole, role := usesPermissions(mainChart)
 		if err = initTargetNamespace(ctx, r.Client, targetNamespace, clusterRole, role); err != nil {
 			logger.Error(err, "failed to init target namespace", "namespace", targetNamespace)
 			updateState(plan, corev1alpha1.StateInstallFailed)
@@ -1191,8 +1202,14 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(
 		helm.SetInstall(true),
 		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: plan.Spec.Extension.Name}),
 	}
+
 	if extensionVersion.Spec.InstallationMode == corev1alpha1.InstallationMulticluster {
-		options = append(options, helm.SetOverrides([]string{"tags.extension=true", "tags.agent=false"}))
+		overrides := []string{fmt.Sprintf("tags.%s=%s", tagExtension, "true"), fmt.Sprintf("tags.%s=%s", tagAgent, "false")}
+		agentConditions := conditions(mainChart, tagAgent)
+		for _, condition := range agentConditions {
+			overrides = append(overrides, fmt.Sprintf("%s=%s", condition, "false"))
+		}
+		options = append(options, helm.SetOverrides(overrides))
 	}
 
 	jobName, err := executor.Upgrade(ctx, releaseName, charData, []byte(plan.Spec.Config), options...)
@@ -1221,6 +1238,16 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(
 	return r.updateInstallPlan(ctx, plan)
 }
 
+func conditions(mainChart *chart.Chart, tag string) []string {
+	var conditions []string
+	for _, dependency := range mainChart.Metadata.Dependencies {
+		if dependency.Condition != "" && sliceutil.HasString(dependency.Tags, tag) {
+			conditions = append(conditions, strings.Split(dependency.Condition, ",")...)
+		}
+	}
+	return conditions
+}
+
 func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(
 	ctx context.Context, extensionVersion *corev1alpha1.ExtensionVersion, plan *corev1alpha1.InstallPlan,
 	cluster clusterv1alpha1.Cluster, clusterClient client.Client, clusterSchedulingStatus *corev1alpha1.InstallationStatus,
@@ -1240,10 +1267,15 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(
 		return err
 	}
 
-	releaseName := fmt.Sprintf(agentReleaseFormat, plan.Spec.Extension.Name)
+	mainChart, err := loader.LoadArchive(bytes.NewReader(charData))
+	if err != nil {
+		logger.Error(err, "failed to load chart data")
+		return err
+	}
 
+	releaseName := fmt.Sprintf(agentReleaseFormat, plan.Spec.Extension.Name)
 	if !upgrade {
-		clusterRole, role := usesPermissions(charData)
+		clusterRole, role := usesPermissions(mainChart)
 		if err = initTargetNamespace(ctx, clusterClient, targetNamespace, clusterRole, role); err != nil {
 			logger.Error(err, "failed to init target namespace", "namespace", targetNamespace)
 			updateClusterSchedulingState(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.StateInstallFailed)
@@ -1260,10 +1292,14 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(
 	}
 
 	overrides := []string{
-		"tags.agent=true",
-		"tags.extension=false",
-		"global.clusterInfo.name=" + cluster.Name,
-		"global.clusterInfo.role=" + clusterRole,
+		fmt.Sprintf("tags.%s=%s", tagAgent, "true"),
+		fmt.Sprintf("tags.%s=%s", tagExtension, "false"),
+		fmt.Sprintf("global.clusterInfo.name=%s", cluster.Name),
+		fmt.Sprintf("global.clusterInfo.role==%s", clusterRole),
+	}
+	extensionConditions := conditions(mainChart, tagExtension)
+	for _, condition := range extensionConditions {
+		overrides = append(overrides, fmt.Sprintf("%s=%s", condition, "false"))
 	}
 
 	helmOptions := []helm.HelmOption{
@@ -1494,11 +1530,11 @@ func (r *InstallPlanReconciler) syncClusterAgentInstallationStatus(
 
 // newClusterClient returns controller runtime client without cache
 func newClusterClient(cluster clusterv1alpha1.Cluster) (client.Client, error) {
-	bytes, err := clientcmd.NewClientConfigFromBytes(cluster.Spec.Connection.KubeConfig)
+	data, err := clientcmd.NewClientConfigFromBytes(cluster.Spec.Connection.KubeConfig)
 	if err != nil {
 		return nil, err
 	}
-	config, err := bytes.ClientConfig()
+	config, err := data.ClientConfig()
 	if err != nil {
 		return nil, err
 	}

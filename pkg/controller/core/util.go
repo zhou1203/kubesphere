@@ -27,7 +27,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
-	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/storage/driver"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -149,15 +149,10 @@ func clusterConfig(sub *corev1alpha1.InstallPlan, clusterName string) string {
 	return sub.Spec.Config
 }
 
-func usesPermissions(chartData []byte) (rbacv1.ClusterRole, rbacv1.Role) {
+func usesPermissions(mainChart *chart.Chart) (rbacv1.ClusterRole, rbacv1.Role) {
 	var clusterRole rbacv1.ClusterRole
 	var role rbacv1.Role
-
-	files, err := loader.LoadArchiveFiles(bytes.NewReader(chartData))
-	if err != nil {
-		return clusterRole, role
-	}
-	for _, file := range files {
+	for _, file := range mainChart.Files {
 		if file.Name == permissionDefinitionFile {
 			// decoder := yaml.NewDecoder(bytes.NewReader(file.Data))
 			decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(file.Data), 1024)
