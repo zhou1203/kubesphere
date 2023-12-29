@@ -361,10 +361,8 @@ func (e *executor) createInstallJob(ctx context.Context, chartName string, chart
 		args = append(args, "--kubeconfig", kubeConfigPath)
 	}
 
-	for _, override := range helmOptions.overrides {
-		if override != "" {
-			args = append(args, "--set", override)
-		}
+	if len(helmOptions.overrides) > 0 {
+		args = append(args, "--set", strings.Join(helmOptions.overrides, ","))
 	}
 
 	// Post render, add annotations or labels to resources
