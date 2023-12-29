@@ -12,6 +12,8 @@ rules:
 apiVersion: iam.kubesphere.io/v1beta1
 kind: GlobalRole
 metadata:
+  labels:
+    iam.kubesphere.io/auto-aggregate: "true"
   annotations:
     iam.kubesphere.io/rego-override: |-
       package authz
@@ -39,6 +41,11 @@ metadata:
         allowedVerbs[_] == input.Verb
       }
   name: authenticated
+aggregationRoleTemplates:
+  roleSelector:
+    matchLabels:
+      iam.kubesphere.io/aggregate-to-authenticated: ""
+      iam.kubesphere.io/scope: "global"
 rules:
   - apiGroups:
       - config.kubesphere.io
@@ -173,8 +180,6 @@ metadata:
   annotations:
     kubesphere.io/creator: admin
     kubesphere.io/description: '{"zh": "创建企业空间并成为所创建的企业空间的管理员。", "en": "Create workspaces and become an administrator of the created workspaces."}'
-  labels:
-    iam.kubesphere.io/auto-aggregate: "true"
   name: platform-self-provisioner
 aggregationRoleTemplates:
   templateNames:
