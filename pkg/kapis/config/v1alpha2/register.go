@@ -22,10 +22,8 @@ import (
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	"kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
 	"kubesphere.io/kubesphere/pkg/models/marketplace"
@@ -37,17 +35,8 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
 
-func NewHandler(config *config.Config, client client.Client) rest.Handler {
-	return &handler{config: config, client: client}
-}
-
 func NewFakeHandler() rest.Handler {
 	return &handler{}
-}
-
-type handler struct {
-	config *config.Config
-	client client.Client
 }
 
 func (h *handler) AddToContainer(c *restful.Container) error {
@@ -94,6 +83,21 @@ func (h *handler) AddToContainer(c *restful.Container) error {
 
 			_ = response.WriteEntity(options)
 		}))
+
+	webservice.Route(webservice.GET("/configs/theme").
+		Doc("Retrieve theme configurations").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagPlatformConfigurations}).
+		Notes("Retrieve theme configuration settings.").
+		Operation("get-theme-config").
+		To(h.getThemeConfiguration))
+
+	webservice.Route(webservice.POST("/configs/theme").
+		Doc("Update theme configurations").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagPlatformConfigurations}).
+		Notes("Update theme configuration settings.").
+		Operation("update-theme-config").
+		To(h.updateThemeConfiguration))
+
 	c.Add(webservice)
 	return nil
 }
