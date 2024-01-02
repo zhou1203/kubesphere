@@ -70,6 +70,7 @@ import (
 	packagev1alpha1 "kubesphere.io/kubesphere/pkg/kapis/package/v1alpha1"
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha3"
+	"kubesphere.io/kubesphere/pkg/kapis/static"
 	tenantv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha2"
 	tenantv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha3"
 	terminalv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/terminal/v1alpha2"
@@ -191,6 +192,7 @@ func (s *APIServer) installKubeSphereAPIs() {
 		packagev1alpha1.NewHandler(s.RuntimeCache),
 		gatewayv1alpha2.NewHandler(s.RuntimeCache),
 		appv2.NewHandler(s.RuntimeClient, s.ClusterClient),
+		static.NewHandler(s.CacheClient),
 	}
 
 	for _, handler := range handlers {

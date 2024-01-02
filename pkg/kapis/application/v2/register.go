@@ -20,13 +20,12 @@ import (
 	appv2 "kubesphere.io/api/application/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
-
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
 	"kubesphere.io/kubesphere/pkg/models"
 	"kubesphere.io/kubesphere/pkg/server/errors"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 type appHandler struct {
@@ -35,11 +34,14 @@ type appHandler struct {
 }
 
 func NewHandler(cacheClient runtimeclient.Client, clusterClient clusterclient.Interface) rest.Handler {
-
 	return &appHandler{
 		client:        cacheClient,
 		clusterClient: clusterClient,
 	}
+}
+
+func NewFakeHandler() rest.Handler {
+	return &appHandler{}
 }
 
 func (h *appHandler) AddToContainer(c *restful.Container) error {
