@@ -36,13 +36,17 @@ import (
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
+	appv2 "kubesphere.io/kubesphere/pkg/kapis/application/v2"
 	clusterkapisv1alpha1 "kubesphere.io/kubesphere/pkg/kapis/cluster/v1alpha1"
 	configv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/config/v1alpha2"
+	gatewayv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/gateway/v1alpha2"
 	iamv1beta1 "kubesphere.io/kubesphere/pkg/kapis/iam/v1beta1"
 	"kubesphere.io/kubesphere/pkg/kapis/oauth"
 	operationsv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/operations/v1alpha2"
+	packagev1alpha1 "kubesphere.io/kubesphere/pkg/kapis/package/v1alpha1"
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
 	resourcesv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha3"
+	"kubesphere.io/kubesphere/pkg/kapis/static"
 	tenantv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha2"
 	tenantv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha3"
 	terminalv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/terminal/v1alpha2"
@@ -102,14 +106,16 @@ func generateSwaggerJson() []byte {
 		clusterkapisv1alpha1.NewFakeHandler(),
 		iamv1beta1.NewFakeHandler(),
 		operationsv1alpha2.NewFakeHandler(),
-		//packagev1alpha1.NewFakeHandler(),
-		//gatewayv1alpha2.NewFakeHandler(),
+		packagev1alpha1.NewFakeHandler(),
+		gatewayv1alpha2.NewFakeHandler(),
 		configv1alpha2.NewFakeHandler(),
 		terminalv1alpha2.NewFakeHandler(),
 		resourcesv1alpha2.NewFakeHandler(),
 		resourcesv1alpha3.NewFakeHandler(),
 		tenantv1alpha2.NewFakeHandler(),
 		tenantv1alpha3.NewFakeHandler(),
+		appv2.NewFakeHandler(),
+		static.NewFakeHandler(),
 	}
 
 	for _, handler := range handlers {

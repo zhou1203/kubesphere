@@ -17,6 +17,7 @@ limitations under the License.
 package oauth
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -40,7 +41,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/models/auth"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
-	"kubesphere.io/kubesphere/pkg/server/errors"
+	serverrors "kubesphere.io/kubesphere/pkg/server/errors"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
@@ -359,7 +360,7 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 	// Retrieve the OAuth client associated with the provided client_id.
 	client, err := h.clientGetter.GetOAuthClient(req.Request.Context(), clientID)
 	if err != nil {
-		if err == oauth.ErrorClientNotFound {
+		if errors.Is(err, oauth.ErrorClientNotFound) {
 			_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidClient("The provided client_id is invalid or does not exist."))
 			return
 		}
@@ -409,12 +410,12 @@ func (h *handler) passwordGrant(req *restful.Request, response *restful.Response
 	// Authenticate the user credentials.
 	authenticated, provider, err := h.passwordAuthenticator.Authenticate(req.Request.Context(), provider, username, password)
 	if err != nil {
-		switch err {
-		case auth.AccountIsNotActiveError:
+		switch {
+		case errors.Is(err, auth.AccountIsNotActiveError):
 			// Account is suspended.
 			_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant("Account suspended."))
 			return
-		case auth.IncorrectPasswordError:
+		case errors.Is(err, auth.IncorrectPasswordError):
 			// Record unsuccessful login attempt.
 			requestInfo, _ := request.RequestInfoFrom(req.Request.Context())
 			if err := h.loginRecorder.RecordLogin(username, iamv1beta1.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, err); err != nil {
@@ -423,7 +424,7 @@ func (h *handler) passwordGrant(req *restful.Request, response *restful.Response
 			// Invalid username or password.
 			_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant("Invalid username or password."))
 			return
-		case auth.RateLimitExceededError:
+		case errors.Is(err, auth.RateLimitExceededError):
 			// Rate limit exceeded.
 			_ = response.WriteHeaderAndEntity(http.StatusTooManyRequests, oauth.NewInvalidGrant("Rate limit exceeded."))
 			return
@@ -637,12 +638,12 @@ func (h *handler) buildIDTokenIssueRequest(request *idTokenRequest) (*token.Issu
 func (h *handler) logout(req *restful.Request, resp *restful.Response) {
 	authHeader := strings.TrimSpace(req.Request.Header.Get("Authorization"))
 	if authHeader == "" {
-		_ = resp.WriteAsJson(errors.None)
+		_ = resp.WriteAsJson(serverrors.None)
 		return
 	}
 	parts := strings.Split(authHeader, " ")
 	if len(parts) < 2 || strings.ToLower(parts[0]) != "bearer" {
-		_ = resp.WriteAsJson(errors.None)
+		_ = resp.WriteAsJson(serverrors.None)
 		return
 	}
 
@@ -656,7 +657,7 @@ func (h *handler) logout(req *restful.Request, resp *restful.Response) {
 
 	postLogoutRedirectURI := req.QueryParameter("post_logout_redirect_uri")
 	if postLogoutRedirectURI == "" {
-		_ = resp.WriteAsJson(errors.None)
+		_ = resp.WriteAsJson(serverrors.None)
 		return
 	}
 
