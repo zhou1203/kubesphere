@@ -1295,7 +1295,7 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(
 		fmt.Sprintf("tags.%s=%s", tagAgent, "true"),
 		fmt.Sprintf("tags.%s=%s", tagExtension, "false"),
 		fmt.Sprintf("global.clusterInfo.name=%s", cluster.Name),
-		fmt.Sprintf("global.clusterInfo.role==%s", clusterRole),
+		fmt.Sprintf("global.clusterInfo.role=%s", clusterRole),
 	}
 	extensionConditions := conditions(mainChart, tagExtension)
 	for _, condition := range extensionConditions {
