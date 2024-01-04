@@ -60,6 +60,10 @@ func installKSCoreInMemberCluster(kubeConfig, jwtSecret string) error {
 		"config": map[string]interface{}{
 			"jwtSecret": jwtSecret,
 		},
+		// disable upgrade to prevent execution of kse-upgrade
+		"upgrade": map[string]interface{}{
+			"disabled": true,
+		},
 	}
 
 	helmStatus := action.NewStatus(helmConf)
