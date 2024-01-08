@@ -41,7 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
+	rbachelper "kubesphere.io/kubesphere/pkg/componenthelper/auth/rbac"
 	"kubesphere.io/kubesphere/pkg/constants"
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
@@ -52,23 +52,32 @@ import (
 )
 
 const (
-	controllerName = "workspacerole-controller"
+	controllerName = "workspacerole"
 	finalizer      = "finalizers.kubesphere.io/workspaceroles"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
+
+func (r *Reconciler) Name() string {
+	return controllerName
+}
 
 // Reconciler reconciles a WorkspaceRole object
 type Reconciler struct {
 	client.Client
-	logger           logr.Logger
-	recorder         record.EventRecorder
-	helper           *rbachelper.Helper
-	ClusterClientSet clusterclient.Interface
+	logger        logr.Logger
+	recorder      record.EventRecorder
+	helper        *rbachelper.Helper
+	ClusterClient clusterclient.Interface
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.ClusterClientSet == nil {
-		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
-	}
+func (r *Reconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.ClusterClient = mgr.ClusterClient
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
@@ -158,7 +167,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) deleteRelatedResources(ctx context.Context, workspaceRole *iamv1beta1.WorkspaceRole) error {
-	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	clusters, err := r.ClusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
 	}
@@ -172,7 +181,7 @@ func (r *Reconciler) deleteRelatedResources(ctx context.Context, workspaceRole *
 			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue
 		}
-		clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+		clusterClient, err := r.ClusterClient.GetRuntimeClient(cluster.Name)
 		if err != nil {
 			return fmt.Errorf("failed to get cluster client: %s", err)
 		}
@@ -218,7 +227,7 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 }
 
 func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceRole *iamv1beta1.WorkspaceRole) error {
-	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	clusters, err := r.ClusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
 	}
@@ -244,7 +253,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceRole *iamv1b
 }
 
 func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceRole *iamv1beta1.WorkspaceRole) error {
-	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+	clusterClient, err := r.ClusterClient.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}

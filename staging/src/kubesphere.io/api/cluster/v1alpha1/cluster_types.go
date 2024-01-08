@@ -38,7 +38,12 @@ const (
 
 	AnnotationClusterName     = "cluster.kubesphere.io/name"
 	AnnotationHostClusterName = "cluster.kubesphere.io/host-cluster"
+
+	ClusterRoleHost   ClusterRole = "host"
+	ClusterRoleMember ClusterRole = "member"
 )
+
+type ClusterRole string
 
 type ClusterSpec struct {
 	// Join cluster as a kubefed cluster

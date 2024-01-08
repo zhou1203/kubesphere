@@ -32,7 +32,7 @@ import (
 	"kubesphere.io/utils/helm"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"kubesphere.io/kubesphere/pkg/apiserver/config"
+	"kubesphere.io/kubesphere/pkg/config"
 	"kubesphere.io/kubesphere/pkg/constants"
 )
 
@@ -96,7 +96,7 @@ func getKubeSphereConfig(ctx context.Context, client runtimeclient.Client) (*con
 	if err := client.Get(ctx, types.NamespacedName{Name: constants.KubeSphereConfigName, Namespace: constants.KubeSphereNamespace}, cm); err != nil {
 		return nil, err
 	}
-	configData, err := config.GetFromConfigMap(cm)
+	configData, err := config.FromConfigMap(cm)
 	if err != nil {
 		return nil, err
 	}

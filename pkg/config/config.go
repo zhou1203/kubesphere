@@ -18,24 +18,25 @@ package config
 
 import (
 	"fmt"
+
+	"kubesphere.io/kubesphere/pkg/controller/options"
+
 	"strings"
 	"sync"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization"
 	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/models/telemetry"
 	"kubesphere.io/kubesphere/pkg/models/terminal"
 	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/telemetry"
 )
 
 // Package config saves configuration for running KubeSphere components
@@ -76,28 +77,13 @@ const (
 
 	// DefaultConfigurationPath the default location of the configuration file
 	defaultConfigurationPath = "/etc/kubesphere"
+
+	envPrefix = defaultConfigurationName
 )
 
 type config struct {
-	cfg         *Config
-	cfgChangeCh chan Config
-	watchOnce   sync.Once
-	loadOnce    sync.Once
-}
-
-func (c *config) watchConfig() <-chan Config {
-	c.watchOnce.Do(func() {
-		viper.WatchConfig()
-		viper.OnConfigChange(func(in fsnotify.Event) {
-			cfg := New()
-			if err := viper.Unmarshal(cfg); err != nil {
-				klog.Warningf("config reload error: %v", err)
-			} else {
-				c.cfgChangeCh <- *cfg
-			}
-		})
-	})
-	return c.cfgChangeCh
+	cfg      *Config
+	loadOnce sync.Once
 }
 
 func (c *config) loadFromDisk() (*Config, error) {
@@ -119,31 +105,28 @@ func defaultConfig() *config {
 	viper.AddConfigPath(".")
 
 	// Load from Environment variables
-	viper.SetEnvPrefix("kubesphere")
+	viper.SetEnvPrefix(envPrefix)
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	return &config{
-		cfg:         New(),
-		cfgChangeCh: make(chan Config),
-		watchOnce:   sync.Once{},
-		loadOnce:    sync.Once{},
+		cfg:      New(),
+		loadOnce: sync.Once{},
 	}
 }
 
 // Config defines everything needed for apiserver to deal with external services
 type Config struct {
-	KubernetesOptions     *k8s.KubernetesOptions  `json:"kubernetes,omitempty" yaml:"kubernetes,omitempty" mapstructure:"kubernetes"`
-	CacheOptions          *cache.Options          `json:"cache,omitempty" yaml:"cache,omitempty" mapstructure:"cache"`
-	AuthenticationOptions *authentication.Options `json:"authentication,omitempty" yaml:"authentication,omitempty" mapstructure:"authentication"`
-	AuthorizationOptions  *authorization.Options  `json:"authorization,omitempty" yaml:"authorization,omitempty" mapstructure:"authorization"`
-	MultiClusterOptions   *multicluster.Options   `json:"multicluster,omitempty" yaml:"multicluster,omitempty" mapstructure:"multicluster"`
-	AuditingOptions       *auditing.Options       `json:"auditing,omitempty" yaml:"auditing,omitempty" mapstructure:"auditing"`
-	TerminalOptions       *terminal.Options       `json:"terminal,omitempty" yaml:"terminal,omitempty" mapstructure:"terminal"`
-	// enable/disable telemetry。
-	TelemetryOptions *telemetry.Options `json:"telemetry,omitempty" yaml:"telemetry,omitempty" mapstructure:"telemetry"`
-	// HelmImage defines the Pod image used by the helm executor.
-	HelmImage string `json:"helmImage,omitempty" yaml:"helmImage,omitempty" mapstructure:"helmImage"`
+	KubernetesOptions     *k8s.Options                 `json:"kubernetes,omitempty" yaml:"kubernetes,omitempty" mapstructure:"kubernetes"`
+	CacheOptions          *cache.Options               `json:"cache,omitempty" yaml:"cache,omitempty" mapstructure:"cache"`
+	AuthenticationOptions *authentication.Options      `json:"authentication,omitempty" yaml:"authentication,omitempty" mapstructure:"authentication"`
+	AuthorizationOptions  *authorization.Options       `json:"authorization,omitempty" yaml:"authorization,omitempty" mapstructure:"authorization"`
+	MultiClusterOptions   *multicluster.Options        `json:"multicluster,omitempty" yaml:"multicluster,omitempty" mapstructure:"multicluster"`
+	AuditingOptions       *auditing.Options            `json:"auditing,omitempty" yaml:"auditing,omitempty" mapstructure:"auditing"`
+	TerminalOptions       *terminal.Options            `json:"terminal,omitempty" yaml:"terminal,omitempty" mapstructure:"terminal"`
+	HelmExecutorOptions   *options.HelmExecutorOptions `json:"helmExecutor,omitempty" yaml:"helmExecutor,omitempty" mapstructure:"helmExecutor"`
+	TelemetryOptions      *telemetry.Options           `json:"telemetry,omitempty" yaml:"telemetry,omitempty" mapstructure:"telemetry"`
+	ExtensionOptions      *options.ExtensionOptions    `json:"extension,omitempty" yaml:"extension,omitempty" mapstructure:"extension"`
 }
 
 // New config creates a default non-empty Config
@@ -154,10 +137,11 @@ func New() *Config {
 		AuthenticationOptions: authentication.NewOptions(),
 		AuthorizationOptions:  authorization.NewOptions(),
 		MultiClusterOptions:   multicluster.NewOptions(),
-		TerminalOptions:       terminal.NewTerminalOptions(),
+		TerminalOptions:       terminal.NewOptions(),
 		AuditingOptions:       auditing.NewAuditingOptions(),
 		TelemetryOptions:      telemetry.NewTelemetryOptions(),
-		HelmImage:             "kubesphere/helm:v3.12.1",
+		HelmExecutorOptions:   options.NewHelmExecutorOptions(),
+		ExtensionOptions:      options.NewExtensionOptions(),
 	}
 }
 
@@ -167,13 +151,8 @@ func TryLoadFromDisk() (*Config, error) {
 	return _config.loadFromDisk()
 }
 
-// WatchConfigChange return config change channel
-func WatchConfigChange() <-chan Config {
-	return _config.watchConfig()
-}
-
-// GetFromConfigMap returns KubeSphere running config by the given ConfigMap.
-func GetFromConfigMap(cm *corev1.ConfigMap) (*Config, error) {
+// FromConfigMap returns KubeSphere running config by the given ConfigMap.
+func FromConfigMap(cm *corev1.ConfigMap) (*Config, error) {
 	c := &Config{}
 	value, ok := cm.Data[constants.KubeSphereConfigMapDataKey]
 	if !ok {

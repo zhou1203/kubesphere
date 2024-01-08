@@ -36,11 +36,8 @@ const (
 
 // Options is the config data for telemetry.
 type Options struct {
-	// true enable collect data. false disable collect data.
-	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty" mapstructure:"enabled"`
-
 	// KSCloudURL for kubesphere cloud
-	KSCloudURL *string `json:"ksCloudUrl,omitempty" yaml:"ksCloudUrl,omitempty" mapstructure:"ksCloudUrl"`
+	KSCloudURL *string `json:"ksCloudURL,omitempty" yaml:"ksCloudURL,omitempty" mapstructure:"ksCloudURL"`
 
 	// collect period
 	Period *time.Duration `json:"period,omitempty" yaml:"period,omitempty" mapstructure:"period"`
@@ -51,7 +48,6 @@ type Options struct {
 
 func NewTelemetryOptions() *Options {
 	return &Options{
-		Enabled:             pointer.Bool(true),
 		KSCloudURL:          pointer.String(defaultKSCloudURL),
 		Period:              pointer.Duration(defaultPeriod),
 		ClusterInfoLiveTime: pointer.Duration(defaultCusterInfoLiveTime),

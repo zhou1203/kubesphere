@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -73,10 +72,8 @@ var _ = Describe("LoginRecord", func() {
 	BeforeEach(func() {
 		user = newUser("admin")
 		loginRecord = newLoginRecord(user.Name)
-
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(user, loginRecord).Build()
-
-		reconciler = NewReconciler(time.Hour, 1)
+		reconciler = &Reconciler{}
 		reconciler.Client = fakeClient
 		reconciler.recorder = record.NewFakeRecorder(2)
 	})
@@ -87,7 +84,6 @@ var _ = Describe("LoginRecord", func() {
 	// test Kubernetes API server, which isn't the goal here.
 	Context("LoginRecord Controller", func() {
 		It("Should create successfully", func() {
-
 			By("Expecting to reconcile successfully")
 			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{
 				Name: loginRecord.Name,

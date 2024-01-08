@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"net/http"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -21,6 +25,27 @@ const (
 	ServiceAccountVolumeName     = "kubesphere-service-account"
 	VolumeMountPath              = "/var/run/secrets/kubesphere.io/serviceaccount"
 )
+
+const webhookName = "service-account-injector"
+
+func (w *Webhook) Name() string {
+	return webhookName
+}
+
+var _ kscontroller.Controller = &Webhook{}
+
+type Webhook struct {
+}
+
+func (w *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
+	serviceAccountPodInjector := &PodInjector{
+		Log:     mgr.GetLogger(),
+		Decoder: admission.NewDecoder(mgr.GetScheme()),
+		Client:  mgr.GetClient(),
+	}
+	mgr.GetWebhookServer().Register("/serviceaccount-pod-injector", &webhook.Admission{Handler: serviceAccountPodInjector})
+	return nil
+}
 
 // PodInjector injects a token (issue by KubeSphere) by mounting a secret to the
 // pod when the pod specifies a KubeSphere service account.

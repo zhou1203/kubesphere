@@ -39,7 +39,7 @@ import (
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	audit "kubesphere.io/kubesphere/pkg/apiserver/auditing"
+	"kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/basic"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/authenticators/jwt"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
@@ -54,9 +54,9 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/path"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/rbac"
 	unionauthorizer "kubesphere.io/kubesphere/pkg/apiserver/authorization/union"
-	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/apiserver/filters"
 	"kubesphere.io/kubesphere/pkg/apiserver/metrics"
+	"kubesphere.io/kubesphere/pkg/apiserver/options"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	appv2 "kubesphere.io/kubesphere/pkg/kapis/application/v2"
@@ -79,7 +79,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
-	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/server/healthz"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
@@ -93,13 +92,13 @@ var initMetrics sync.Once
 type APIServer struct {
 	Server *http.Server
 
-	Config *apiserverconfig.Config
+	options.Options
 
 	// webservice container, where all webservice defines
 	container *restful.Container
 
-	// kubeClient is a collection of all kubernetes(include CRDs) objects clientset
-	KubernetesClient k8s.Client
+	// K8sClient is a collection of all kubernetes(include CRDs) objects clientset
+	K8sClient k8s.Client
 
 	// cache is used for short-lived objects, like session
 	CacheClient cache.Interface
@@ -167,26 +166,26 @@ func (s *APIServer) installMetricsAPI() {
 // Installation happens before all informers start to cache objects,
 // so any attempt to list objects using listers will get empty results.
 func (s *APIServer) installKubeSphereAPIs() {
-	imOperator := im.NewOperator(s.RuntimeClient, s.Config.AuthenticationOptions)
+	imOperator := im.NewOperator(s.RuntimeClient, s.AuthenticationOptions)
 	amOperator := am.NewOperator(s.ResourceManager)
 	rbacAuthorizer := rbac.NewRBACAuthorizer(amOperator)
 	counter := overviewclient.New(s.RuntimeClient)
 	counter.RegisterResource(overviewclient.NewDefaultRegisterOptions()...)
 
 	handlers := []rest.Handler{
-		configv1alpha2.NewHandler(s.Config, s.RuntimeClient),
+		configv1alpha2.NewHandler(&s.Options, s.RuntimeClient),
 		resourcev1alpha3.NewHandler(s.RuntimeCache, counter),
 		operationsv1alpha2.NewHandler(s.RuntimeClient),
-		resourcesv1alpha2.NewHandler(s.RuntimeClient, s.KubernetesClient.Master(), s.Config.TerminalOptions),
+		resourcesv1alpha2.NewHandler(s.RuntimeClient, s.K8sClient.Master(), s.TerminalOptions),
 		tenantv1alpha2.NewHandler(s.RuntimeClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer, counter),
 		tenantv1alpha3.NewHandler(s.RuntimeClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer),
-		terminalv1alpha2.NewHandler(s.KubernetesClient.Kubernetes(), rbacAuthorizer, s.KubernetesClient.Config(), s.Config.TerminalOptions),
+		terminalv1alpha2.NewHandler(s.K8sClient, rbacAuthorizer, s.K8sClient.Config(), s.TerminalOptions),
 		clusterkapisv1alpha1.NewHandler(s.RuntimeClient),
 		iamapiv1beta1.NewHandler(imOperator, amOperator),
-		oauth.NewHandler(imOperator, auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions),
-			auth.NewPasswordAuthenticator(s.RuntimeClient, s.IdentityProviderHandler, s.Config.AuthenticationOptions),
+		oauth.NewHandler(imOperator, auth.NewTokenOperator(s.CacheClient, s.Issuer, s.AuthenticationOptions),
+			auth.NewPasswordAuthenticator(s.RuntimeClient, s.IdentityProviderHandler, s.AuthenticationOptions),
 			auth.NewOAuthAuthenticator(s.RuntimeClient, s.IdentityProviderHandler),
-			auth.NewLoginRecorder(s.RuntimeClient), s.Config.AuthenticationOptions,
+			auth.NewLoginRecorder(s.RuntimeClient), s.AuthenticationOptions,
 			oauth2.NewOAuthClientGetter(s.RuntimeClient)),
 		version.NewHandler(s.K8sVersionInfo),
 		packagev1alpha1.NewHandler(s.RuntimeCache),
@@ -199,7 +198,7 @@ func (s *APIServer) installKubeSphereAPIs() {
 		urlruntime.Must(handler.AddToContainer(s.container))
 	}
 
-	if s.Config.MultiClusterOptions.ClusterRole == multicluster.ClusterRoleHost {
+	if s.MultiClusterOptions.ClusterRole == string(clusterv1alpha1.ClusterRoleHost) {
 		urlruntime.Must(marketplace.AddToContainer(s.container, s.RuntimeClient))
 	}
 }
@@ -210,14 +209,20 @@ func (s *APIServer) installHealthz() {
 }
 
 func (s *APIServer) Run(ctx context.Context) (err error) {
-	go s.RuntimeCache.Start(ctx)
+	go func() {
+		if err := s.RuntimeCache.Start(ctx); err != nil {
+			klog.Errorf("failed to start runtime cache: %s", err)
+		}
+	}()
 
-	shutdownCtx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	go func() {
 		<-ctx.Done()
-		_ = s.Server.Shutdown(shutdownCtx)
+		if err := s.Server.Shutdown(ctx); err != nil {
+			klog.Errorf("failed to shutdown server: %s", err)
+		}
 	}()
 
 	klog.V(0).Infof("Start listening on %s", s.Server.Addr)
@@ -226,7 +231,6 @@ func (s *APIServer) Run(ctx context.Context) (err error) {
 	} else {
 		err = s.Server.ListenAndServe()
 	}
-
 	return err
 }
 
@@ -247,17 +251,17 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	}
 
 	handler := s.Server.Handler
-	handler = filters.WithKubeAPIServer(handler, s.KubernetesClient.Config())
+	handler = filters.WithKubeAPIServer(handler, s.K8sClient.Config())
 	handler = filters.WithAPIService(handler, s.RuntimeCache)
 	handler = filters.WithReverseProxy(handler, s.RuntimeCache)
 	handler = filters.WithJSBundle(handler, s.RuntimeCache)
 
-	if s.Config.AuditingOptions.Enable {
-		handler = filters.WithAuditing(handler, audit.NewAuditing(s.KubernetesClient, s.Config.AuditingOptions, stopCh))
+	if s.AuditingOptions.Enable {
+		handler = filters.WithAuditing(handler, auditing.NewAuditing(s.K8sClient, s.AuditingOptions, stopCh))
 	}
 
 	var authorizers authorizer.Authorizer
-	switch s.Config.AuthorizationOptions.Mode {
+	switch s.AuthorizationOptions.Mode {
 	case authorization.AlwaysAllow:
 		authorizers = authorizerfactory.NewAlwaysAllowAuthorizer()
 	case authorization.AlwaysDeny:
@@ -277,10 +281,10 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 	// authenticators are unordered
 	authn := unionauth.New(anonymous.NewAuthenticator(),
 		basictoken.New(basic.NewBasicAuthenticator(
-			auth.NewPasswordAuthenticator(s.RuntimeClient, s.IdentityProviderHandler, s.Config.AuthenticationOptions),
+			auth.NewPasswordAuthenticator(s.RuntimeClient, s.IdentityProviderHandler, s.AuthenticationOptions),
 			auth.NewLoginRecorder(s.RuntimeClient))),
 		bearertoken.New(jwt.NewTokenAuthenticator(s.RuntimeCache,
-			auth.NewTokenOperator(s.CacheClient, s.Issuer, s.Config.AuthenticationOptions))))
+			auth.NewTokenOperator(s.CacheClient, s.Issuer, s.AuthenticationOptions))))
 	handler = filters.WithAuthentication(handler, authn)
 	handler = filters.WithRequestInfo(handler, requestInfoResolver)
 	s.Server.Handler = handler
@@ -294,7 +298,9 @@ func (s *APIServer) installDynamicResourceAPI() {
 				resp.Header().Add(header, value)
 			}
 		}
-		resp.WriteErrorString(err.Code, err.Message)
+		if err := resp.WriteErrorString(err.Code, err.Message); err != nil {
+			klog.Errorf("failed to write error string: %s", err)
+		}
 	}, resourcev1beta1.New(s.RuntimeClient))
 	s.container.ServiceErrorHandler(dynamicResourceHandler.HandleServiceError)
 }
@@ -316,8 +322,7 @@ func logStackOnRecover(panicReason interface{}, w http.ResponseWriter) {
 		headers.Set("Accept", ct)
 	}
 
-	w.WriteHeader(http.StatusInternalServerError)
-	w.Write([]byte("Internal server error"))
+	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 }
 
 func logRequestAndResponse(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {

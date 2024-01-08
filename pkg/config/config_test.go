@@ -22,6 +22,10 @@ import (
 	"testing"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/controller/options"
+
+	"kubesphere.io/kubesphere/pkg/models/telemetry"
+
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v2"
 	"k8s.io/utils/pointer"
@@ -34,12 +38,11 @@ import (
 	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
-	"kubesphere.io/kubesphere/pkg/telemetry"
 )
 
 func newTestConfig() (*Config, error) {
 	var conf = &Config{
-		KubernetesOptions: &k8s.KubernetesOptions{
+		KubernetesOptions: &k8s.Options{
 			KubeConfig: "/Users/zry/.kube/config",
 			Master:     "https://127.0.0.1:6443",
 			QPS:        1e6,
@@ -74,12 +77,12 @@ func newTestConfig() (*Config, error) {
 			},
 		},
 		TelemetryOptions: &telemetry.Options{
-			Enabled:             pointer.Bool(true),
 			KSCloudURL:          pointer.String("https://clouddev.kubesphere.io"),
 			Period:              pointer.Duration(time.Hour * 24),
 			ClusterInfoLiveTime: pointer.Duration(time.Hour * 24 * 365),
 		},
-		HelmImage: "kubesphere/helm:v3.12.1",
+		HelmExecutorOptions: &options.HelmExecutorOptions{Image: "kubesphere/helm:v3.12.1"},
+		ExtensionOptions:    options.NewExtensionOptions(),
 	}
 	return conf, nil
 }

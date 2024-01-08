@@ -18,6 +18,11 @@ package application
 
 import (
 	"context"
+	"strings"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,14 +38,45 @@ import (
 )
 
 const (
-	categoryController = "app-category-controller"
+	categoryController = "app-category"
 	categoryFinalizer  = "categories.application.kubesphere.io"
 )
 
 var _ reconcile.Reconciler = &AppCategoryReconciler{}
+var _ kscontroller.Controller = &AppCategoryReconciler{}
 
 type AppCategoryReconciler struct {
 	client.Client
+}
+
+func (r *AppCategoryReconciler) Name() string {
+	return categoryController
+}
+
+func (r *AppCategoryReconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+func (r *AppCategoryReconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(categoryController).
+		For(&appv2.Category{}).
+		Watches(
+			&appv2.Application{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+				var requests []reconcile.Request
+				app := object.(*appv2.Application)
+				if categoryID := app.Labels[appv2.AppCategoryNameKey]; categoryID != "" {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{Name: categoryID},
+					})
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.LabelChangedPredicate{}),
+		).
+		Complete(r)
 }
 
 func (r *AppCategoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -101,27 +137,4 @@ func (r *AppCategoryReconciler) ensureUncategorizedCategory() error {
 	ctg.Name = appv2.UncategorizedCategoryID
 
 	return r.Create(context.TODO(), ctg)
-}
-
-func (r *AppCategoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(categoryController).
-		For(&appv2.Category{}).
-		Watches(
-			&appv2.Application{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
-				var requests []reconcile.Request
-				app := object.(*appv2.Application)
-				if categoryID := app.Labels[appv2.AppCategoryNameKey]; categoryID != "" {
-					requests = append(requests, reconcile.Request{
-						NamespacedName: types.NamespacedName{Name: categoryID},
-					})
-				}
-				return requests
-			}),
-			builder.WithPredicates(predicate.LabelChangedPredicate{}),
-		).
-		Complete(r)
 }

@@ -20,32 +20,48 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 )
 
-func SetupWebhookWithManager(mgr ctrl.Manager) error {
+const webhookName = "cluster-webhook"
+
+func (v *Webhook) Name() string {
+	return webhookName
+}
+
+func (v *Webhook) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+var _ kscontroller.Controller = &Webhook{}
+var _ admission.CustomValidator = &Webhook{}
+
+type Webhook struct {
+}
+
+func (v *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
 	return builder.WebhookManagedBy(mgr).
 		For(&clusterv1alpha1.Cluster{}).
-		WithValidator(&clusterValidator{}).
+		WithValidator(v).
 		Complete()
 }
 
-type clusterValidator struct{}
-
-func (v *clusterValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Webhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	return nil, nil
 }
 
-func (v *clusterValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (v *Webhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	oldCluster, ok := oldObj.(*clusterv1alpha1.Cluster)
 	if !ok {
 		return nil, fmt.Errorf("expected a Cluster but got a %T", oldObj)
@@ -78,6 +94,6 @@ func (v *clusterValidator) ValidateUpdate(ctx context.Context, oldObj, newObj ru
 	return nil, nil
 }
 
-func (v *clusterValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Webhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	return nil, nil
 }

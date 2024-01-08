@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
 	"kubesphere.io/kubesphere/pkg/models/marketplace"
 )
@@ -34,10 +33,6 @@ const (
 )
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
-
-func NewFakeHandler() rest.Handler {
-	return &handler{}
-}
 
 func (h *handler) AddToContainer(c *restful.Container) error {
 	webservice := runtime.NewWebService(GroupVersion)

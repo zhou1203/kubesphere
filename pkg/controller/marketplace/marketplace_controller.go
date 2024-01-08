@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -17,6 +18,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	marketplacev1alpha1 "kubesphere.io/api/marketplace/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,13 +31,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/models/marketplace"
 )
 
 const (
-	marketplaceController = "marketplace-controller"
+	marketplaceController = "marketplace"
 	minPeriod             = time.Minute * 15
 )
+
+var _ kscontroller.Controller = &Controller{}
+var _ reconcile.Reconciler = &Controller{}
+
+func (r *Controller) Name() string {
+	return marketplaceController
+}
+
+func (r *Controller) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
 
 type Controller struct {
 	client.Client
@@ -43,61 +57,7 @@ type Controller struct {
 	logger   logr.Logger
 }
 
-func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	logger := r.logger.WithName(req.String())
-	ctx = klog.NewContext(ctx, logger)
-
-	extension := &corev1alpha1.Extension{}
-	if err := r.Client.Get(ctx, req.NamespacedName, extension); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	options, err := marketplace.LoadOptions(ctx, r.Client)
-	if err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] != options.RepositorySyncOptions.RepoName {
-		return ctrl.Result{}, nil
-	}
-
-	if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
-		if err := r.syncExtensionID(ctx, options, extension); err != nil {
-			return reconcile.Result{}, err
-		}
-	}
-
-	if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
-		r.logger.V(4).Info("extension ID not exists")
-		return reconcile.Result{}, nil
-	}
-
-	if options.Account.IsValid() {
-		if err := r.syncSubscription(ctx, options, extension); err != nil {
-			return reconcile.Result{}, err
-		}
-	} else {
-		if err := marketplace.RemoveSubscriptions(ctx, r.Client, extension); err != nil {
-			return reconcile.Result{}, err
-		}
-	}
-	return reconcile.Result{}, nil
-}
-
-func (r *Controller) Start(ctx context.Context) error {
-	options, err := marketplace.LoadOptions(ctx, r.Client)
-	if err != nil {
-		return fmt.Errorf("failed to load marketplace configuration: %s", err)
-	}
-	if err := r.initMarketplaceRepository(ctx, options); err != nil {
-		return err
-	}
-	go wait.Until(r.syncSubscriptions(ctx), max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
-	go wait.Until(r.syncCategories(ctx), max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
-	return nil
-}
-
-func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Controller) SetupWithManager(mgr *kscontroller.Manager) error {
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(marketplaceController)
 	r.recorder = mgr.GetEventRecorderFor(marketplaceController)
@@ -168,6 +128,60 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 			})),
 		).
 		Complete(r)
+}
+
+func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	logger := r.logger.WithName(req.String())
+	ctx = klog.NewContext(ctx, logger)
+
+	extension := &corev1alpha1.Extension{}
+	if err := r.Client.Get(ctx, req.NamespacedName, extension); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	options, err := marketplace.LoadOptions(ctx, r.Client)
+	if err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if extension.Labels[corev1alpha1.RepositoryReferenceLabel] != options.RepositorySyncOptions.RepoName {
+		return ctrl.Result{}, nil
+	}
+
+	if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
+		if err := r.syncExtensionID(ctx, options, extension); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
+	if extension.Labels[marketplacev1alpha1.ExtensionID] == "" {
+		r.logger.V(4).Info("extension ID not exists")
+		return reconcile.Result{}, nil
+	}
+
+	if options.Account.IsValid() {
+		if err := r.syncSubscription(ctx, options, extension); err != nil {
+			return reconcile.Result{}, err
+		}
+	} else {
+		if err := marketplace.RemoveSubscriptions(ctx, r.Client, extension); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+	return reconcile.Result{}, nil
+}
+
+func (r *Controller) Start(ctx context.Context) error {
+	options, err := marketplace.LoadOptions(ctx, r.Client)
+	if err != nil {
+		return fmt.Errorf("failed to load marketplace configuration: %s", err)
+	}
+	if err := r.initMarketplaceRepository(ctx, options); err != nil {
+		return err
+	}
+	go wait.Until(r.syncSubscriptions(ctx), max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
+	go wait.Until(r.syncCategories(ctx), max(options.SubscriptionSyncOptions.SyncPeriod, minPeriod), ctx.Done())
+	return nil
 }
 
 func max(a time.Duration, b time.Duration) time.Duration {

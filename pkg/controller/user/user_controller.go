@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	"github.com/go-logr/logr"
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
@@ -42,14 +44,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
 const (
-	controllerName = "user-controller"
+	controllerName = "user"
 	finalizer      = "finalizers.kubesphere.io/users"
 )
 
@@ -59,16 +60,19 @@ var _ reconcile.Reconciler = &Reconciler{}
 // Reconciler reconciles a User object
 type Reconciler struct {
 	client.Client
-	AuthenticationOptions *authentication.Options
+	authenticationOptions *authentication.Options
 	logger                logr.Logger
 	recorder              record.EventRecorder
-	ClusterClientSet      clusterclient.Interface
+	clusterClient         clusterclient.Interface
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.ClusterClientSet == nil {
-		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
-	}
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.authenticationOptions = mgr.AuthenticationOptions
+	r.clusterClient = mgr.ClusterClient
 	r.Client = mgr.GetClient()
 	r.logger = mgr.GetLogger().WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
@@ -147,14 +151,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	r.recorder.Event(user, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	// block user for AuthenticateRateLimiterDuration duration, after that put it back to the queue to unblock
 	if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
-		return ctrl.Result{Requeue: true, RequeueAfter: r.AuthenticationOptions.AuthenticateRateLimiterDuration}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: r.authenticationOptions.AuthenticateRateLimiterDuration}, nil
 	}
 
 	return ctrl.Result{}, nil
 }
 
 func (r *Reconciler) multiClusterSync(ctx context.Context, user *iamv1beta1.User) error {
-	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	clusters, err := r.clusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
 	}
@@ -183,7 +187,7 @@ func (r *Reconciler) syncUser(ctx context.Context, cluster clusterv1alpha1.Clust
 	if clusterutils.IsHostCluster(&cluster) {
 		return nil
 	}
-	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+	clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
@@ -240,7 +244,7 @@ func (r *Reconciler) deleteRelatedResources(ctx context.Context, user *iamv1beta
 	if err := r.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRoleBinding{}, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}); err != nil {
 		return err
 	}
-	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	clusters, err := r.clusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
 	}
@@ -251,7 +255,7 @@ func (r *Reconciler) deleteRelatedResources(ctx context.Context, user *iamv1beta
 			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue
 		}
-		clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+		clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 		if err != nil {
 			return fmt.Errorf("failed to get cluster client: %s", err)
 		}
@@ -337,7 +341,7 @@ func (r *Reconciler) reconcileUserStatus(ctx context.Context, user *iamv1beta1.U
 	// determine whether there is a requirement to unblock the user who has been blocked.
 	if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
 		if user.Status.LastTransitionTime != nil &&
-			user.Status.LastTransitionTime.Add(r.AuthenticationOptions.AuthenticateRateLimiterDuration).Before(time.Now()) {
+			user.Status.LastTransitionTime.Add(r.authenticationOptions.AuthenticateRateLimiterDuration).Before(time.Now()) {
 			// unblock user
 			user.Status = iamv1beta1.UserStatus{
 				State:              iamv1beta1.UserActive,
@@ -362,16 +366,16 @@ func (r *Reconciler) reconcileUserStatus(ctx context.Context, user *iamv1beta1.U
 		afterStateTransition := user.Status.LastTransitionTime == nil || loginRecord.CreationTimestamp.After(user.Status.LastTransitionTime.Time)
 		if !loginRecord.Spec.Success &&
 			afterStateTransition &&
-			loginRecord.CreationTimestamp.Add(r.AuthenticationOptions.AuthenticateRateLimiterDuration).After(now) {
+			loginRecord.CreationTimestamp.Add(r.authenticationOptions.AuthenticateRateLimiterDuration).After(now) {
 			failedLoginAttempts++
 		}
 	}
 
 	// block user if failed login attempts exceeds maximum tries setting
-	if failedLoginAttempts >= r.AuthenticationOptions.AuthenticateRateLimiterMaxTries {
+	if failedLoginAttempts >= r.authenticationOptions.AuthenticateRateLimiterMaxTries {
 		user.Status = iamv1beta1.UserStatus{
 			State:              iamv1beta1.UserAuthLimitExceeded,
-			Reason:             fmt.Sprintf("Failed login attempts exceed %d in last %s", failedLoginAttempts, r.AuthenticationOptions.AuthenticateRateLimiterDuration),
+			Reason:             fmt.Sprintf("Failed login attempts exceed %d in last %s", failedLoginAttempts, r.authenticationOptions.AuthenticateRateLimiterDuration),
 			LastTransitionTime: &metav1.Time{Time: time.Now()},
 		}
 		if err := r.Update(ctx, user, &client.UpdateOptions{}); err != nil {

@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
@@ -45,9 +46,12 @@ import (
 )
 
 const (
-	controllerName = "namespace-controller"
+	controllerName = "namespace"
 	finalizer      = "finalizers.kubesphere.io/namespaces"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 // Reconciler reconciles a Namespace object
 type Reconciler struct {
@@ -56,7 +60,11 @@ type Reconciler struct {
 	recorder record.EventRecorder
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
 	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)

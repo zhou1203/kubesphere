@@ -19,6 +19,12 @@ package application
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
+	"kubesphere.io/kubesphere/pkg/controller"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller/options"
 
 	helmrelease "helm.sh/helm/v3/pkg/release"
 	batchv1 "k8s.io/api/batch/v1"
@@ -46,21 +52,35 @@ import (
 )
 
 const (
-	helminstallerController  = "apprelease-helminstaller-controller"
+	helminstallerController  = "apprelease-helminstaller"
 	clusterRoleName          = "kubesphere:application:helminstaller"
 	clusterRoleBindingFormat = "kubesphere:application:helminstaller-%s"
 	HelmReleaseFinalizer     = "helmrelease.application.kubesphere.io"
 )
 
+var _ controller.Controller = &AppReleaseReconciler{}
 var _ reconcile.Reconciler = &AppReleaseReconciler{}
 
-func (r *AppReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *AppReleaseReconciler) Name() string {
+	return helminstallerController
+}
+
+func (r *AppReleaseReconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+func (r *AppReleaseReconciler) SetupWithManager(mgr *controller.Manager) error {
+	r.HelmExecutorOptions = mgr.HelmExecutorOptions
 	r.Client = mgr.GetClient()
 	clusterClientSet, err := clusterclient.NewClusterClientSet(mgr.GetCache())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create cluster client set: %v", err)
 	}
 	r.clusterClientSet = clusterClientSet
+
+	if r.HelmExecutorOptions == nil || r.HelmExecutorOptions.Image == "" {
+		return fmt.Errorf("helm executor options is nil or image is empty")
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).Named(helminstallerController).
 		For(&appv2.ApplicationRelease{}).Complete(r)
@@ -68,8 +88,8 @@ func (r *AppReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 type AppReleaseReconciler struct {
 	client.Client
-	clusterClientSet clusterclient.Interface
-	HelmImage        string
+	clusterClientSet    clusterclient.Interface
+	HelmExecutorOptions *kscontroller.HelmExecutorOptions
 }
 
 func (r *AppReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -192,7 +212,7 @@ func (r *AppReleaseReconciler) getExecutor(apprls *appv2.ApplicationRelease) (ex
 		return executor, nil
 	}
 
-	opt1 := helm.SetHelmImage(r.HelmImage)
+	opt1 := helm.SetHelmImage(r.HelmExecutorOptions.Image)
 	opt2 := helm.SetJobLabels(labels.Set{appv2.AppReleaseReferenceLabelKey: apprls.Name})
 	executor, err = helm.NewExecutor(string(configByte), apprls.GetRlsNamespace(), apprls.Name, opt1, opt2)
 	if err != nil {

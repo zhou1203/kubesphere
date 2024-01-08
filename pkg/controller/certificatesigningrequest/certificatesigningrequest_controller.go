@@ -20,6 +20,10 @@ import (
 	"context"
 	"time"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,11 +37,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"kubesphere.io/kubesphere/pkg/constants"
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
 )
 
-const controllerName = "csr-controller"
+const controllerName = "csr"
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
@@ -47,10 +53,27 @@ type Reconciler struct {
 	config             *rest.Config
 }
 
-func NewReconciler(config *rest.Config) *Reconciler {
-	return &Reconciler{
-		config: config,
-	}
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.kubeconfigOperator = kubeconfig.NewOperator(mgr.GetClient(), mgr.K8sClient.Config())
+	r.Client = mgr.GetClient()
+	return builder.
+		ControllerManagedBy(mgr).
+		For(
+			&certificatesv1.CertificateSigningRequest{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 2,
+		}).
+		Named(controllerName).
+		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -80,26 +103,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	r.recorder.Event(csr, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return ctrl.Result{}, nil
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	r.kubeconfigOperator = kubeconfig.NewOperator(mgr.GetClient(), r.config)
-	r.Client = mgr.GetClient()
-
-	return builder.
-		ControllerManagedBy(mgr).
-		For(
-			&certificatesv1.CertificateSigningRequest{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
-		Named(controllerName).
-		Complete(r)
 }
 
 func (r *Reconciler) Approve(csr *certificatesv1.CertificateSigningRequest) error {

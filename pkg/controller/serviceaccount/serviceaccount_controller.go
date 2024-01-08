@@ -20,13 +20,12 @@ import (
 	"context"
 	"fmt"
 
-	"kubesphere.io/kubesphere/pkg/controller"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -37,30 +36,26 @@ import (
 )
 
 const (
-	controllerName = "serviceaccount-controller"
+	controllerName = "serviceaccount"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
 
 // Reconciler reconciles a ServiceAccount object
 type Reconciler struct {
 	client.Client
 	logger   logr.Logger
 	recorder record.EventRecorder
-	scheme   *runtime.Scheme
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Client == nil {
-		r.Client = mgr.GetClient()
-	}
-	if r.logger.GetSink() == nil {
-		r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	}
-	if r.scheme == nil {
-		r.scheme = mgr.GetScheme()
-	}
-	if r.recorder == nil {
-		r.recorder = mgr.GetEventRecorderFor(controllerName)
-	}
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		For(&corev1.ServiceAccount{}).
@@ -81,10 +76,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	if _, ok := sa.Annotations[iamv1beta1.RoleAnnotation]; ok && sa.ObjectMeta.DeletionTimestamp.IsZero() {
 		if err := r.CreateOrUpdateRoleBinding(ctx, logger, sa); err != nil {
-			r.recorder.Event(sa, corev1.EventTypeWarning, controller.Synced, err.Error())
+			r.recorder.Event(sa, corev1.EventTypeWarning, kscontroller.Synced, err.Error())
 			return ctrl.Result{}, err
 		}
-		r.recorder.Event(sa, corev1.EventTypeNormal, controller.Synced, controller.MessageResourceSynced)
+		r.recorder.Event(sa, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	}
 	return ctrl.Result{}, nil
 }
@@ -123,7 +118,7 @@ func (r *Reconciler) CreateOrUpdateRoleBinding(ctx context.Context, logger logr.
 		},
 	}
 
-	if err := controllerutil.SetControllerReference(sa, saRoleBinding, r.scheme); err != nil {
+	if err := controllerutil.SetControllerReference(sa, saRoleBinding, r.Scheme()); err != nil {
 		logger.Error(err, "set controller reference failed")
 		return err
 	}

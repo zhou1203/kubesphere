@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -13,8 +15,23 @@ import (
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 )
 
+var _ admission.CustomValidator = &ReverseProxyWebhook{}
+var _ kscontroller.Controller = &ReverseProxyWebhook{}
+
+func (r *ReverseProxyWebhook) Name() string {
+	return "reverseproxy-webhook"
+}
+
 type ReverseProxyWebhook struct {
 	client.Client
+}
+
+func (r *ReverseProxyWebhook) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	return ctrl.NewWebhookManagedBy(mgr).
+		WithValidator(r).
+		For(&extensionsv1alpha1.ReverseProxy{}).
+		Complete()
 }
 
 func (r *ReverseProxyWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
@@ -51,12 +68,4 @@ func (r *ReverseProxyWebhook) validateReverseProxy(ctx context.Context, proxy *e
 		}
 	}
 	return nil, nil
-}
-
-func (r *ReverseProxyWebhook) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	return ctrl.NewWebhookManagedBy(mgr).
-		WithValidator(r).
-		For(&extensionsv1alpha1.ReverseProxy{}).
-		Complete()
 }

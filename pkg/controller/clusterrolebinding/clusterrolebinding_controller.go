@@ -1,9 +1,11 @@
-package role
+package clusterrolebinding
 
 import (
 	"context"
 
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
 	"k8s.io/client-go/tools/record"
@@ -15,9 +17,10 @@ import (
 	rbachelper "kubesphere.io/kubesphere/pkg/componenthelper/auth/rbac"
 )
 
-const controllerName = "role"
+const controllerName = "clusterrolebinding"
 
 var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
@@ -31,29 +34,24 @@ func (r *Reconciler) Name() string {
 }
 
 func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
-	r.Client = mgr.GetClient()
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	r.helper = rbachelper.NewHelper(r.Client)
+	r.Client = mgr.GetClient()
+	r.helper = rbachelper.NewHelper(mgr.GetClient())
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 1,
+			MaxConcurrentReconciles: 2,
 		}).
-		For(&iamv1beta1.Role{}).
+		For(&iamv1beta1.ClusterRoleBinding{}).
 		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	role := &iamv1beta1.Role{}
-	if err := r.Get(ctx, req.NamespacedName, role); err != nil {
+	clusterRole := &iamv1beta1.ClusterRoleBinding{}
+	if err := r.Get(ctx, req.NamespacedName, clusterRole); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	if role.AggregationRoleTemplates != nil {
-		if err := r.helper.AggregationRole(ctx, rbachelper.RoleRuleOwner{Role: role}, r.recorder); err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 	return ctrl.Result{}, nil
 }

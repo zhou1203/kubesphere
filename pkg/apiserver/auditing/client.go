@@ -68,14 +68,14 @@ type Auditing interface {
 }
 
 type auditing struct {
-	kubernetesClient k8s.Client
-	stopCh           <-chan struct{}
-	auditLevel       audit.Level
-	events           chan *Event
-	backend          []internal.Backend
+	k8sClient  k8s.Client
+	stopCh     <-chan struct{}
+	auditLevel audit.Level
+	events     chan *Event
+	backend    []internal.Backend
 
 	hostname string
-	hostip   string
+	hostIP   string
 	cluster  string
 
 	eventBatchSize     int
@@ -85,12 +85,12 @@ type auditing struct {
 func NewAuditing(kubernetesClient k8s.Client, opts *Options, stopCh <-chan struct{}) Auditing {
 
 	a := &auditing{
-		kubernetesClient:   kubernetesClient,
+		k8sClient:          kubernetesClient,
 		stopCh:             stopCh,
 		auditLevel:         opts.AuditLevel,
 		events:             make(chan *Event, DefaultCacheCapacity),
 		hostname:           os.Getenv("HOSTNAME"),
-		hostip:             getHostIP(),
+		hostIP:             getHostIP(),
 		eventBatchInterval: opts.EventBatchInterval,
 		eventBatchSize:     opts.EventBatchSize,
 	}
@@ -140,7 +140,7 @@ func getHostIP() string {
 }
 
 func (a *auditing) getClusterName() string {
-	ns, err := a.kubernetesClient.Kubernetes().CoreV1().Namespaces().Get(context.Background(), constants.KubeSphereNamespace, metav1.GetOptions{})
+	ns, err := a.k8sClient.CoreV1().Namespaces().Get(context.Background(), constants.KubeSphereNamespace, metav1.GetOptions{})
 	if err != nil {
 		klog.Error("get %s error: %s", constants.KubeSphereNamespace, err)
 		return ""
@@ -191,7 +191,7 @@ func (a *auditing) LogRequestObject(req *http.Request, info *request.RequestInfo
 
 	e := &Event{
 		HostName:  a.hostname,
-		HostIP:    a.hostip,
+		HostIP:    a.hostIP,
 		Workspace: info.Workspace,
 		Cluster:   a.cluster,
 		Event: audit.Event{

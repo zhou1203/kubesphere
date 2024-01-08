@@ -19,7 +19,12 @@ package application
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	helmrepo "helm.sh/helm/v3/pkg/repo"
 	corev1 "k8s.io/api/core/v1"
@@ -36,17 +41,27 @@ import (
 	"kubesphere.io/kubesphere/pkg/simple/client/application"
 )
 
+const helmRepoController = "helmrepo-controller"
+
 var _ reconcile.Reconciler = &RepoReconciler{}
+var _ kscontroller.Controller = &RepoReconciler{}
 
 type RepoReconciler struct {
 	recorder record.EventRecorder
 	client.Client
 }
 
-func (r *RepoReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.recorder = mgr.GetEventRecorderFor("helmrepo-controller")
+func (r *RepoReconciler) Name() string {
+	return helmRepoController
+}
 
+func (r *RepoReconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+func (r *RepoReconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	r.recorder = mgr.GetEventRecorderFor(helmRepoController)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appv2.Repo{}).
 		Complete(r)

@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/models/telemetry/collector"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
@@ -30,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"kubesphere.io/kubesphere/pkg/models/marketplace"
-	"kubesphere.io/kubesphere/pkg/telemetry/collector"
 )
 
 const (
@@ -83,10 +84,8 @@ func WithOptions(opt *Options) Option {
 func (t *telemetry) Start(ctx context.Context) error {
 	t.Once.Do(func() {
 		go wait.Until(func() {
-			if *t.options.Enabled {
-				if err := t.collect(ctx); err != nil {
-					klog.Errorf("collect data error %v", err)
-				}
+			if err := t.collect(ctx); err != nil {
+				klog.Errorf("collect data error %v", err)
 			}
 		}, *t.options.Period, ctx.Done())
 	})

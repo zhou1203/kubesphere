@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -14,45 +16,40 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/config/oauthclient"
 )
 
-type configWebhook struct {
-	client.Client
-	WebhookFactory *WebhookFactory
-}
-
-func (c *configWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+func (w *Webhook) ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
 	secret := obj.(*v1.Secret)
-	validator := c.WebhookFactory.GetValidator(secret.Type)
+	validator := w.factory.GetValidator(secret.Type)
 	if validator != nil {
 		return validator.ValidateCreate(ctx, secret)
 	}
 	return nil, nil
 }
 
-func (c *configWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
+func (w *Webhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
 	newSecret := newObj.(*v1.Secret)
 	oldSecret := oldObj.(*v1.Secret)
-	if validator := c.WebhookFactory.GetValidator(newSecret.Type); validator != nil {
+	if validator := w.factory.GetValidator(newSecret.Type); validator != nil {
 		return validator.ValidateUpdate(ctx, oldSecret, newSecret)
 	}
 	return nil, nil
 }
 
-func (c *configWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+func (w *Webhook) ValidateDelete(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
 	secret := obj.(*v1.Secret)
-	validator := c.WebhookFactory.GetValidator(secret.Type)
+	validator := w.factory.GetValidator(secret.Type)
 	if validator != nil {
 		return validator.ValidateDelete(ctx, secret)
 	}
 	return nil, nil
 }
 
-func (c *configWebhook) Default(ctx context.Context, obj runtime.Object) error {
+func (w *Webhook) Default(ctx context.Context, obj runtime.Object) error {
 	secret := obj.(*v1.Secret)
 	if secret.Namespace != constants.KubeSphereNamespace {
 		return nil
 	}
 
-	defaulter := c.WebhookFactory.GetDefaulter(secret.Type)
+	defaulter := w.factory.GetDefaulter(secret.Type)
 	if defaulter != nil {
 		return defaulter.Default(ctx, secret)
 	}
@@ -60,11 +57,22 @@ func (c *configWebhook) Default(ctx context.Context, obj runtime.Object) error {
 	return nil
 }
 
-var _ admission.CustomDefaulter = &configWebhook{}
-var _ admission.CustomValidator = &configWebhook{}
+var _ admission.CustomDefaulter = &Webhook{}
+var _ admission.CustomValidator = &Webhook{}
+var _ kscontroller.Controller = &Webhook{}
 
-// SetupWebhookWithManager TODO make the webhook url be customize
-func SetupWebhookWithManager(mgr ctrl.Manager) error {
+const webhookName = "kubesphere-config-webhook"
+
+func (w *Webhook) Name() string {
+	return webhookName
+}
+
+type Webhook struct {
+	client.Client
+	factory *WebhookFactory
+}
+
+func (w *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
 	factory := NewWebhookFactory()
 	oauthWebhookHandler := &oauthclient.WebhookHandler{Client: mgr.GetClient()}
 	factory.RegisterValidator(oauthWebhookHandler)
@@ -73,14 +81,12 @@ func SetupWebhookWithManager(mgr ctrl.Manager) error {
 	factory.RegisterValidator(identityProviderWebhookHandler)
 	factory.RegisterDefaulter(identityProviderWebhookHandler)
 
-	webhook := &configWebhook{
-		Client:         mgr.GetClient(),
-		WebhookFactory: factory,
-	}
+	w.Client = mgr.GetClient()
+	w.factory = factory
 
 	return ctrl.NewWebhookManagedBy(mgr).
-		WithValidator(webhook).
-		WithDefaulter(webhook).
+		WithValidator(w).
+		WithDefaulter(w).
 		For(&v1.Secret{}).
 		Complete()
 }

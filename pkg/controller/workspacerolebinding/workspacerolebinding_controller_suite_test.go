@@ -23,6 +23,13 @@ import (
 	"testing"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/controller"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller/options"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
+	"kubesphere.io/kubesphere/pkg/multicluster"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/klog/v2"
@@ -81,7 +88,8 @@ var _ = BeforeSuite(func() {
 	clusterClient, err := clusterclient.NewClusterClientSet(k8sManager.GetCache())
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&Reconciler{ClusterClientSet: clusterClient}).SetupWithManager(k8sManager)
+	err = (&Reconciler{}).SetupWithManager(&controller.Manager{ClusterClient: clusterClient, Manager: k8sManager,
+		Options: kscontroller.Options{MultiClusterOptions: &multicluster.Options{ClusterRole: string(clusterv1alpha1.ClusterRoleHost)}}})
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.Background())

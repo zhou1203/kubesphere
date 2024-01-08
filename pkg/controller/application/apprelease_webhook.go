@@ -19,25 +19,41 @@ package application
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
+	appv2 "kubesphere.io/api/application/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-
-	appv2 "kubesphere.io/api/application/v2"
 )
 
-func SetupWebhookWithManager(mgr ctrl.Manager) error {
+const webhookName = "apprelease-webhook"
+
+var _ admission.CustomDefaulter = &Webhook{}
+var _ kscontroller.Controller = &Webhook{}
+
+func (w *Webhook) Name() string {
+	return webhookName
+}
+
+func (w *Webhook) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+type Webhook struct {
+}
+
+func (w *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
 	return builder.WebhookManagedBy(mgr).
 		For(&appv2.ApplicationRelease{}).
-		WithDefaulter(&applicationAnnotator{}).
+		WithDefaulter(w).
 		Complete()
 }
 
-type applicationAnnotator struct{}
-
-func (a *applicationAnnotator) Default(ctx context.Context, obj runtime.Object) error {
+func (w *Webhook) Default(ctx context.Context, obj runtime.Object) error {
 	rls, ok := obj.(*appv2.ApplicationRelease)
 	if !ok {
 		return fmt.Errorf("expected a ApplicationRelease but got a %T", obj)

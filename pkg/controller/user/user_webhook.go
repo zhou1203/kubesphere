@@ -21,8 +21,9 @@ import (
 	"fmt"
 	"net/mail"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -30,28 +31,36 @@ import (
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 )
 
-func SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return builder.WebhookManagedBy(mgr).
-		For(&iamv1beta1.User{}).
-		WithValidator(&emailValidator{
-			Client: mgr.GetClient(),
-		}).
-		Complete()
+const webhookName = "user-webhook"
+
+func (v *Webhook) Name() string {
+	return webhookName
 }
 
-type emailValidator struct {
+var _ kscontroller.Controller = &Webhook{}
+var _ admission.CustomValidator = &Webhook{}
+
+type Webhook struct {
 	client.Client
 }
 
+func (v *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
+	v.Client = mgr.GetClient()
+	return builder.WebhookManagedBy(mgr).
+		For(&iamv1beta1.User{}).
+		WithValidator(v).
+		Complete()
+}
+
 // validate admits a pod if a specific annotation exists.
-func (v *emailValidator) validate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Webhook) validate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	user, ok := obj.(*iamv1beta1.User)
 	if !ok {
 		return nil, fmt.Errorf("expected a User but got a %T", obj)
 	}
 
 	allUsers := iamv1beta1.UserList{}
-	if err := v.Client.List(ctx, &allUsers, &client.ListOptions{}); err != nil {
+	if err := v.List(ctx, &allUsers, &client.ListOptions{}); err != nil {
 		return nil, err
 	}
 
@@ -66,15 +75,15 @@ func (v *emailValidator) validate(ctx context.Context, obj runtime.Object) (admi
 	return nil, nil
 }
 
-func (v *emailValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Webhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	return v.validate(ctx, obj)
 }
 
-func (v *emailValidator) ValidateUpdate(ctx context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
+func (v *Webhook) ValidateUpdate(ctx context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
 	return v.validate(ctx, newObj)
 }
 
-func (v *emailValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Webhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	return v.validate(ctx, obj)
 }
 

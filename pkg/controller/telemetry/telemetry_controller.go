@@ -25,25 +25,64 @@ import (
 	"strings"
 	"time"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	telemetryv1alpha1 "kubesphere.io/api/telemetry/v1alpha1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"kubesphere.io/kubesphere/pkg/telemetry"
+	"kubesphere.io/kubesphere/pkg/models/telemetry"
 )
 
 const (
+	ControllerName = "telemetry"
 	// defaultTelemetryEndpoint for telemetry endpoint
 	defaultTelemetryEndpoint = "/apis/telemetry/v1/clusterinfos?cluster_id=${cluster_id}"
 )
 
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
+
+func (r *Reconciler) Name() string {
+	return ControllerName
+}
+
 type Reconciler struct {
 	*telemetry.Options
 	runtimeclient.Client
+}
+
+func (r *Reconciler) Hidden() bool {
+	return true
+}
+
+func (r *Reconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Options = mgr.TelemetryOptions
+	// init Reconciler
+	r.Client = mgr.GetClient()
+
+	// start telemetry
+	if err := mgr.Add(telemetry.NewTelemetry(
+		telemetry.WithClient(mgr.GetClient()),
+		telemetry.WithOptions(r.Options)),
+	); err != nil {
+		return err
+	}
+
+	// start watch ClusterInfo
+	return builder.
+		ControllerManagedBy(mgr).
+		For(&telemetryv1alpha1.ClusterInfo{}).
+		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
@@ -123,23 +162,4 @@ func (r *Reconciler) syncToKSCloud(ctx context.Context, clusterInfo *telemetryv1
 		return err
 	}
 	return nil
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// init Reconciler
-	r.Client = mgr.GetClient()
-
-	// start telemetry
-	if err := mgr.Add(telemetry.NewTelemetry(
-		telemetry.WithClient(mgr.GetClient()),
-		telemetry.WithOptions(r.Options)),
-	); err != nil {
-		return err
-	}
-
-	// start watch ClusterInfo
-	return builder.
-		ControllerManagedBy(mgr).
-		For(&telemetryv1alpha1.ClusterInfo{}).
-		Complete(r)
 }

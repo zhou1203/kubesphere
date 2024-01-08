@@ -20,6 +20,11 @@ import (
 	"context"
 	"fmt"
 
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	"kubesphere.io/kubesphere/pkg/controller"
+
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,20 +35,17 @@ import (
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"kubesphere.io/kubesphere/pkg/constants"
-	"kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
-	controllerName = "group-controller"
+	controllerName = "group"
 	finalizer      = "finalizers.kubesphere.io/groups"
 )
 
@@ -51,6 +53,21 @@ type Reconciler struct {
 	client.Client
 
 	recorder record.EventRecorder
+}
+
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.Client = mgr.GetClient()
+	return builder.
+		ControllerManagedBy(mgr).
+		For(
+			&iamv1beta1.Group{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		Named(controllerName).
+		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -191,20 +208,4 @@ func (r *Reconciler) deleteRoleBindings(ctx context.Context, group *iamv1beta1.G
 		}
 	}
 	return nil
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	r.Client = mgr.GetClient()
-
-	return builder.
-		ControllerManagedBy(mgr).
-		For(
-			&iamv1beta1.Group{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		Named(controllerName).
-		Complete(r)
 }

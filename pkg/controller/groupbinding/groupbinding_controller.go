@@ -19,24 +19,26 @@ package groupbinding
 import (
 	"context"
 
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"kubesphere.io/kubesphere/pkg/constants"
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
-	controllerName = "groupbinding-controller"
+	controllerName = "groupbinding"
 	finalizer      = "finalizers.kubesphere.io/groupsbindings"
 )
 
@@ -44,6 +46,24 @@ type Reconciler struct {
 	client.Client
 
 	recorder record.EventRecorder
+}
+
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.Client = mgr.GetClient()
+	return builder.
+		ControllerManagedBy(mgr).
+		For(
+			&iamv1beta1.GroupBinding{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 2,
+		}).
+		Named(controllerName).
+		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -160,23 +180,4 @@ func (r *Reconciler) patchUser(ctx context.Context, user *iamv1beta1.User, group
 	newUser.Spec.Groups = groups
 	patch := client.MergeFrom(user)
 	return r.Patch(ctx, newUser, patch)
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	r.Client = mgr.GetClient()
-
-	return builder.
-		ControllerManagedBy(mgr).
-		For(
-			&iamv1beta1.GroupBinding{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
-		Named(controllerName).
-		Complete(r)
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -11,6 +13,13 @@ import (
 
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 )
+
+var _ admission.CustomValidator = &APIServiceWebhook{}
+var _ kscontroller.Controller = &APIServiceWebhook{}
+
+func (r *APIServiceWebhook) Name() string {
+	return "apiservice-webhook"
+}
 
 type APIServiceWebhook struct {
 	client.Client
@@ -43,7 +52,7 @@ func (r *APIServiceWebhook) validateAPIService(ctx context.Context, service *ext
 	return nil, nil
 }
 
-func (r *APIServiceWebhook) SetupWithManager(mgr ctrl.Manager) error {
+func (r *APIServiceWebhook) SetupWithManager(mgr *kscontroller.Manager) error {
 	r.Client = mgr.GetClient()
 	return ctrl.NewWebhookManagedBy(mgr).
 		WithValidator(r).

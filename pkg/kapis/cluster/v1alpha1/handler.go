@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/config"
+
 	"github.com/emicklei/go-restful/v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,7 +35,6 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/api"
 	apiv1alpha1 "kubesphere.io/kubesphere/pkg/api/cluster/v1alpha1"
-	"kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/constants"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/version"
@@ -250,7 +251,7 @@ func (h *handler) getMemberClusterConfig(ctx context.Context, clientSet kubernet
 		return nil, err
 	}
 
-	return config.GetFromConfigMap(memberCm)
+	return config.FromConfigMap(memberCm)
 }
 
 // getHostClusterConfig returns KubeSphere running config from host cluster ConfigMap
@@ -262,5 +263,5 @@ func (h *handler) getHostClusterConfig(ctx context.Context) (*config.Config, err
 			constants.KubeSphereNamespace, constants.KubeSphereConfigName, err)
 	}
 
-	return config.GetFromConfigMap(hostCm)
+	return config.FromConfigMap(hostCm)
 }

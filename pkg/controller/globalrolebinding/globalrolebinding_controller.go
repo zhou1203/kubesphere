@@ -46,7 +46,7 @@ import (
 )
 
 const (
-	controllerName = "globalrolebinding-controller"
+	controllerName = "globalrolebinding"
 	finalizer      = "finalizers.kubesphere.io/globalrolebindings"
 )
 
@@ -55,15 +55,21 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
-	logger           logr.Logger
-	recorder         record.EventRecorder
-	ClusterClientSet clusterclient.Interface
+	logger        logr.Logger
+	recorder      record.EventRecorder
+	clusterClient clusterclient.Interface
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.ClusterClientSet == nil {
-		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
-	}
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.clusterClient = mgr.ClusterClient
 	r.Client = mgr.GetClient()
 	r.logger = mgr.GetLogger().WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
@@ -135,7 +141,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) deleteRelatedResources(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	clusters, err := r.clusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
 	}
@@ -149,7 +155,7 @@ func (r *Reconciler) deleteRelatedResources(ctx context.Context, globalRoleBindi
 			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue
 		}
-		clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+		clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 		if err != nil {
 			return fmt.Errorf("failed to get cluster client: %s", err)
 		}
@@ -202,7 +208,7 @@ func (r *Reconciler) assignClusterAdminRole(ctx context.Context, clusterName str
 }
 
 func (r *Reconciler) multiClusterSync(ctx context.Context, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	clusters, err := r.clusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
 	}
@@ -225,7 +231,7 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, globalRoleBinding *ia
 }
 
 func (r *Reconciler) syncGlobalRoleBinding(ctx context.Context, cluster *clusterv1alpha1.Cluster, globalRoleBinding *iamv1beta1.GlobalRoleBinding) error {
-	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+	clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}

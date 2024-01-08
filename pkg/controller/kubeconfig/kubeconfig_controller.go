@@ -18,7 +18,8 @@ package kubeconfig
 
 import (
 	"context"
-	"fmt"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,8 +31,11 @@ import (
 )
 
 const (
-	controllerName = "kubeconfig-controller"
+	controllerName = "kubeconfig"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 // Reconciler reconciles a User object
 type Reconciler struct {
@@ -39,11 +43,13 @@ type Reconciler struct {
 	KubeConfigOperator kubeconfig.Interface
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.KubeConfigOperator = kubeconfig.NewOperator(mgr.GetClient(), mgr.K8sClient.Config())
 	r.Client = mgr.GetClient()
-	if r.KubeConfigOperator == nil {
-		return fmt.Errorf("failed to setup %s: KubeConfigOperator must not be nil", controllerName)
-	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).

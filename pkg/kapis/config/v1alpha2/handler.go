@@ -9,8 +9,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/options"
+
 	"kubesphere.io/kubesphere/pkg/api"
-	"kubesphere.io/kubesphere/pkg/apiserver/config"
 	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/constants"
 )
@@ -19,13 +20,17 @@ const (
 	themeConfigurationName = "platform-configuration-theme"
 )
 
-type handler struct {
-	config *config.Config
-	client client.Client
+func NewHandler(config *options.Options, client client.Client) rest.Handler {
+	return &handler{config: config, client: client}
 }
 
-func NewHandler(config *config.Config, client client.Client) rest.Handler {
-	return &handler{config: config, client: client}
+func NewFakeHandler() rest.Handler {
+	return &handler{}
+}
+
+type handler struct {
+	config *options.Options
+	client client.Client
 }
 
 type ThemeConfiguration map[string]string

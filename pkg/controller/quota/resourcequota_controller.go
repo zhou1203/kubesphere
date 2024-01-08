@@ -20,8 +20,9 @@ package quota
 
 import (
 	"context"
-	"math"
 	"time"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -51,15 +52,17 @@ import (
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/generic"
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/install"
 	"kubesphere.io/kubesphere/pkg/constants"
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
-	ControllerName                 = "resourcequota-controller"
+	controllerName                 = "resourcequota"
 	DefaultResyncPeriod            = 5 * time.Minute
 	DefaultMaxConcurrentReconciles = 8
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 // Reconciler reconciles a Workspace object
 type Reconciler struct {
@@ -76,19 +79,20 @@ type Reconciler struct {
 	scheme *runtime.Scheme
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.logger = ctrl.Log.WithName("controllers").WithName(ControllerName)
-	r.recorder = mgr.GetEventRecorderFor(ControllerName)
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	r.scheme = mgr.GetScheme()
 	r.registry = generic.NewRegistry(install.NewQuotaConfigurationForControllers(mgr.GetClient()).Evaluators())
 	r.Client = mgr.GetClient()
-
-	if r.MaxConcurrentReconciles <= 0 {
-		r.MaxConcurrentReconciles = DefaultMaxConcurrentReconciles
-	}
-	r.ResyncPeriod = time.Duration(math.Max(float64(r.ResyncPeriod), float64(DefaultResyncPeriod)))
+	r.MaxConcurrentReconciles = DefaultMaxConcurrentReconciles
+	r.ResyncPeriod = DefaultResyncPeriod
 	c, err := ctrl.NewControllerManagedBy(mgr).
-		Named(ControllerName).
+		Named(controllerName).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).

@@ -19,7 +19,14 @@ package loginrecord
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -32,33 +39,53 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
-const controllerName = "loginrecord-controller"
+const controllerName = "loginrecord"
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
-
-	recorder record.EventRecorder
-
+	recorder                    record.EventRecorder
 	loginHistoryRetentionPeriod time.Duration
 	loginHistoryMaximumEntries  int
 }
 
-func NewReconciler(loginHistoryRetentionPeriod time.Duration, loginHistoryMaximumEntries int) *Reconciler {
-	return &Reconciler{
-		loginHistoryRetentionPeriod: loginHistoryRetentionPeriod,
-		loginHistoryMaximumEntries:  loginHistoryMaximumEntries,
-	}
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.loginHistoryRetentionPeriod = mgr.AuthenticationOptions.LoginHistoryRetentionPeriod
+	r.loginHistoryMaximumEntries = mgr.AuthenticationOptions.LoginHistoryMaximumEntries
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.Client = mgr.GetClient()
+
+	return builder.
+		ControllerManagedBy(mgr).
+		For(
+			&iamv1beta1.LoginRecord{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 2,
+		}).
+		Named(controllerName).
+		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	loginRecord := &iamv1beta1.LoginRecord{}
 	if err := r.Get(ctx, req.NamespacedName, loginRecord); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
-
 	}
 
 	if !loginRecord.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -83,10 +110,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if err = r.shrinkEntriesFor(ctx, user); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	result := ctrl.Result{}
 	now := time.Now()
 	// login record beyonds retention period
@@ -99,6 +122,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			RequeueAfter: loginRecord.CreationTimestamp.Add(r.loginHistoryRetentionPeriod).Sub(now),
 		}
 	}
+
+	if err = r.shrinkEntriesFor(ctx, user); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	r.recorder.Event(loginRecord, corev1.EventTypeNormal, kscontroller.Synced, kscontroller.MessageResourceSynced)
 	return result, nil
 }
@@ -109,7 +137,6 @@ func (r *Reconciler) updateUserLastLoginTime(ctx context.Context, user *iamv1bet
 	if user.DeletionTimestamp.IsZero() &&
 		(user.Status.LastLoginTime == nil || user.Status.LastLoginTime.Before(&loginRecord.CreationTimestamp)) {
 		user.Status.LastLoginTime = &loginRecord.CreationTimestamp
-
 		return r.Update(ctx, user)
 	}
 	return nil
@@ -149,23 +176,4 @@ func (r *Reconciler) userForLoginRecord(ctx context.Context, loginRecord *iamv1b
 		return nil, err
 	}
 	return user, nil
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	r.Client = mgr.GetClient()
-
-	return builder.
-		ControllerManagedBy(mgr).
-		For(
-			&iamv1beta1.LoginRecord{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
-		Named(controllerName).
-		Complete(r)
 }

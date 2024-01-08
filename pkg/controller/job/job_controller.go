@@ -31,12 +31,41 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
-const revisionsAnnotationKey = "revisions"
+const (
+	revisionsAnnotationKey = "revisions"
+	controllerName         = "job-revision"
+)
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
+}
+
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	return builder.
+		ControllerManagedBy(mgr).
+		For(
+			&batchv1.Job{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 2,
+		}).
+		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -139,21 +168,4 @@ func (r *Reconciler) getCurrentRevision(item *batchv1.Job) JobRevision {
 	}
 
 	return revision
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-
-	return builder.
-		ControllerManagedBy(mgr).
-		For(
-			&batchv1.Job{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
-		Complete(r)
 }

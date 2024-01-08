@@ -25,17 +25,17 @@ import (
 
 	"golang.org/x/net/context"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 
 	"kubesphere.io/kubesphere/pkg/apiserver"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
 	idpcontroller "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/controller"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
-	apiserverconfig "kubesphere.io/kubesphere/pkg/apiserver/config"
+	"kubesphere.io/kubesphere/pkg/apiserver/options"
+	"kubesphere.io/kubesphere/pkg/config"
 	resourcev1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	genericoptions "kubesphere.io/kubesphere/pkg/server/options"
@@ -44,22 +44,20 @@ import (
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
-type ServerRunOptions struct {
-	*apiserverconfig.Config
+type APIServerOptions struct {
+	options.Options
 	GenericServerRunOptions *genericoptions.ServerRunOptions
-
-	ConfigFile string
-	DebugMode  bool
+	ConfigFile              string
+	DebugMode               bool
 }
 
-func NewServerRunOptions() *ServerRunOptions {
-	return &ServerRunOptions{
+func NewAPIServerOptions() *APIServerOptions {
+	return &APIServerOptions{
 		GenericServerRunOptions: genericoptions.NewServerRunOptions(),
-		Config:                  apiserverconfig.New(),
 	}
 }
 
-func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
+func (s *APIServerOptions) Flags() (fss cliflag.NamedFlagSets) {
 	fs := fss.FlagSet("generic")
 	fs.BoolVar(&s.DebugMode, "debug", false, "Don't enable this if you don't know what it means.")
 	s.GenericServerRunOptions.AddFlags(fs, s.GenericServerRunOptions)
@@ -81,13 +79,13 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
 }
 
 // NewAPIServer creates an APIServer instance using given options
-func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIServer, error) {
+func (s *APIServerOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIServer, error) {
 	apiServer := &apiserver.APIServer{
-		Config: s.Config,
+		Options: s.Options,
 	}
 
 	var err error
-	if apiServer.KubernetesClient, err = k8s.NewKubernetesClient(s.KubernetesOptions); err != nil {
+	if apiServer.K8sClient, err = k8s.NewKubernetesClient(s.KubernetesOptions); err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client, error: %v", err)
 	}
 
@@ -95,7 +93,7 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		return nil, fmt.Errorf("failed to create cache, error: %v", err)
 	}
 
-	if c, err := cluster.New(apiServer.KubernetesClient.Config(), func(options *cluster.Options) {
+	if c, err := cluster.New(apiServer.K8sClient.Config(), func(options *cluster.Options) {
 		options.Scheme = scheme.Scheme
 	}); err != nil {
 		return nil, fmt.Errorf("unable to create controller runtime cluster: %v", err)
@@ -129,7 +127,7 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		return nil, fmt.Errorf("unable to create issuer: %v", err)
 	}
 
-	k8sVersionInfo, err := apiServer.KubernetesClient.Kubernetes().Discovery().ServerVersion()
+	k8sVersionInfo, err := apiServer.K8sClient.Discovery().ServerVersion()
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch k8s version info: %v", err)
 	}
@@ -154,4 +152,31 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 	apiServer.Server = server
 
 	return apiServer, nil
+}
+
+func (s *APIServerOptions) Merge(conf *config.Config) {
+	if conf == nil {
+		return
+	}
+	if conf.KubernetesOptions != nil {
+		s.KubernetesOptions = conf.KubernetesOptions
+	}
+	if conf.CacheOptions != nil {
+		s.CacheOptions = conf.CacheOptions
+	}
+	if conf.AuthenticationOptions != nil {
+		s.AuthenticationOptions = conf.AuthenticationOptions
+	}
+	if conf.AuthorizationOptions != nil {
+		s.AuthorizationOptions = conf.AuthorizationOptions
+	}
+	if conf.MultiClusterOptions != nil {
+		s.MultiClusterOptions = conf.MultiClusterOptions
+	}
+	if conf.AuditingOptions != nil {
+		s.AuditingOptions = conf.AuditingOptions
+	}
+	if conf.TerminalOptions != nil {
+		s.TerminalOptions = conf.TerminalOptions
+	}
 }

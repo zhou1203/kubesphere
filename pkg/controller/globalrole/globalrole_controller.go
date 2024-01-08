@@ -38,7 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
+	rbachelper "kubesphere.io/kubesphere/pkg/componenthelper/auth/rbac"
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
@@ -46,25 +46,31 @@ import (
 )
 
 const (
-	controllerName = "globalrole-controller"
+	controllerName = "globalrole"
 	finalizer      = "finalizers.kubesphere.io/globalroles"
 )
 
 var _ kscontroller.Controller = &Reconciler{}
 var _ reconcile.Reconciler = &Reconciler{}
 
-type Reconciler struct {
-	client.Client
-	logger           logr.Logger
-	recorder         record.EventRecorder
-	helper           *rbachelper.Helper
-	ClusterClientSet clusterclient.Interface
+func (r *Reconciler) Name() string {
+	return controllerName
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.ClusterClientSet == nil {
-		return kscontroller.FailedToSetup(controllerName, "ClusterClientSet must not be nil")
-	}
+func (r *Reconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+type Reconciler struct {
+	client.Client
+	logger        logr.Logger
+	recorder      record.EventRecorder
+	helper        *rbachelper.Helper
+	clusterClient clusterclient.Interface
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.clusterClient = mgr.ClusterClient
 	r.Client = mgr.GetClient()
 	r.helper = rbachelper.NewHelper(r.Client)
 	r.logger = mgr.GetLogger().WithName(controllerName)
@@ -141,7 +147,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) deleteRelatedResources(ctx context.Context, globalRole *iamv1beta1.GlobalRole) error {
-	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	clusters, err := r.clusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
 	}
@@ -155,7 +161,7 @@ func (r *Reconciler) deleteRelatedResources(ctx context.Context, globalRole *iam
 			notReadyClusters = append(notReadyClusters, cluster.Name)
 			continue
 		}
-		clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+		clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 		if err != nil {
 			return fmt.Errorf("failed to get cluster client: %s", err)
 		}
@@ -176,7 +182,7 @@ func (r *Reconciler) deleteRelatedResources(ctx context.Context, globalRole *iam
 }
 
 func (r *Reconciler) multiClusterSync(ctx context.Context, globalRole *iamv1beta1.GlobalRole) error {
-	clusters, err := r.ClusterClientSet.ListClusters(ctx)
+	clusters, err := r.clusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
 	}
@@ -205,7 +211,7 @@ func (r *Reconciler) syncGlobalRole(ctx context.Context, cluster clusterv1alpha1
 	if clusterutils.IsHostCluster(&cluster) {
 		return nil
 	}
-	clusterClient, err := r.ClusterClientSet.GetRuntimeClient(cluster.Name)
+	clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}

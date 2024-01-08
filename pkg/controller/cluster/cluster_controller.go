@@ -37,19 +37,19 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
-	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
-	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/k8sutil"
 	"kubesphere.io/kubesphere/pkg/version"
@@ -63,7 +63,10 @@ import (
 // in case there aren't any cluster changes made.
 // Also check if all the clusters are ready by the spec.connection.kubeconfig every resync period
 
-const kubesphereManaged = "kubesphere.io/managed"
+const (
+	controllerName    = "cluster"
+	kubesphereManaged = "kubesphere.io/managed"
+)
 
 // Cluster template for reconcile host cluster if there is none.
 var hostCluster = &clusterv1alpha1.Cluster{
@@ -87,36 +90,42 @@ var hostCluster = &clusterv1alpha1.Cluster{
 	},
 }
 
-type Reconciler struct {
-	client.Client
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
-	hostConfig       *rest.Config
-	hostClusterName  string
-	resyncPeriod     time.Duration
-	installLock      sync.Map
-	clusterClientSet clusterclient.Interface
-	clusterUID       types.UID
+func (r *Reconciler) Name() string {
+	return controllerName
 }
 
-func NewReconciler(client k8s.Client, clusterClientSet clusterclient.Interface, hostClusterName string, resyncPeriod time.Duration) (*Reconciler, error) {
-	kubeSystem, err := client.Kubernetes().CoreV1().Namespaces().Get(context.Background(), metav1.NamespaceSystem, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return &Reconciler{
-		hostConfig:       client.Config(),
-		clusterClientSet: clusterClientSet,
-		hostClusterName:  hostClusterName,
-		resyncPeriod:     resyncPeriod,
-		clusterUID:       kubeSystem.UID,
-	}, nil
+func (r *Reconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+type Reconciler struct {
+	client.Client
+	hostConfig      *rest.Config
+	hostClusterName string
+	resyncPeriod    time.Duration
+	installLock     sync.Map
+	clusterClient   clusterclient.Interface
+	clusterUID      types.UID
 }
 
 // SetupWithManager setups the Reconciler with manager.
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	kubeSystem, err := mgr.K8sClient.CoreV1().Namespaces().Get(context.Background(), metav1.NamespaceSystem, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	r.hostConfig = mgr.K8sClient.Config()
+	r.clusterClient = mgr.ClusterClient
+	r.hostClusterName = mgr.MultiClusterOptions.HostClusterName
+	r.resyncPeriod = mgr.MultiClusterOptions.ClusterControllerResyncPeriod
+	r.clusterUID = kubeSystem.UID
 	r.Client = mgr.GetClient()
-	// Register timed tasker
-	mgr.Add(r)
+	if err := mgr.Add(r); err != nil {
+		return fmt.Errorf("unable to add cluster-controller to manager: %v", err)
+	}
 	return builder.
 		ControllerManagedBy(mgr).
 		For(
@@ -241,7 +250,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	clusterClient, err := r.clusterClientSet.GetClusterClient(cluster.Name)
+	clusterClient, err := r.clusterClient.GetClusterClient(cluster.Name)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster client for %s: %s", cluster.Name, err)
 	}
@@ -367,7 +376,7 @@ func (r *Reconciler) syncClusterStatus(ctx context.Context, cluster *clusterv1al
 }
 
 func (r *Reconciler) setClusterNameInNamespace(ctx context.Context, cluster *clusterv1alpha1.Cluster) error {
-	clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
+	clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
@@ -505,7 +514,7 @@ func (r *Reconciler) syncClusterMembers(ctx context.Context, cluster *clusterv1a
 	grantedUsers := sets.New[string]()
 	clusterName := cluster.Name
 	if cluster.DeletionTimestamp.IsZero() {
-		clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
+		clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 		if err != nil {
 			return fmt.Errorf("failed to get cluster client: %s", err)
 		}
@@ -562,7 +571,7 @@ func (r *Reconciler) cleanup(ctx context.Context, cluster *clusterv1alpha1.Clust
 		return nil
 	}
 
-	clusterClient, err := r.clusterClientSet.GetRuntimeClient(cluster.Name)
+	clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}

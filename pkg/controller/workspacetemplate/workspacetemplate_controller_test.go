@@ -48,7 +48,7 @@ var _ = Describe("WorkspaceTemplate", func() {
 		reconciler = &Reconciler{
 			//nolint:staticcheck
 			Client:   fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
-			logger:   ctrl.Log.WithName("controllers").WithName("acrpullbinding-controller"),
+			logger:   ctrl.Log.WithName("controllers").WithName("workspacetemplate"),
 			recorder: record.NewFakeRecorder(5),
 		}
 

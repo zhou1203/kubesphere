@@ -9,11 +9,16 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
+	rbachelper "kubesphere.io/kubesphere/pkg/componenthelper/auth/rbac"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
-const controllerName = "clusterrole-controller"
+const controllerName = "clusterrole"
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
@@ -22,7 +27,11 @@ type Reconciler struct {
 	helper   *rbachelper.Helper
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
 	r.logger = ctrl.Log.WithName("controllers").WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
 	r.Client = mgr.GetClient()

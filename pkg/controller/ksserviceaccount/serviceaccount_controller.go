@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	controller2 "kubesphere.io/kubesphere/pkg/controller"
-
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -19,16 +17,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
 const (
-	controllerName                  = "ks-serviceaccount-controller"
+	controllerName                  = "ks-serviceaccount"
 	finalizer                       = "finalizers.kubesphere.io/serviceaccount"
 	messageCreateSecretSuccessfully = "Create token secret successfully"
 	reasonInvalidSecret             = "InvalidSecret"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+
+func (r *Reconciler) Name() string {
+	return controllerName
+}
 
 type Reconciler struct {
 	client.Client
@@ -37,15 +44,29 @@ type Reconciler struct {
 	EventRecorder record.EventRecorder
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
+	r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	return builder.
+		ControllerManagedBy(mgr).
+		For(
+			&corev1alpha1.ServiceAccount{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 2,
+		}).
+		Complete(r)
+}
+
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconcile.Result, error) {
 	logger := r.Logger.WithValues(req.NamespacedName, "ServiceAccount")
 	sa := &corev1alpha1.ServiceAccount{}
 	if err := r.Get(ctx, req.NamespacedName, sa); err != nil {
-		if errors.IsNotFound(err) {
-			return ctrl.Result{}, client.IgnoreNotFound(err)
-		}
-		logger.Error(err, "get serviceaccount failed")
-		return ctrl.Result{}, err
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if sa.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -64,7 +85,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 					Namespace: secretCreated.Namespace,
 					Name:      secretCreated.Name,
 				})
-				r.EventRecorder.Event(deepCopy, corev1.EventTypeNormal, controller2.Synced, messageCreateSecretSuccessfully)
+				r.EventRecorder.Event(deepCopy, corev1.EventTypeNormal, kscontroller.Synced, messageCreateSecretSuccessfully)
 			}
 			if err := r.Update(ctx, deepCopy); err != nil {
 				logger.Error(err, "update serviceaccount failed")
@@ -124,24 +145,6 @@ func (r *Reconciler) deleteSecretToken(ctx context.Context, sa *corev1alpha1.Ser
 		}
 	}
 	return nil
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
-	r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	return builder.
-		ControllerManagedBy(mgr).
-		For(
-			&corev1alpha1.ServiceAccount{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
-		Complete(r)
 }
 
 func (r *Reconciler) checkAllSecret(ctx context.Context, sa *corev1alpha1.ServiceAccount) error {

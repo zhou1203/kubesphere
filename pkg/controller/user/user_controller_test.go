@@ -86,8 +86,8 @@ func TestDoNothing(t *testing.T) {
 		recorder:              &record.FakeRecorder{},
 		logger:                ctrl.Log.WithName("controllers").WithName(controllerName),
 		Client:                client,
-		AuthenticationOptions: authenticateOptions,
-		ClusterClientSet:      clusterClientSet,
+		authenticationOptions: authenticateOptions,
+		clusterClient:         clusterClientSet,
 	}
 
 	users := &iamv1beta1.UserList{}

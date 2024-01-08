@@ -31,7 +31,7 @@ type NodeShellOptions struct {
 	Timeout int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 }
 
-func NewTerminalOptions() *Options {
+func NewOptions() *Options {
 	return &Options{
 		KubectlOptions: KubectlOptions{
 			Image: "kubesphere/kubectl:v1.27.4",

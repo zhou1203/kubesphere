@@ -30,6 +30,10 @@ import (
 	"strings"
 	"time"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
 	"github.com/go-logr/logr"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	appsv1 "k8s.io/api/apps/v1"
@@ -50,12 +54,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/constants"
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
 const (
 	repositoryProtection        = "kubesphere.io/repository-protection"
-	repositoryController        = "repository-controller"
+	repositoryController        = "repository"
 	minimumRegistryPollInterval = 15 * time.Minute
 	defaultRequeueInterval      = 15 * time.Second
 	generateNameFormat          = "repository-%s"
@@ -64,12 +67,53 @@ const (
 
 var extensionRepoConflict = fmt.Errorf("extension repo mismatch")
 
+var _ kscontroller.Controller = &RepositoryReconciler{}
 var _ reconcile.Reconciler = &RepositoryReconciler{}
+
+func (r *RepositoryReconciler) Name() string {
+	return repositoryController
+}
+
+func (r *RepositoryReconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
 
 type RepositoryReconciler struct {
 	client.Client
 	recorder record.EventRecorder
 	logger   logr.Logger
+}
+
+func (r *RepositoryReconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(repositoryController)
+	r.recorder = mgr.GetEventRecorderFor(repositoryController)
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(repositoryController).
+		For(&corev1alpha1.Repository{}).
+		Complete(r)
+}
+
+func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := r.logger.WithValues("repository", req.String())
+	logger.V(4).Info("sync repository")
+	ctx = klog.NewContext(ctx, logger)
+
+	repo := &corev1alpha1.Repository{}
+	if err := r.Client.Get(ctx, req.NamespacedName, repo); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !repo.ObjectMeta.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, repo)
+	}
+
+	if !controllerutil.ContainsFinalizer(repo, repositoryProtection) {
+		expected := repo.DeepCopy()
+		controllerutil.AddFinalizer(expected, repositoryProtection)
+		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(repo))
+	}
+	return r.reconcileRepository(ctx, repo)
 }
 
 // reconcileDelete delete the repository and pod.
@@ -251,10 +295,10 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 		if err := r.Get(ctx, types.NamespacedName{Namespace: constants.KubeSphereNamespace, Name: fmt.Sprintf(generateNameFormat, repo.Name)}, &deployment); err != nil {
 			if apierrors.IsNotFound(err) {
 				if err := r.deployRepository(ctx, repo); err != nil {
-					r.recorder.Eventf(repo, corev1.EventTypeWarning, "RepositoryDeployFailed", err.Error())
+					r.recorder.Event(repo, corev1.EventTypeWarning, "RepositoryDeployFailed", err.Error())
 					return ctrl.Result{}, fmt.Errorf("failed to deploy repository: %s", err)
 				}
-				r.recorder.Eventf(repo, corev1.EventTypeNormal, "RepositoryDeployed", "")
+				r.recorder.Event(repo, corev1.EventTypeNormal, "RepositoryDeployed", "")
 				return ctrl.Result{Requeue: true, RequeueAfter: defaultRequeueInterval}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to fetch deployment: %s", err)
@@ -270,7 +314,7 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 			if err := r.Patch(ctx, &deployment, client.RawPatch(types.StrategicMergePatchType, rawData)); err != nil {
 				return ctrl.Result{}, err
 			}
-			r.recorder.Eventf(repo, corev1.EventTypeNormal, "RepositoryRestarted", "")
+			r.recorder.Event(repo, corev1.EventTypeNormal, "RepositoryRestarted", "")
 			return ctrl.Result{Requeue: true, RequeueAfter: defaultRequeueInterval}, nil
 		}
 
@@ -297,38 +341,6 @@ func (r *RepositoryReconciler) reconcileRepository(ctx context.Context, repo *co
 	}
 
 	return ctrl.Result{Requeue: true, RequeueAfter: registryPollInterval}, nil
-}
-
-func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.logger.WithValues("repository", req.String())
-	logger.V(4).Info("sync repository")
-	ctx = klog.NewContext(ctx, logger)
-
-	repo := &corev1alpha1.Repository{}
-	if err := r.Client.Get(ctx, req.NamespacedName, repo); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	if !repo.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, repo)
-	}
-
-	if !controllerutil.ContainsFinalizer(repo, repositoryProtection) {
-		expected := repo.DeepCopy()
-		controllerutil.AddFinalizer(expected, repositoryProtection)
-		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(repo))
-	}
-	return r.reconcileRepository(ctx, repo)
-}
-
-func (r *RepositoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.logger = ctrl.Log.WithName("controllers").WithName(repositoryController)
-	r.recorder = mgr.GetEventRecorderFor(repositoryController)
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(repositoryController).
-		For(&corev1alpha1.Repository{}).
-		Complete(r)
 }
 
 func (r *RepositoryReconciler) deployRepository(ctx context.Context, repo *corev1alpha1.Repository) error {
@@ -364,7 +376,7 @@ func (r *RepositoryReconciler) deployRepository(ctx context.Context, repo *corev
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path: "/health",
-										Port: intstr.FromInt(8080),
+										Port: intstr.FromInt32(8080),
 									},
 								},
 								PeriodSeconds:       10,
@@ -394,7 +406,7 @@ func (r *RepositoryReconciler) deployRepository(ctx context.Context, repo *corev
 				{
 					Port:       80,
 					Protocol:   corev1.ProtocolTCP,
-					TargetPort: intstr.FromInt(8080),
+					TargetPort: intstr.FromInt32(8080),
 				},
 			},
 			Selector: map[string]string{
@@ -415,20 +427,12 @@ func (r *RepositoryReconciler) deployRepository(ctx context.Context, repo *corev
 	return nil
 }
 
-type retriable struct {
-	err error
-}
-
-func (r retriable) Error() string {
-	return r.err.Error()
-}
-
 func (r *RepositoryReconciler) loadExtensionVersionSpecFrom(ctx context.Context, chartURL string, repo *corev1alpha1.Repository) (*corev1alpha1.ExtensionVersionSpec, error) {
 	logger := klog.FromContext(ctx)
 	var result *corev1alpha1.ExtensionVersionSpec
+
 	err := retry.OnError(retry.DefaultRetry, func(err error) bool {
-		_, r := err.(retriable)
-		return r
+		return true
 	}, func() error {
 		req, err := http.NewRequest(http.MethodGet, chartURL, nil)
 		if err != nil {
@@ -441,7 +445,7 @@ func (r *RepositoryReconciler) loadExtensionVersionSpecFrom(ctx context.Context,
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			return retriable{err: err}
+			return err
 		}
 		defer resp.Body.Close()
 

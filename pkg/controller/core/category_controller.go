@@ -19,11 +19,15 @@ package core
 import (
 	"context"
 	"strconv"
+	"strings"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -34,16 +38,51 @@ import (
 )
 
 const (
-	categoryController       = "category-controller"
+	categoryController       = "extension-category"
 	countOfRelatedExtensions = "kubesphere.io/count"
 )
 
+var _ kscontroller.Controller = &CategoryReconciler{}
 var _ reconcile.Reconciler = &CategoryReconciler{}
+
+func (r *CategoryReconciler) Name() string {
+	return categoryController
+}
+
+func (r *CategoryReconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
 
 type CategoryReconciler struct {
 	client.Client
 	recorder record.EventRecorder
 	logger   logr.Logger
+}
+
+func (r *CategoryReconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(categoryController)
+	r.recorder = mgr.GetEventRecorderFor(categoryController)
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(categoryController).
+		For(&corev1alpha1.Category{}).
+		Watches(
+			&corev1alpha1.Extension{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+				var requests []reconcile.Request
+				extension := object.(*corev1alpha1.Extension)
+				if category := extension.Labels[corev1alpha1.CategoryLabel]; category != "" {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: category,
+						},
+					})
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.LabelChangedPredicate{}),
+		).
+		Complete(r)
 }
 
 func (r *CategoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -73,30 +112,4 @@ func (r *CategoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func (r *CategoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.logger = ctrl.Log.WithName("controllers").WithName(categoryController)
-	r.recorder = mgr.GetEventRecorderFor(categoryController)
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(categoryController).
-		For(&corev1alpha1.Category{}).
-		Watches(
-			&corev1alpha1.Extension{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
-				var requests []reconcile.Request
-				extension := object.(*corev1alpha1.Extension)
-				if category := extension.Labels[corev1alpha1.CategoryLabel]; category != "" {
-					requests = append(requests, reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Name: category,
-						},
-					})
-				}
-				return requests
-			}),
-			builder.WithPredicates(predicate.LabelChangedPredicate{}),
-		).
-		Complete(r)
 }

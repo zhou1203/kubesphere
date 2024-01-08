@@ -23,6 +23,8 @@ import (
 	"reflect"
 	"strconv"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -40,15 +42,85 @@ import (
 const (
 	annotationAllowSnapshot = "storageclass.kubesphere.io/allow-snapshot"
 	annotationAllowClone    = "storageclass.kubesphere.io/allow-clone"
-	controllerName          = "capability-controller"
+	controllerName          = "storageclass-capability"
 	pvcCountAnnotation      = "kubesphere.io/pvc-count"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 // This controller is responsible to watch StorageClass and CSIDriver.
 // And then update StorageClass CRD resource object to the newest status.
 
 type Reconciler struct {
 	client.Client
+}
+
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+
+	return builder.ControllerManagedBy(mgr).
+		For(&storagev1.StorageClass{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		Watches(
+			&corev1.PersistentVolumeClaim{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				pvc := obj.(*corev1.PersistentVolumeClaim)
+				var storageClassName string
+				if pvc.Spec.StorageClassName != nil {
+					storageClassName = *pvc.Spec.StorageClassName
+				} else if pvc.Annotations[corev1.BetaStorageClassAnnotation] != "" {
+					storageClassName = pvc.Annotations[corev1.BetaStorageClassAnnotation]
+				}
+				return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: storageClassName}}}
+			}),
+			builder.WithPredicates(predicate.Funcs{
+				GenericFunc: func(genericEvent event.GenericEvent) bool {
+					return false
+				},
+				CreateFunc: func(event event.CreateEvent) bool {
+					return true
+				},
+				UpdateFunc: func(updateEvent event.UpdateEvent) bool {
+					return false
+				},
+				DeleteFunc: func(deleteEvent event.DeleteEvent) bool {
+					return true
+				},
+			}),
+		).
+		Watches(
+			&storagev1.CSIDriver{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				storageClassList := &storagev1.StorageClassList{}
+				if err := r.List(context.Background(), storageClassList); err != nil {
+					klog.Errorf("list StorageClass failed: %v", err)
+					return nil
+				}
+				csiDriver := obj.(*storagev1.CSIDriver)
+				requests := make([]reconcile.Request, 0)
+				for _, storageClass := range storageClassList.Items {
+					if storageClass.Provisioner == csiDriver.Name {
+						requests = append(requests, reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Name: storageClass.Name,
+							},
+						})
+					}
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
+		Named(controllerName).Complete(r)
 }
 
 // When creating a new storage class, the controller will create a new storage capability object.
@@ -117,69 +189,6 @@ func (r *Reconciler) updateCloneVolumeAnnotation(storageClass *storagev1.Storage
 func (r *Reconciler) removeAnnotations(storageClass *storagev1.StorageClass) {
 	delete(storageClass.Annotations, annotationAllowClone)
 	delete(storageClass.Annotations, annotationAllowSnapshot)
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-
-	return builder.ControllerManagedBy(mgr).
-		For(&storagev1.StorageClass{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		Watches(
-			&corev1.PersistentVolumeClaim{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-				pvc := obj.(*corev1.PersistentVolumeClaim)
-				var storageClassName string
-				if pvc.Spec.StorageClassName != nil {
-					storageClassName = *pvc.Spec.StorageClassName
-				} else if pvc.Annotations[corev1.BetaStorageClassAnnotation] != "" {
-					storageClassName = pvc.Annotations[corev1.BetaStorageClassAnnotation]
-				}
-				return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: storageClassName}}}
-			}),
-			builder.WithPredicates(predicate.Funcs{
-				GenericFunc: func(genericEvent event.GenericEvent) bool {
-					return false
-				},
-				CreateFunc: func(event event.CreateEvent) bool {
-					return true
-				},
-				UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-					return false
-				},
-				DeleteFunc: func(deleteEvent event.DeleteEvent) bool {
-					return true
-				},
-			}),
-		).
-		Watches(
-			&storagev1.CSIDriver{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-				storageClassList := &storagev1.StorageClassList{}
-				if err := r.List(context.Background(), storageClassList); err != nil {
-					klog.Errorf("list StorageClass failed: %v", err)
-					return nil
-				}
-				csiDriver := obj.(*storagev1.CSIDriver)
-				requests := make([]reconcile.Request, 0)
-				for _, storageClass := range storageClassList.Items {
-					if storageClass.Provisioner == csiDriver.Name {
-						requests = append(requests, reconcile.Request{
-							NamespacedName: types.NamespacedName{
-								Name: storageClass.Name,
-							},
-						})
-					}
-				}
-				return requests
-			}),
-			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
-		).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
-		Named(controllerName).Complete(r)
 }
 
 func (r *Reconciler) countPersistentVolumeClaims(ctx context.Context, storageClass *storagev1.StorageClass) (int, error) {

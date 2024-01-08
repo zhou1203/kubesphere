@@ -9,28 +9,59 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/client-go/tools/record"
+	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
-	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
 const (
-	controllerName               = "secrets-controller"
+	controllerName               = "secret"
 	serviceAccountUsernameFormat = corev1alpha1.ServiceAccountGroup + ":%s:%s"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
 	Logger        logr.Logger
 	EventRecorder record.EventRecorder
 	TokenIssuer   token.Issuer
+}
+
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	issuer, err := token.NewIssuer(mgr.AuthenticationOptions)
+	if err != nil {
+		return fmt.Errorf("failed to create token issuer: %v", err)
+	}
+	r.TokenIssuer = issuer
+	r.Client = mgr.GetClient()
+	r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
+	r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	return builder.
+		ControllerManagedBy(mgr).
+		For(
+			&v1.Secret{},
+			builder.WithPredicates(
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 2,
+		}).
+		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -73,24 +104,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
-	r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
-	return builder.
-		ControllerManagedBy(mgr).
-		For(
-			&v1.Secret{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
-		Complete(r)
 }
 
 func (r *Reconciler) issueTokenTo(sa *corev1alpha1.ServiceAccount) (*oauth.Token, error) {

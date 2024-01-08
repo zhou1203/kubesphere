@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"kubesphere.io/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -14,13 +18,34 @@ import (
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
 )
 
+var _ admission.CustomValidator = &JSBundleWebhook{}
+var _ admission.CustomDefaulter = &JSBundleWebhook{}
+var _ kscontroller.Controller = &JSBundleWebhook{}
+
 type JSBundleWebhook struct {
 	client.Client
 }
 
+func (r *JSBundleWebhook) Name() string {
+	return "jsbundle-webhook"
+}
+
+func (r *JSBundleWebhook) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
+
+func (r *JSBundleWebhook) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.Client = mgr.GetClient()
+	return ctrl.NewWebhookManagedBy(mgr).
+		WithValidator(r).
+		WithDefaulter(r).
+		For(&extensionsv1alpha1.JSBundle{}).
+		Complete()
+}
+
 var _ admission.CustomDefaulter = &JSBundleWebhook{}
 
-func (r *JSBundleWebhook) Default(ctx context.Context, obj runtime.Object) error {
+func (r *JSBundleWebhook) Default(_ context.Context, obj runtime.Object) error {
 	jsBundle := obj.(*extensionsv1alpha1.JSBundle)
 	extensionName := jsBundle.Labels[v1alpha1.ExtensionReferenceLabel]
 	if jsBundle.Status.Link == "" && extensionName != "" {
@@ -60,13 +85,4 @@ func (r *JSBundleWebhook) validateJSBundle(ctx context.Context, jsBundle *extens
 		}
 	}
 	return nil, nil
-}
-
-func (r *JSBundleWebhook) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	return ctrl.NewWebhookManagedBy(mgr).
-		WithValidator(r).
-		WithDefaulter(r).
-		For(&extensionsv1alpha1.JSBundle{}).
-		Complete()
 }

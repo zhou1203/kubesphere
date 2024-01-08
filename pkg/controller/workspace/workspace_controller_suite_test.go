@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/klog/v2"
@@ -77,7 +79,7 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&Reconciler{}).SetupWithManager(k8sManager)
+	err = (&Reconciler{}).SetupWithManager(&kscontroller.Manager{Manager: k8sManager})
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.Background())

@@ -3,6 +3,8 @@ package roletemplate
 import (
 	"context"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -14,23 +16,54 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	rbachelper "kubesphere.io/kubesphere/pkg/conponenthelper/auth/rbac"
+	rbachelper "kubesphere.io/kubesphere/pkg/componenthelper/auth/rbac"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
 	autoAggregateIndexKey = ".metadata.annotations[iam.kubesphere.io/auto-aggregate]"
 	autoAggregationLabel  = "iam.kubesphere.io/auto-aggregate"
-	controllerName        = "roletemplate-controller"
+	controllerName        = "roletemplate"
 	reasonFailedSync      = "FailedInjectRoleTemplate"
 	messageResourceSynced = "RoleTemplate injected successfully"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
 
 // Reconciler reconciles a RoleTemplate object
 type Reconciler struct {
 	client.Client
 	recorder record.EventRecorder
 	logger   klog.Logger
+}
+
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.recorder = mgr.GetEventRecorderFor(controllerName)
+	r.logger = mgr.GetLogger().WithName(controllerName)
+	r.Client = mgr.GetClient()
+
+	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.GlobalRole{}, autoAggregateIndexKey, globalRoleIndexByAnnotation); err != nil {
+		return err
+	}
+	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.WorkspaceRole{}, autoAggregateIndexKey, workspaceRoleIndexByAnnotation); err != nil {
+		return err
+	}
+	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.ClusterRole{}, autoAggregateIndexKey, clusterRoleIndexByAnnotation); err != nil {
+		return err
+	}
+	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.Role{}, autoAggregateIndexKey, roleIndexByAnnotation); err != nil {
+		return err
+	}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(controllerName).
+		For(&iamv1beta1.RoleTemplate{}).
+		Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -171,31 +204,6 @@ func (r *Reconciler) aggregate(ctx context.Context, ruleOwner rbachelper.RuleOwn
 
 	r.recorder.Event(ruleOwner.GetObject(), corev1.EventTypeNormal, "Synced", messageResourceSynced)
 	return nil
-}
-
-// SetupWithManager sets up the controller with the Manager.
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	r.logger = mgr.GetLogger().WithName(controllerName)
-	r.Client = mgr.GetClient()
-
-	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.GlobalRole{}, autoAggregateIndexKey, globalRoleIndexByAnnotation); err != nil {
-		return err
-	}
-	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.WorkspaceRole{}, autoAggregateIndexKey, workspaceRoleIndexByAnnotation); err != nil {
-		return err
-	}
-	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.ClusterRole{}, autoAggregateIndexKey, clusterRoleIndexByAnnotation); err != nil {
-		return err
-	}
-	if err := mgr.GetCache().IndexField(context.Background(), &iamv1beta1.Role{}, autoAggregateIndexKey, roleIndexByAnnotation); err != nil {
-		return err
-	}
-
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(controllerName).
-		For(&iamv1beta1.RoleTemplate{}).
-		Complete(r)
 }
 
 func globalRoleIndexByAnnotation(obj client.Object) []string {

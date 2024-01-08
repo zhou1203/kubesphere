@@ -59,13 +59,13 @@ import (
 
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
-	"kubesphere.io/kubesphere/pkg/multicluster"
+	"kubesphere.io/kubesphere/pkg/controller/options"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
-	installPlanController           = "installplan-controller"
+	installPlanController           = "installplan"
 	installPlanProtection           = "kubesphere.io/installplan-protection"
 	systemWorkspace                 = "system-workspace"
 	agentReleaseFormat              = "%s-agent"
@@ -78,17 +78,109 @@ const (
 	tagExtension                    = "extension"
 )
 
+var _ kscontroller.Controller = &InstallPlanReconciler{}
 var _ reconcile.Reconciler = &InstallPlanReconciler{}
+
+func (r *InstallPlanReconciler) Name() string {
+	return installPlanController
+}
+
+func (r *InstallPlanReconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
 
 // InstallPlanReconciler reconciles a InstallPlan object.
 type InstallPlanReconciler struct {
 	client.Client
-	KubeConfigPath string
-	kubeConfig     string
-	helmGetter     getter.Getter
-	recorder       record.EventRecorder
-	logger         logr.Logger
-	HelmImage      string
+	kubeConfigData      string
+	helmGetter          getter.Getter
+	recorder            record.EventRecorder
+	logger              logr.Logger
+	HelmExecutorOptions *options.HelmExecutorOptions
+	ExtensionOptions    *options.ExtensionOptions
+}
+
+func (r *InstallPlanReconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	r.HelmExecutorOptions = mgr.HelmExecutorOptions
+	r.ExtensionOptions = mgr.ExtensionOptions
+
+	r.Client = mgr.GetClient()
+	r.logger = mgr.GetLogger().WithName(installPlanController)
+	r.recorder = mgr.GetEventRecorderFor(installPlanController)
+
+	// TODO support more options (e.g. skipTLSVerify or basic auth etc.) for the specified repository
+	r.helmGetter, _ = getter.NewHTTPGetter()
+
+	if mgr.KubernetesOptions.KubeConfig != "" {
+		data, err := os.ReadFile(mgr.KubernetesOptions.KubeConfig)
+		if err != nil {
+			return err
+		}
+		r.kubeConfigData = string(data)
+	}
+
+	if r.HelmExecutorOptions == nil || r.HelmExecutorOptions.Image == "" {
+		return fmt.Errorf("helm executor image is not specified")
+	}
+
+	labelSelector, err := predicate.LabelSelectorPredicate(metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{{
+			Key:      corev1alpha1.InstallPlanReferenceLabel,
+			Operator: metav1.LabelSelectorOpExists,
+		}}})
+	if err != nil {
+		return fmt.Errorf("failed to create label selector predicate: %s", err)
+	}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(installPlanController).
+		For(&corev1alpha1.InstallPlan{}).
+		Watches(
+			&batchv1.Job{},
+			handler.EnqueueRequestsFromMapFunc(
+				func(ctx context.Context, h client.Object) []reconcile.Request {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name: h.GetLabels()[corev1alpha1.InstallPlanReferenceLabel],
+						}}}
+				}),
+			builder.WithPredicates(predicate.And(labelSelector, predicate.Funcs{
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					oldJob := e.ObjectOld.(*batchv1.Job)
+					newJob := e.ObjectNew.(*batchv1.Job)
+					return !reflect.DeepEqual(oldJob.Status, newJob.Status)
+				},
+				CreateFunc: func(e event.CreateEvent) bool {
+					return false
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					return false
+				},
+			})),
+		).
+		Watches(
+			&corev1alpha1.ExtensionVersion{},
+			handler.EnqueueRequestsFromMapFunc(
+				func(ctx context.Context, h client.Object) []reconcile.Request {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name: h.GetLabels()[corev1alpha1.ExtensionReferenceLabel],
+						}}}
+				}),
+			builder.WithPredicates(predicate.Funcs{
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					return false
+				},
+				CreateFunc: func(e event.CreateEvent) bool {
+					return false
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					return true
+				},
+			}),
+		).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
+		Complete(r)
 }
 
 func (r *InstallPlanReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -145,82 +237,6 @@ func (r *InstallPlanReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{}, nil
 }
 
-func (r *InstallPlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Client = mgr.GetClient()
-	r.logger = mgr.GetLogger().WithName(installPlanController)
-	r.recorder = mgr.GetEventRecorderFor(installPlanController)
-
-	// TODO support more options (e.g. skipTLSVerify or basic auth etc.) for the specified repository
-	r.helmGetter, _ = getter.NewHTTPGetter()
-
-	if r.KubeConfigPath != "" {
-		data, err := os.ReadFile(r.KubeConfigPath)
-		if err != nil {
-			return kscontroller.FailedToSetup(installPlanController, fmt.Errorf("failed to load kubeconfig from file: %s", err))
-		}
-		r.kubeConfig = string(data)
-	}
-
-	labelSelector, err := predicate.LabelSelectorPredicate(metav1.LabelSelector{
-		MatchExpressions: []metav1.LabelSelectorRequirement{{
-			Key:      corev1alpha1.InstallPlanReferenceLabel,
-			Operator: metav1.LabelSelectorOpExists,
-		}}})
-	if err != nil {
-		return kscontroller.FailedToSetup(installPlanController, err)
-	}
-
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(installPlanController).
-		For(&corev1alpha1.InstallPlan{}).
-		Watches(
-			&batchv1.Job{},
-			handler.EnqueueRequestsFromMapFunc(
-				func(ctx context.Context, h client.Object) []reconcile.Request {
-					return []reconcile.Request{{
-						NamespacedName: types.NamespacedName{
-							Name: h.GetLabels()[corev1alpha1.InstallPlanReferenceLabel],
-						}}}
-				}),
-			builder.WithPredicates(predicate.And(labelSelector, predicate.Funcs{
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					oldJob := e.ObjectOld.(*batchv1.Job)
-					newJob := e.ObjectNew.(*batchv1.Job)
-					return !reflect.DeepEqual(oldJob.Status, newJob.Status)
-				},
-				CreateFunc: func(e event.CreateEvent) bool {
-					return false
-				},
-				DeleteFunc: func(e event.DeleteEvent) bool {
-					return false
-				},
-			})),
-		).
-		Watches(
-			&corev1alpha1.ExtensionVersion{},
-			handler.EnqueueRequestsFromMapFunc(
-				func(ctx context.Context, h client.Object) []reconcile.Request {
-					return []reconcile.Request{{
-						NamespacedName: types.NamespacedName{
-							Name: h.GetLabels()[corev1alpha1.ExtensionReferenceLabel],
-						}}}
-				}),
-			builder.WithPredicates(predicate.Funcs{
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					return false
-				},
-				CreateFunc: func(e event.CreateEvent) bool {
-					return false
-				},
-				DeleteFunc: func(e event.DeleteEvent) bool {
-					return true
-				},
-			}),
-		).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
-		Complete(r)
-}
-
 // reconcileDelete delete the helm release involved and remove finalizer from installplan.
 func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev1alpha1.InstallPlan) (ctrl.Result, error) {
 	logger := klog.FromContext(ctx)
@@ -247,9 +263,9 @@ func (r *InstallPlanReconciler) reconcileDelete(ctx context.Context, plan *corev
 		return ctrl.Result{}, nil
 	}
 
-	helmExecutor, err := helm.NewExecutor(r.kubeConfig, plan.Status.TargetNamespace, plan.Status.ReleaseName,
+	helmExecutor, err := helm.NewExecutor(r.kubeConfigData, plan.Status.TargetNamespace, plan.Status.ReleaseName,
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
-		helm.SetHelmImage(r.HelmImage),
+		helm.SetHelmImage(r.HelmExecutorOptions.Image),
 	)
 	if err != nil {
 		logger.Error(err, "failed to create helm executor")
@@ -899,10 +915,10 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(
 	releaseName := plan.Spec.Extension.Name
 	options := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
-		helm.SetHelmImage(r.HelmImage),
+		helm.SetHelmImage(r.HelmExecutorOptions.Image),
 	}
 
-	executor, err := helm.NewExecutor(r.kubeConfig, targetNamespace, releaseName, options...)
+	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, options...)
 	if err != nil {
 		logger.Error(err, "failed to create executor")
 		return err
@@ -1041,10 +1057,10 @@ func (r *InstallPlanReconciler) syncClusterStatus(
 
 	options := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
-		helm.SetHelmImage(r.HelmImage),
+		helm.SetHelmImage(r.HelmExecutorOptions.Image),
 	}
 
-	executor, err := helm.NewExecutor(r.kubeConfig, targetNamespace, releaseName, options...)
+	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, options...)
 	if err != nil {
 		logger.Error(err, "failed to create executor")
 		return err
@@ -1286,9 +1302,9 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(
 		}
 	}
 
-	clusterRole := multicluster.ClusterRoleMember
+	clusterRole := clusterv1alpha1.ClusterRoleMember
 	if clusterutils.IsHostCluster(&cluster) {
-		clusterRole = multicluster.ClusterRoleHost
+		clusterRole = clusterv1alpha1.ClusterRoleHost
 	}
 
 	overrides := []string{
@@ -1300,6 +1316,16 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(
 	extensionConditions := conditions(mainChart, tagExtension)
 	for _, condition := range extensionConditions {
 		overrides = append(overrides, fmt.Sprintf("%s=%s", condition, "false"))
+	}
+
+	if r.ExtensionOptions != nil && r.ExtensionOptions.ImageRegistry != "" {
+		overrides = append(overrides, "global.imageRegistry="+r.ExtensionOptions.ImageRegistry)
+	}
+	if r.ExtensionOptions != nil && r.ExtensionOptions.NodeSelector != nil {
+		for k, v := range r.ExtensionOptions.NodeSelector {
+			k = strings.ReplaceAll(k, ".", "\\.")
+			overrides = append(overrides, fmt.Sprintf("nodeSelector.%s=%s", k, v))
+		}
 	}
 
 	helmOptions := []helm.HelmOption{
@@ -1353,10 +1379,10 @@ func (r *InstallPlanReconciler) uninstallClusterAgent(ctx context.Context, plan 
 
 	options := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
-		helm.SetHelmImage(r.HelmImage),
+		helm.SetHelmImage(r.HelmExecutorOptions.Image),
 	}
 
-	executor, err := helm.NewExecutor(r.kubeConfig, targetNamespace, releaseName, options...)
+	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, options...)
 	if err != nil {
 		logger.Error(err, "failed to create executor")
 		return err

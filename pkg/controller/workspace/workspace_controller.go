@@ -19,6 +19,10 @@ package workspace
 import (
 	"context"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -28,14 +32,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
 const (
-	controllerName = "workspace-controller"
+	controllerName = "workspace"
 	finalizer      = "finalizers.tenant.kubesphere.io"
 )
+
+var _ kscontroller.Controller = &Reconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
 // Reconciler reconciles a Workspace object
 type Reconciler struct {
@@ -44,20 +49,19 @@ type Reconciler struct {
 	recorder record.EventRecorder
 }
 
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Reconciler) Name() string {
+	return controllerName
+}
+
+func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
 	r.Client = mgr.GetClient()
 	r.logger = mgr.GetLogger().WithName(controllerName)
 	r.recorder = mgr.GetEventRecorderFor(controllerName)
-	err := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		For(&tenantv1alpha1.Workspace{}).
 		Complete(r)
-
-	if err != nil {
-		return kscontroller.FailedToSetup(controllerName, err)
-	}
-	return nil
 }
 
 // +kubebuilder:rbac:groups=tenant.kubesphere.io,resources=workspaces,verbs=get;list;watch;create;update;patch;delete

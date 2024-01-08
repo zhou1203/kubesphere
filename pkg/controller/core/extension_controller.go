@@ -21,6 +21,11 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,15 +45,89 @@ import (
 
 const (
 	extensionProtection = "kubesphere.io/extension-protection"
-	extensionController = "extension-controller"
+	extensionController = "extension"
 )
 
+var _ kscontroller.Controller = &ExtensionReconciler{}
 var _ reconcile.Reconciler = &ExtensionReconciler{}
+
+func (r *ExtensionReconciler) Name() string {
+	return extensionController
+}
+
+func (r *ExtensionReconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+}
 
 type ExtensionReconciler struct {
 	client.Client
-	K8sVersion string
+	k8sVersion string
 	logger     logr.Logger
+}
+
+func (r *ExtensionReconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+	k8sVersion, err := mgr.K8sClient.Discovery().ServerVersion()
+	if err != nil {
+		return fmt.Errorf("failed to get K8s version: %s", err)
+	}
+	r.k8sVersion = k8sVersion.GitVersion
+	r.Client = mgr.GetClient()
+	r.logger = ctrl.Log.WithName("controllers").WithName(extensionController)
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(extensionController).
+		For(&corev1alpha1.Extension{}).
+		Watches(
+			&corev1alpha1.ExtensionVersion{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+				var requests []reconcile.Request
+				extensionVersion := object.(*corev1alpha1.ExtensionVersion)
+				extensionName := extensionVersion.Labels[corev1alpha1.ExtensionReferenceLabel]
+				if extensionName != "" {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: extensionName,
+						},
+					})
+				}
+				return requests
+			}),
+			builder.WithPredicates(predicate.Funcs{
+				GenericFunc: func(event event.GenericEvent) bool {
+					return false
+				},
+				UpdateFunc: func(updateEvent event.UpdateEvent) bool {
+					return false
+				},
+			}),
+		).
+		Complete(r)
+}
+
+func (r *ExtensionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	extension := &corev1alpha1.Extension{}
+	if err := r.Client.Get(ctx, req.NamespacedName, extension); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	r.logger.V(4).Info("reconcile", "extension", extension.Name)
+
+	if extension.ObjectMeta.DeletionTimestamp != nil {
+		return r.reconcileDelete(ctx, extension)
+	}
+
+	if !controllerutil.ContainsFinalizer(extension, extensionProtection) {
+		expected := extension.DeepCopy()
+		controllerutil.AddFinalizer(expected, extensionProtection)
+		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(extension))
+	}
+
+	if err := r.syncExtensionStatus(ctx, extension); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to sync extension status: %s", err)
+	}
+
+	r.logger.V(4).Info("synced", "extension", extension.Name)
+
+	return ctrl.Result{}, nil
 }
 
 // reconcileDelete delete the extension.
@@ -97,7 +176,7 @@ func (r *ExtensionReconciler) syncExtensionStatus(ctx context.Context, extension
 			return err
 		}
 		expected := extension.DeepCopy()
-		if recommended, err := getRecommendedExtensionVersion(versionList.Items, r.K8sVersion); err == nil {
+		if recommended, err := getRecommendedExtensionVersion(versionList.Items, r.k8sVersion); err == nil {
 			expected.Status.RecommendedVersion = recommended
 		} else {
 			r.logger.Error(err, "failed to get recommended extension version")
@@ -114,67 +193,4 @@ func (r *ExtensionReconciler) syncExtensionStatus(ctx context.Context, extension
 		return fmt.Errorf("failed to update extension status: %s", err)
 	}
 	return nil
-}
-
-func (r *ExtensionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	extension := &corev1alpha1.Extension{}
-	if err := r.Client.Get(ctx, req.NamespacedName, extension); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	r.logger.V(4).Info("reconcile", "extension", extension.Name)
-
-	if extension.ObjectMeta.DeletionTimestamp != nil {
-		return r.reconcileDelete(ctx, extension)
-	}
-
-	if !controllerutil.ContainsFinalizer(extension, extensionProtection) {
-		expected := extension.DeepCopy()
-		controllerutil.AddFinalizer(expected, extensionProtection)
-		return ctrl.Result{}, r.Patch(ctx, expected, client.MergeFrom(extension))
-	}
-
-	if err := r.syncExtensionStatus(ctx, extension); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to sync extension status: %s", err)
-	}
-
-	r.logger.V(4).Info("synced", "extension", extension.Name)
-
-	return ctrl.Result{}, nil
-}
-
-func (r *ExtensionReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.K8sVersion == "" {
-		return fmt.Errorf("failed to setup %s: K8sVersion must not be empty", extensionController)
-	}
-	r.Client = mgr.GetClient()
-	r.logger = ctrl.Log.WithName("controllers").WithName(extensionController)
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(extensionController).
-		For(&corev1alpha1.Extension{}).
-		Watches(
-			&corev1alpha1.ExtensionVersion{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
-				var requests []reconcile.Request
-				extensionVersion := object.(*corev1alpha1.ExtensionVersion)
-				extensionName := extensionVersion.Labels[corev1alpha1.ExtensionReferenceLabel]
-				if extensionName != "" {
-					requests = append(requests, reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Name: extensionName,
-						},
-					})
-				}
-				return requests
-			}),
-			builder.WithPredicates(predicate.Funcs{
-				GenericFunc: func(event event.GenericEvent) bool {
-					return false
-				},
-				UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-					return false
-				},
-			}),
-		).
-		Complete(r)
 }

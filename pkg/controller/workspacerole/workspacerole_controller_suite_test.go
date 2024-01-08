@@ -23,15 +23,20 @@ import (
 	"testing"
 	"time"
 
+	"kubesphere.io/kubesphere/pkg/controller"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller/options"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/klog/v2"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"kubesphere.io/kubesphere/pkg/multicluster"
 	"kubesphere.io/kubesphere/pkg/scheme"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
@@ -81,7 +86,9 @@ var _ = BeforeSuite(func() {
 	clusterClient, err := clusterclient.NewClusterClientSet(k8sManager.GetCache())
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&Reconciler{ClusterClientSet: clusterClient}).SetupWithManager(k8sManager)
+	err = (&Reconciler{}).SetupWithManager(&controller.Manager{
+		Options:       kscontroller.Options{MultiClusterOptions: &multicluster.Options{ClusterRole: string(clusterv1alpha1.ClusterRoleHost)}},
+		ClusterClient: clusterClient, Manager: k8sManager})
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.Background())

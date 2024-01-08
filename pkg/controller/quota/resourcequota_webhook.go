@@ -24,6 +24,8 @@ import (
 	"sort"
 	"sync"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -62,13 +64,26 @@ type ResourceQuotaAdmission struct {
 	evaluator resourcequota.Evaluator
 }
 
-func NewResourceQuotaAdmission(client client.Client, scheme *runtime.Scheme) (webhook.AdmissionHandler, error) {
-	return &ResourceQuotaAdmission{
-		client:      client,
+const webhookName = "resource-quota-webhook"
+
+func (w *Webhook) Name() string {
+	return webhookName
+}
+
+var _ kscontroller.Controller = &Webhook{}
+
+type Webhook struct {
+}
+
+func (w *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
+	resourceQuotaAdmission := &ResourceQuotaAdmission{
+		client:      mgr.GetClient(),
 		lockFactory: NewDefaultLockFactory(),
-		decoder:     admission.NewDecoder(scheme),
+		decoder:     admission.NewDecoder(mgr.GetScheme()),
 		registry:    generic.NewRegistry(install.NewQuotaConfigurationForAdmission().Evaluators()),
-	}, nil
+	}
+	mgr.GetWebhookServer().Register("/validate-quota-kubesphere-io-v1alpha2", &webhook.Admission{Handler: resourceQuotaAdmission})
+	return nil
 }
 
 func (r *ResourceQuotaAdmission) Handle(ctx context.Context, req webhook.AdmissionRequest) webhook.AdmissionResponse {
