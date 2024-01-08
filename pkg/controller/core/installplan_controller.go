@@ -1130,14 +1130,14 @@ func (r *InstallPlanReconciler) syncClusterStatus(
 		if err = syncExtendedAPIStatus(ctx, clusterClient, plan); err != nil {
 			return err
 		}
-		return r.updateClusterReadyCondition(ctx, plan, executor, cluster.Name, &clusterSchedulingStatus)
+		return r.updateClusterReadyCondition(ctx, plan, executor, cluster, &clusterSchedulingStatus)
 	default:
 		return nil
 	}
 }
 
-func (r *InstallPlanReconciler) updateClusterReadyCondition(ctx context.Context, plan *corev1alpha1.InstallPlan, executor helm.Executor, clusterName string, clusterSchedulingStatus *corev1alpha1.InstallationStatus) error {
-	ready, err := executor.IsReleaseReady(time.Second * 30)
+func (r *InstallPlanReconciler) updateClusterReadyCondition(ctx context.Context, plan *corev1alpha1.InstallPlan, executor helm.Executor, cluster clusterv1alpha1.Cluster, clusterSchedulingStatus *corev1alpha1.InstallationStatus) error {
+	ready, err := executor.IsReleaseReady(time.Second*30, helm.SetHelmKubeConfig(string(cluster.Spec.Connection.KubeConfig)))
 
 	if !needUpdateReadyCondition(clusterSchedulingStatus.Conditions, ready) {
 		if !ready {
@@ -1148,9 +1148,9 @@ func (r *InstallPlanReconciler) updateClusterReadyCondition(ctx context.Context,
 	}
 
 	if ready {
-		updateClusterSchedulingCondition(plan, clusterName, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, "", metav1.ConditionTrue)
+		updateClusterSchedulingCondition(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, "", metav1.ConditionTrue)
 	} else {
-		updateClusterSchedulingCondition(plan, clusterName, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, fmt.Sprintf("timeout waiting for release ready: %v", err), metav1.ConditionFalse)
+		updateClusterSchedulingCondition(plan, cluster.Name, clusterSchedulingStatus, corev1alpha1.ConditionTypeReady, fmt.Sprintf("timeout waiting for release ready: %v", err), metav1.ConditionFalse)
 	}
 	return r.updateInstallPlan(ctx, plan)
 }
