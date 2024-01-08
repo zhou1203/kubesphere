@@ -284,7 +284,8 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 			auth.NewPasswordAuthenticator(s.RuntimeClient, s.IdentityProviderHandler, s.AuthenticationOptions),
 			auth.NewLoginRecorder(s.RuntimeClient))),
 		bearertoken.New(jwt.NewTokenAuthenticator(s.RuntimeCache,
-			auth.NewTokenOperator(s.CacheClient, s.Issuer, s.AuthenticationOptions))))
+			auth.NewTokenOperator(s.CacheClient, s.Issuer, s.AuthenticationOptions), s.MultiClusterOptions.ClusterRole)))
+
 	handler = filters.WithAuthentication(handler, authn)
 	handler = filters.WithRequestInfo(handler, requestInfoResolver)
 	s.Server.Handler = handler

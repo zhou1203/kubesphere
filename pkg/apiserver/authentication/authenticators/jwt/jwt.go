@@ -23,7 +23,7 @@ import (
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
-
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
@@ -41,12 +41,14 @@ import (
 type tokenAuthenticator struct {
 	tokenOperator auth.TokenManagementInterface
 	cache         runtimecache.Cache
+	clusterRole   string
 }
 
-func NewTokenAuthenticator(cache runtimecache.Cache, tokenOperator auth.TokenManagementInterface) authenticator.Token {
+func NewTokenAuthenticator(cache runtimecache.Cache, tokenOperator auth.TokenManagementInterface, clusterRole string) authenticator.Token {
 	return &tokenAuthenticator{
 		tokenOperator: tokenOperator,
 		cache:         cache,
+		clusterRole:   clusterRole,
 	}
 }
 
@@ -58,15 +60,15 @@ func (t *tokenAuthenticator) AuthenticateToken(ctx context.Context, token string
 	}
 
 	if serviceaccount.IsServiceAccountToken(verified.Subject) {
-		_, err = t.validateServiceAccount(verified)
-		if err != nil {
-			return nil, false, err
+		if t.clusterRole == string(clusterv1alpha1.ClusterRoleHost) {
+			_, err = t.validateServiceAccount(ctx, verified)
+			if err != nil {
+				return nil, false, err
+			}
 		}
-
 		return &authenticator.Response{
 			User: verified.User,
 		}, true, nil
-
 	}
 
 	if verified.User.GetName() == iamv1beta1.PreRegistrationUser {
@@ -75,30 +77,32 @@ func (t *tokenAuthenticator) AuthenticateToken(ctx context.Context, token string
 		}, true, nil
 	}
 
-	userInfo := &iamv1beta1.User{}
-	if err := t.cache.Get(ctx, types.NamespacedName{Name: verified.User.GetName()}, userInfo); err != nil {
-		return nil, false, err
+	if t.clusterRole == string(clusterv1alpha1.ClusterRoleHost) {
+		userInfo := &iamv1beta1.User{}
+		if err := t.cache.Get(ctx, types.NamespacedName{Name: verified.User.GetName()}, userInfo); err != nil {
+			return nil, false, err
+		}
+
+		// AuthLimitExceeded state should be ignored
+		if userInfo.Status.State == iamv1beta1.UserDisabled {
+			return nil, false, auth.AccountIsNotActiveError
+		}
 	}
 
-	// AuthLimitExceeded state should be ignored
-	if userInfo.Status.State == iamv1beta1.UserDisabled {
-		return nil, false, auth.AccountIsNotActiveError
-	}
 	return &authenticator.Response{
 		User: &user.DefaultInfo{
-			Name:   userInfo.GetName(),
-			Groups: append(userInfo.Spec.Groups, user.AllAuthenticated),
+			Name: verified.User.GetName(),
+			// TODO(wenhaozhou) Add user`s groups(can be searched by GroupBinding)
+			Groups: []string{user.AllAuthenticated},
 		},
 	}, true, nil
 }
 
-func (t *tokenAuthenticator) validateServiceAccount(verify *token.VerifiedResponse) (*corev1alpha1.ServiceAccount, error) {
+func (t *tokenAuthenticator) validateServiceAccount(ctx context.Context, verify *token.VerifiedResponse) (*corev1alpha1.ServiceAccount, error) {
 	// Ensure the relative service account exist
 	name, namespace := serviceaccount.SplitUsername(verify.Username)
 	sa := &corev1alpha1.ServiceAccount{}
-	ctx := context.Background()
-	err := t.cache.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sa)
-	if err != nil {
+	if err := t.cache.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sa); err != nil {
 		return nil, err
 	}
 	return sa, nil
