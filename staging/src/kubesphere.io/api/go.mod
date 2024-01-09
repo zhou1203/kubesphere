@@ -6,7 +6,7 @@ go 1.20
 
 require (
 	github.com/onsi/gomega v1.27.10
-	golang.org/x/net v0.15.0
+	golang.org/x/net v0.17.0
 	k8s.io/api v0.28.2
 	k8s.io/apimachinery v0.28.2
 	k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9
@@ -39,8 +39,8 @@ require (
 	github.com/stretchr/testify v1.8.4 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/oauth2 v0.12.0 // indirect
-	golang.org/x/sys v0.12.0 // indirect
-	golang.org/x/term v0.11.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
@@ -59,7 +59,6 @@ require (
 
 replace (
 	golang.org/x/crypto => golang.org/x/crypto v0.5.0
-	golang.org/x/net => golang.org/x/net v0.7.0
 	golang.org/x/oauth2 => golang.org/x/oauth2 v0.4.0
 	golang.org/x/sync => golang.org/x/sync v0.1.0
 	golang.org/x/sys => golang.org/x/sys v0.5.0
