@@ -15,7 +15,7 @@ require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/docker/distribution v2.8.2+incompatible
-	github.com/docker/docker v24.0.6+incompatible
+	github.com/docker/docker v24.0.7+incompatible
 	github.com/emicklei/go-restful-openapi/v2 v2.9.2-0.20230928201233-d828a4fc267c
 	github.com/emicklei/go-restful/v3 v3.11.0
 	github.com/evanphx/json-patch v5.6.0+incompatible
@@ -263,7 +263,7 @@ replace (
 	github.com/davecgh/go-spew => github.com/davecgh/go-spew v1.1.1
 	github.com/docker/cli => github.com/docker/cli v24.0.6+incompatible
 	github.com/docker/distribution => github.com/docker/distribution v2.8.2+incompatible
-	github.com/docker/docker => github.com/docker/docker v24.0.6+incompatible
+	github.com/docker/docker => github.com/docker/docker v24.0.7+incompatible
 	github.com/docker/docker-credential-helpers => github.com/docker/docker-credential-helpers v0.7.0
 	github.com/docker/go-connections => github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units => github.com/docker/go-units v0.5.0
