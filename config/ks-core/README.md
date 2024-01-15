@@ -23,14 +23,14 @@ do
    kubectl annotate $i meta.helm.sh/release-namespace=kubesphere-system --overwrite
 done
 
-items=$(kubectl get workspacetemplate -o jsonpath='{.items[*].metadata.name}')
+items=$(kubectl get workspace -o jsonpath='{.items[*].metadata.name}')
 
 for i in $items
 do
-    network_isolation=$(kubectl get workspacetemplate $i -o jsonpath='{.spec.template.spec.networkIsolation}')
+    network_isolation=$(kubectl get workspace $i -o jsonpath='{.spec.networkIsolation}')
     
     if [ "$network_isolation" == "true" ]; then
-        kubectl annotate workspacetemplate $i kubesphere.io/network-isolate=enabled --overwrite
+        kubectl annotate workspace $i kubesphere.io/network-isolate=enabled --overwrite
     fi
 done
 ```
