@@ -195,8 +195,18 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
 		target := &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}
 		op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, target, func() error {
-			target.Labels = workspaceTemplate.Spec.Template.Labels
-			target.Annotations = workspaceTemplate.Spec.Template.Annotations
+			for k, v := range workspaceTemplate.Spec.Template.Labels {
+				if target.Labels == nil {
+					target.Labels = make(map[string]string)
+				}
+				target.Labels[k] = v
+			}
+			for k, v := range workspaceTemplate.Spec.Template.Annotations {
+				if target.Annotations == nil {
+					target.Annotations = make(map[string]string)
+				}
+				target.Annotations[k] = v
+			}
 			target.Spec = workspaceTemplate.Spec.Template.Spec
 			return nil
 		})
