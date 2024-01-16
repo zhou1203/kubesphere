@@ -53,25 +53,25 @@ func NewPasswordAuthenticator(cacheClient runtimeclient.Client, identityProvider
 	return passwordAuthenticator
 }
 
-func (p *passwordAuthenticator) Authenticate(_ context.Context, provider, username, password string) (authuser.Info, string, error) {
+func (p *passwordAuthenticator) Authenticate(ctx context.Context, provider, username, password string) (authuser.Info, error) {
 	// empty username or password are not allowed
 	if username == "" || password == "" {
-		return nil, "", IncorrectPasswordError
+		return nil, IncorrectPasswordError
 	}
 	if provider != "" {
-		return p.authByProvider(provider, username, password)
+		return p.authByProvider(ctx, provider, username, password)
 	}
-	return p.authByKubeSphere(username, password)
+	return p.authByKubeSphere(ctx, username, password)
 }
 
 // authByKubeSphere authenticate by the kubesphere user
-func (p *passwordAuthenticator) authByKubeSphere(username, password string) (authuser.Info, string, error) {
-	user, err := p.userGetter.Find(username)
+func (p *passwordAuthenticator) authByKubeSphere(ctx context.Context, username, password string) (authuser.Info, error) {
+	user, err := p.userGetter.Find(ctx, username)
 	if err != nil {
 		// ignore not found error
 		if !errors.IsNotFound(err) {
 			klog.Error(err)
-			return nil, "", err
+			return nil, err
 		}
 	}
 
@@ -79,11 +79,11 @@ func (p *passwordAuthenticator) authByKubeSphere(username, password string) (aut
 	if user != nil && user.Status.State != iamv1beta1.UserActive {
 		if user.Status.State == iamv1beta1.UserAuthLimitExceeded {
 			klog.Errorf("%s, username: %s", RateLimitExceededError, username)
-			return nil, "", RateLimitExceededError
+			return nil, RateLimitExceededError
 		} else {
 			// state not active
 			klog.Errorf("%s, username: %s", AccountIsNotActiveError, username)
-			return nil, "", AccountIsNotActiveError
+			return nil, AccountIsNotActiveError
 		}
 	}
 
@@ -91,7 +91,7 @@ func (p *passwordAuthenticator) authByKubeSphere(username, password string) (aut
 	if user != nil && user.Spec.EncryptedPassword != "" {
 		if err = PasswordVerify(user.Spec.EncryptedPassword, password); err != nil {
 			klog.Error(err)
-			return nil, "", err
+			return nil, err
 		}
 		u := &authuser.DefaultInfo{
 			Name:   user.Name,
@@ -103,55 +103,55 @@ func (p *passwordAuthenticator) authByKubeSphere(username, password string) (aut
 				iamv1beta1.ExtraUninitialized: {uninitialized},
 			}
 		}
-		return u, "", nil
+		return u, nil
 	}
 
-	return nil, "", IncorrectPasswordError
+	return nil, IncorrectPasswordError
 }
 
 // authByProvider authenticate by the third-party identity provider user
-func (p *passwordAuthenticator) authByProvider(providerName, username, password string) (authuser.Info, string, error) {
+func (p *passwordAuthenticator) authByProvider(ctx context.Context, providerName, username, password string) (authuser.Info, error) {
 	genericProvider, exist := p.identityProviderHandler.GetGenericProvider(providerName)
 	if !exist {
-		return nil, "", fmt.Errorf("provider not exist")
+		return nil, fmt.Errorf("provider not exist")
 	}
 
-	configuration, err := p.identityProviderConfigurationGetter.GetConfiguration(context.Background(), providerName)
+	configuration, err := p.identityProviderConfigurationGetter.GetConfiguration(ctx, providerName)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	authenticated, err := genericProvider.Authenticate(username, password)
 	if err != nil {
 		klog.Error(err)
 		if errors.IsUnauthorized(err) {
-			return nil, "", IncorrectPasswordError
+			return nil, IncorrectPasswordError
 		}
-		return nil, "", err
+		return nil, err
 	}
-	linkedAccount, err := p.userGetter.FindMappedUser(providerName, authenticated.GetUserID())
+	linkedAccount, err := p.userGetter.FindMappedUser(ctx, providerName, authenticated.GetUserID())
 	if err != nil && !errors.IsNotFound(err) {
 		klog.Error(err)
-		return nil, "", err
+		return nil, err
 	}
 	if linkedAccount != nil {
-		return &authuser.DefaultInfo{Name: linkedAccount.Name}, providerName, nil
+		return &authuser.DefaultInfo{Name: linkedAccount.Name}, nil
 	}
 
 	// the user will automatically create and mapping when login successful.
 	if configuration.MappingMethod == identityprovider.MappingMethodAuto {
 		if !configuration.DisableLoginConfirmation {
-			return preRegistrationUser(configuration.Name, authenticated), configuration.Name, nil
+			return preRegistrationUser(configuration.Name, authenticated), nil
 		}
 		linkedAccount = mappedUser(configuration.Name, authenticated)
 		if err = p.client.Create(context.Background(), linkedAccount); err != nil {
 			klog.Error(err)
-			return nil, "", err
+			return nil, err
 		}
-		return &authuser.DefaultInfo{Name: linkedAccount.Name}, providerName, nil
+		return &authuser.DefaultInfo{Name: linkedAccount.Name}, nil
 	}
 
-	return nil, "", err
+	return nil, err
 }
 
 func PasswordVerify(encryptedPassword, password string) error {

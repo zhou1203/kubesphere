@@ -3,6 +3,8 @@ package v1beta1
 import (
 	"net/http"
 
+	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 
 	"github.com/emicklei/go-restful/v3"
@@ -11,23 +13,11 @@ import (
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	"kubesphere.io/kubesphere/pkg/apiserver/authorization/rbac"
-	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	apiserverruntime "kubesphere.io/kubesphere/pkg/apiserver/runtime"
-	"kubesphere.io/kubesphere/pkg/models/iam/am"
-	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/server/errors"
 )
 
 var GroupVersion = schema.GroupVersion{Group: "iam.kubesphere.io", Version: "v1beta1"}
-
-func NewHandler(im im.IdentityManagementInterface, am am.AccessManagementInterface) rest.Handler {
-	return &handler{im: im, am: am, authorizer: rbac.NewRBACAuthorizer(am)}
-}
-
-func NewFakeHandler() rest.Handler {
-	return &handler{}
-}
 
 func (h *handler) AddToContainer(container *restful.Container) error {
 	ws := apiserverruntime.NewWebService(GroupVersion)
@@ -187,6 +177,28 @@ func (h *handler) AddToContainer(container *restful.Container) error {
 		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAccessManagement}).
 		Reads(iamv1beta1.SubjectAccessReview{}).
 		Returns(http.StatusOK, api.StatusOK, iamv1beta1.SubjectAccessReview{}))
+
+	// totp
+	ws.Route(ws.GET("/users/{user}/authkey").
+		To(h.GenerateTOTPAuthKey).
+		Doc("Generates a Time-Based One-Time Password (TOTP) authentication key.").
+		Param(ws.PathParameter("user", "Username")).
+		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.User{}).
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAuthentication}))
+
+	ws.Route(ws.POST("/users/{user}/authkey").
+		To(h.BindTOTPAuthKey).
+		Doc("Binds a Time-Based One-Time Password (TOTP) authentication key to the user.").
+		Param(ws.PathParameter("user", "Username")).
+		Returns(http.StatusOK, api.StatusOK, errors.None).
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAuthentication}))
+
+	ws.Route(ws.DELETE("/users/{user}/authkey").
+		To(h.UnbindTOTPAuthKey).
+		Doc("Unbinds a Time-Based One-Time Password (TOTP) authentication key from the user.").
+		Param(ws.PathParameter("user", "Username")).
+		Returns(http.StatusOK, api.StatusOK, errors.None).
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAuthentication}))
 
 	container.Add(ws)
 	return nil

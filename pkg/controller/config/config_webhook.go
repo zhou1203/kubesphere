@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 
+	"kubesphere.io/kubesphere/pkg/controller/config/totp"
+
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	v1 "k8s.io/api/core/v1"
@@ -80,6 +82,9 @@ func (w *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
 	identityProviderWebhookHandler := &identityprovider.WebhookHandler{Client: mgr.GetClient()}
 	factory.RegisterValidator(identityProviderWebhookHandler)
 	factory.RegisterDefaulter(identityProviderWebhookHandler)
+	totpWebhook := &totp.Webhook{Client: mgr.GetClient()}
+	factory.RegisterDefaulter(totpWebhook)
+	factory.RegisterValidator(totpWebhook)
 
 	w.Client = mgr.GetClient()
 	w.factory = factory

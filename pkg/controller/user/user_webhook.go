@@ -21,6 +21,12 @@ import (
 	"fmt"
 	"net/mail"
 
+	corev1 "k8s.io/api/core/v1"
+	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+
+	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/models/auth"
+
 	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -49,7 +55,47 @@ func (v *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
 	return builder.WebhookManagedBy(mgr).
 		For(&iamv1beta1.User{}).
 		WithValidator(v).
+		WithDefaulter(v).
 		Complete()
+}
+
+func (v *Webhook) Default(ctx context.Context, obj runtime.Object) error {
+	user, ok := obj.(*iamv1alpha2.User)
+	if !ok {
+		return fmt.Errorf("expected a User but got a %T", obj)
+	}
+	secrets := &corev1.SecretList{}
+	if err := v.List(ctx, secrets, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name}, client.InNamespace(constants.KubeSphereNamespace)); err != nil {
+		return fmt.Errorf("failed to list secrets: %v", err)
+	}
+
+	var authKeyRef string
+	for _, secret := range secrets.Items {
+		if secret.Type != auth.SecretTypeTOTPAuthKey {
+			continue
+		}
+		if !secret.DeletionTimestamp.IsZero() {
+			continue
+		}
+		key, err := auth.TOTPAuthKeyFrom(&secret)
+		if err != nil {
+			continue
+		}
+		if key.AccountName() == user.Name {
+			authKeyRef = secret.Name
+			break
+		}
+	}
+
+	if authKeyRef == "" {
+		delete(user.Annotations, auth.TOTPAuthKeyRefAnnotation)
+	} else if user.Annotations[auth.TOTPAuthKeyRefAnnotation] != authKeyRef {
+		if user.Annotations == nil {
+			user.Annotations = make(map[string]string)
+		}
+		user.Annotations[auth.TOTPAuthKeyRefAnnotation] = authKeyRef
+	}
+	return nil
 }
 
 // validate admits a pod if a specific annotation exists.

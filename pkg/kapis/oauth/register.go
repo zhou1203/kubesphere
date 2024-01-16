@@ -24,40 +24,14 @@ import (
 	"gopkg.in/square/go-jose.v2"
 
 	"kubesphere.io/kubesphere/pkg/api"
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
-	"kubesphere.io/kubesphere/pkg/apiserver/rest"
-	"kubesphere.io/kubesphere/pkg/models/auth"
-	"kubesphere.io/kubesphere/pkg/models/iam/im"
 )
 
 const (
 	contentTypeFormData = "application/x-www-form-urlencoded"
 	root                = "/oauth"
 )
-
-func NewHandler(im im.IdentityManagementInterface,
-	tokenOperator auth.TokenManagementInterface,
-	passwordAuthenticator auth.PasswordAuthenticator,
-	oauth2Authenticator auth.OAuthAuthenticator,
-	loginRecorder auth.LoginRecorder,
-	options *authentication.Options,
-	oauthOperator oauth.ClientGetter) rest.Handler {
-	handler := &handler{im: im,
-		tokenOperator:         tokenOperator,
-		passwordAuthenticator: passwordAuthenticator,
-		oauthAuthenticator:    oauth2Authenticator,
-		loginRecorder:         loginRecorder,
-		options:               options,
-		clientGetter:          oauthOperator}
-	return handler
-}
-
-func FakeHandler() rest.Handler {
-	handler := &handler{}
-	return handler
-}
 
 // AddToContainer ks-apiserver includes a built-in OAuth server. Users obtain OAuth access tokens to authenticate themselves to the API.
 // The OAuth server supports standard authorization code grant and the implicit grant OAuth authorization flows.

@@ -45,6 +45,7 @@ require (
 	github.com/open-policy-agent/opa v0.49.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/errors v0.9.1
+	github.com/pquerna/otp v1.4.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/sony/sonyflake v0.0.0-20181109022403-6d5bd6181009
 	github.com/speps/go-hashids v2.0.0+incompatible
@@ -100,6 +101,7 @@ require (
 	github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230305170008-8188dc5388df // indirect
 	github.com/aws/aws-sdk-go v1.44.187 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chai2010/gettext-go v1.0.2 // indirect

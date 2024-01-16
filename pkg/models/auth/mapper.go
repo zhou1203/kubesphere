@@ -15,15 +15,15 @@ type userMapper struct {
 }
 
 // Find returns the user associated with the username or email
-func (u *userMapper) Find(username string) (*iamv1beta1.User, error) {
+func (u *userMapper) Find(ctx context.Context, username string) (*iamv1beta1.User, error) {
 	user := &iamv1beta1.User{}
 	if _, err := mail.ParseAddress(username); err != nil {
-		return user, u.cache.Get(context.Background(), types.NamespacedName{Name: username}, user)
+		return user, u.cache.Get(ctx, types.NamespacedName{Name: username}, user)
 	}
 
 	// TODO cache with index
 	userList := &iamv1beta1.UserList{}
-	if err := u.cache.List(context.Background(), userList); err != nil {
+	if err := u.cache.List(ctx, userList); err != nil {
 		return nil, err
 	}
 
@@ -37,7 +37,7 @@ func (u *userMapper) Find(username string) (*iamv1beta1.User, error) {
 }
 
 // FindMappedUser returns the user which mapped to the identity
-func (u *userMapper) FindMappedUser(idp, uid string) (*iamv1beta1.User, error) {
+func (u *userMapper) FindMappedUser(ctx context.Context, idp, uid string) (*iamv1beta1.User, error) {
 	userList := &iamv1beta1.UserList{}
 	if err := u.cache.List(context.Background(), userList, runtimeclient.MatchingLabels{
 		iamv1beta1.IdentifyProviderLabel: idp,

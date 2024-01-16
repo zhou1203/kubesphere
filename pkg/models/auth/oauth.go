@@ -50,51 +50,52 @@ func NewOAuthAuthenticator(cacheClient runtimeclient.Client, idpHandler identity
 	return authenticator
 }
 
-func (o *oauthAuthenticator) Authenticate(ctx context.Context, provider string, req *http.Request) (authuser.Info, string, error) {
+func (o *oauthAuthenticator) Authenticate(ctx context.Context, provider string, req *http.Request) (authuser.Info, error) {
 	providerConfig, err := o.idpConfigurationGetter.GetConfiguration(ctx, provider)
 	// identity provider not registered
 	if err != nil {
 		klog.Error(err)
-		return nil, "", err
+		return nil, err
 	}
 	oauthIdentityProvider, exist := o.idpHandler.GetOAuthProvider(provider)
 	if !exist {
-		err := fmt.Errorf("identity provider %s not exist", provider)
-		klog.Error()
-		return nil, "", err
+		return nil, fmt.Errorf("identity provider %s not exist", provider)
 	}
 	authenticated, err := oauthIdentityProvider.IdentityExchangeCallback(req)
 	if err != nil {
-		klog.Error(err)
-		return nil, "", err
+		klog.Errorf("Failed to exchange identity from %s, error: %v", provider, err)
+		return nil, err
 	}
 
-	user, err := o.userGetter.FindMappedUser(providerConfig.Name, authenticated.GetUserID())
+	user, err := o.userGetter.FindMappedUser(ctx, providerConfig.Name, authenticated.GetUserID())
 	if user == nil && providerConfig.MappingMethod == identityprovider.MappingMethodLookup {
-		klog.Error(err)
-		return nil, "", err
+		klog.Errorf("Failed to find mapped user for %s, error: %v", provider, err)
+		return nil, err
 	}
 
 	// the user will automatically create and mapping when login successful.
 	if user == nil && providerConfig.MappingMethod == identityprovider.MappingMethodAuto {
 		if !providerConfig.DisableLoginConfirmation {
-			return preRegistrationUser(providerConfig.Name, authenticated), providerConfig.Name, nil
+			return preRegistrationUser(providerConfig.Name, authenticated), nil
 		}
 
 		user = mappedUser(providerConfig.Name, authenticated)
 
-		if err = o.client.Create(context.Background(), user); err != nil {
-			return nil, providerConfig.Name, err
+		if err = o.client.Create(ctx, user); err != nil {
+			return nil, err
 		}
 	}
 
 	if user != nil {
 		if user.Status.State == iamv1beta1.UserDisabled {
 			// state not active
-			return nil, "", AccountIsNotActiveError
+			return nil, AccountIsNotActiveError
 		}
-		return &authuser.DefaultInfo{Name: user.GetName()}, providerConfig.Name, nil
+		if user.Annotations[TOTPAuthKeyRefAnnotation] != "" {
+			return otpAuthRequiredUser(user)
+		}
+		return &authuser.DefaultInfo{Name: user.GetName()}, nil
 	}
 
-	return nil, "", errors.NewNotFound(iamv1beta1.Resource("user"), authenticated.GetUsername())
+	return nil, errors.NewNotFound(iamv1beta1.Resource("user"), authenticated.GetUsername())
 }

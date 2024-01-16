@@ -18,22 +18,19 @@ package config
 
 import (
 	"fmt"
-
-	"kubesphere.io/utils/s3"
-
-	"kubesphere.io/kubesphere/pkg/controller/options"
-
 	"strings"
 	"sync"
 
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
+	"kubesphere.io/utils/s3"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization"
 	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/controller/options"
 	"kubesphere.io/kubesphere/pkg/models/telemetry"
 	"kubesphere.io/kubesphere/pkg/models/terminal"
 	"kubesphere.io/kubesphere/pkg/multicluster"

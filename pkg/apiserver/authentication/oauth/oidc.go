@@ -40,6 +40,7 @@ const (
 	GrantTypeRefreshToken      = "refresh_token"
 	GrantTypeCode              = "code"
 	GrantTypeAuthorizationCode = "authorization_code"
+	GrantTypeOTP               = "otp"
 )
 
 var ValidScopes = []string{ScopeOpenID, ScopeEmail, ScopeProfile}

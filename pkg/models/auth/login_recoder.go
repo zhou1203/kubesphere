@@ -46,7 +46,7 @@ func NewLoginRecorder(cacheClient runtimeclient.Client) LoginRecorder {
 // RecordLogin Create v1alpha2.LoginRecord for existing accounts
 func (l *loginRecorder) RecordLogin(username string, loginType iamv1beta1.LoginType, provider, sourceIP, userAgent string, authErr error) error {
 	// only for existing accounts, solve the problem of huge entries
-	user, err := l.userMapper.Find(username)
+	user, err := l.userMapper.Find(context.Background(), username)
 	if err != nil {
 		// ignore not found error
 		if errors.IsNotFound(err) {

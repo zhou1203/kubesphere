@@ -39,6 +39,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
+	"kubesphere.io/kubesphere/pkg/apiserver/rest"
 	"kubesphere.io/kubesphere/pkg/models/auth"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	serverrors "kubesphere.io/kubesphere/pkg/server/errors"
@@ -120,6 +121,31 @@ type handler struct {
 	oauthAuthenticator    auth.OAuthAuthenticator
 	loginRecorder         auth.LoginRecorder
 	clientGetter          oauth.ClientGetter
+	otpAuthenticator      auth.TOTPAuthenticator
+}
+
+func NewHandler(im im.IdentityManagementInterface,
+	tokenOperator auth.TokenManagementInterface,
+	passwordAuthenticator auth.PasswordAuthenticator,
+	oauth2Authenticator auth.OAuthAuthenticator,
+	loginRecorder auth.LoginRecorder,
+	options *authentication.Options,
+	oauthOperator oauth.ClientGetter,
+	otpAuthenticator auth.TOTPAuthenticator) rest.Handler {
+	handler := &handler{im: im,
+		tokenOperator:         tokenOperator,
+		passwordAuthenticator: passwordAuthenticator,
+		oauthAuthenticator:    oauth2Authenticator,
+		loginRecorder:         loginRecorder,
+		options:               options,
+		otpAuthenticator:      otpAuthenticator,
+		clientGetter:          oauthOperator}
+	return handler
+}
+
+func FakeHandler() rest.Handler {
+	handler := &handler{}
+	return handler
 }
 
 // tokenReview Implement webhook authentication interface
@@ -212,7 +238,7 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 
 	client, err := h.clientGetter.GetOAuthClient(req.Request.Context(), clientID)
 	if err != nil {
-		if err == oauth.ErrorClientNotFound {
+		if errors.Is(err, oauth.ErrorClientNotFound) {
 			_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidClient("The provided client_id is invalid or does not exist."))
 			return
 		}
@@ -234,7 +260,7 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 	// parameters to the query component of the redirection URI using the
 	// "application/x-www-form-urlencoded" format
 	informsError := func(err *oauth.Error) {
-		values := make(url.Values, 0)
+		values := make(url.Values)
 		values.Add("error", string(err.Type))
 		if err.Description != "" {
 			values.Add("error_description", err.Description)
@@ -321,7 +347,7 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 
 func (h *handler) oauthCallback(req *restful.Request, response *restful.Response) {
 	provider := req.PathParameter("callback")
-	authenticated, provider, err := h.oauthAuthenticator.Authenticate(req.Request.Context(), provider, req.Request)
+	authenticated, err := h.oauthAuthenticator.Authenticate(req.Request.Context(), provider, req.Request)
 	if err != nil {
 		api.HandleUnauthorized(response, req, apierrors.NewUnauthorized(fmt.Sprintf("Unauthorized: %s", err)))
 		return
@@ -388,6 +414,8 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 		h.refreshTokenGrant(req, response, client)
 	case oauth.GrantTypeCode, oauth.GrantTypeAuthorizationCode:
 		h.codeGrant(req, response, client)
+	case oauth.GrantTypeOTP:
+		h.otpGrant(req, response, client)
 	default:
 		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, unsupportedGrantType)
 	}
@@ -408,7 +436,7 @@ func (h *handler) passwordGrant(req *restful.Request, response *restful.Response
 	provider, _ := req.BodyParameter("provider")
 
 	// Authenticate the user credentials.
-	authenticated, provider, err := h.passwordAuthenticator.Authenticate(req.Request.Context(), provider, username, password)
+	authenticated, err := h.passwordAuthenticator.Authenticate(req.Request.Context(), provider, username, password)
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.AccountIsNotActiveError):
@@ -772,11 +800,57 @@ func (h *handler) handleAuthIDTokenRequest(req *restful.Request, response *restf
 		_ = response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(internalServerErrorMessage))
 	}
 
-	values := make(url.Values, 0)
+	values := make(url.Values)
 	values.Add("id_token", idToken)
 	if authIDTokenRequest.state != "" {
 		values.Add("state", authIDTokenRequest.state)
 	}
 	authIDTokenRequest.redirectURL.Fragment = values.Encode()
 	http.Redirect(response, req.Request, authIDTokenRequest.redirectURL.String(), http.StatusFound)
+}
+
+func (h *handler) otpGrant(req *restful.Request, response *restful.Response, client *oauth.Client) {
+	otp, err := req.BodyParameter("otp")
+	if err != nil {
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidRequest("parameter otp is required"))
+		return
+	}
+	preAuthToken, err := req.BodyParameter("token")
+	if err != nil {
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidRequest("parameter token is required"))
+		return
+	}
+
+	authResp, err := h.tokenOperator.Verify(preAuthToken)
+	if err != nil {
+		klog.Warningf("otp grant: failed to verify token: %v", err)
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant("invalid auth token"))
+		return
+	}
+
+	if authResp.User.GetName() != iamv1beta1.OTPAuthRequiredUser ||
+		authResp.User.GetExtra() == nil ||
+		len(authResp.User.GetExtra()[iamv1beta1.ExtraUsername]) == 0 {
+		klog.Warningf("otp grant: invalid user %s", authResp.User.GetName())
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant("invalid auth token"))
+		return
+	}
+
+	username := authResp.User.GetExtra()[iamv1beta1.ExtraUsername][0]
+
+	authenticated, err := h.otpAuthenticator.Authenticate(req.Request.Context(), username, otp)
+	if err != nil {
+		klog.Warningf("otp grant: failed to authenticate user %s: %v", username, err)
+		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant("invalid passcode"))
+		return
+	}
+
+	result, err := h.issueTokenTo(authenticated, client)
+	if err != nil {
+		klog.Errorf("failed to issue token: %s", err)
+		_ = response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError("failed to issue token"))
+		return
+	}
+
+	_ = response.WriteEntity(result)
 }

@@ -25,12 +25,10 @@ import (
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	authuser "k8s.io/apiserver/pkg/authentication/user"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
-
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 )
 
 var (
@@ -46,7 +44,7 @@ var (
 // "k8s.io/apimachinery/pkg/api", and restful.ServerError defined at package
 // "github.com/emicklei/go-restful/v3", or the server cannot handle error correctly.
 type PasswordAuthenticator interface {
-	Authenticate(ctx context.Context, provider, username, password string) (authuser.Info, string, error)
+	Authenticate(ctx context.Context, provider, username, password string) (authuser.Info, error)
 }
 
 // OAuthAuthenticator authenticate users by OAuth 2.0 Authorization Framework. Note that implement this
@@ -54,7 +52,17 @@ type PasswordAuthenticator interface {
 // "k8s.io/apimachinery/pkg/api", and restful.ServerError defined at package
 // "github.com/emicklei/go-restful/v3", or the server cannot handle error correctly.
 type OAuthAuthenticator interface {
-	Authenticate(ctx context.Context, provider string, req *http.Request) (authuser.Info, string, error)
+	Authenticate(ctx context.Context, provider string, req *http.Request) (authuser.Info, error)
+}
+
+func otpAuthRequiredUser(user *iamv1beta1.User) (authuser.Info, error) {
+	return &authuser.DefaultInfo{
+		Name: iamv1beta1.OTPAuthRequiredUser,
+		Extra: map[string][]string{
+			iamv1beta1.ExtraUID:      {string(user.UID)},
+			iamv1beta1.ExtraUsername: {user.Name},
+		},
+	}, nil
 }
 
 func preRegistrationUser(idp string, identity identityprovider.Identity) authuser.Info {

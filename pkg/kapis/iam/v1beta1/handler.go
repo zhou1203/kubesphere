@@ -3,6 +3,11 @@ package v1beta1
 import (
 	"fmt"
 
+	"k8s.io/klog/v2"
+
+	"kubesphere.io/kubesphere/pkg/apiserver/authorization/rbac"
+	"kubesphere.io/kubesphere/pkg/apiserver/rest"
+
 	"github.com/emicklei/go-restful/v3"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -37,10 +42,28 @@ type PasswordReset struct {
 	Password        string `json:"password"`
 }
 
+type TOTOAuthKeyBind struct {
+	AuthKey string `json:"authKey"`
+	OTP     string `json:"otp"`
+}
+
+type TOTPAuthKey struct {
+	AuthKey string `json:"authKey"`
+}
+
 type handler struct {
 	im         im.IdentityManagementInterface
 	am         am.AccessManagementInterface
 	authorizer authorizer.Authorizer
+	totp       auth.TOTPOperator
+}
+
+func NewHandler(im im.IdentityManagementInterface, am am.AccessManagementInterface, totp auth.TOTPOperator) rest.Handler {
+	return &handler{im: im, am: am, authorizer: rbac.NewRBACAuthorizer(am), totp: totp}
+}
+
+func NewFakeHandler() rest.Handler {
+	return &handler{}
 }
 
 func (h *handler) DescribeUser(request *restful.Request, response *restful.Response) {
@@ -771,6 +794,77 @@ func (h *handler) UpdateNamespaceMember(request *restful.Request, response *rest
 	err = h.am.CreateOrUpdateNamespaceRoleBinding(member.Username, namespace, member.RoleRef)
 	if err != nil {
 		api.HandleError(response, request, err)
+		return
+	}
+
+	response.WriteEntity(servererr.None)
+}
+
+// GenerateTOTPAuthKey generates a Time-based One-Time Password (TOTP) authentication key
+// for the specified username. It utilizes the TOTP library to generate the key based on
+// the provided issuer, account name, and other options.
+//
+// Path Parameters:
+//   - username: The username for which the TOTP authentication key is generated.
+//
+// Algorithm:
+//
+//	The function uses the TOTP (Time-based One-Time Password) algorithm to generate
+//	a cryptographic key. The key is generated with a specified issuer, account name,
+//	secret size, number of digits, and hash algorithm (SHA256).
+//
+// Response:
+//
+//	Upon successful generation of the TOTP authentication key, the key is written
+//	to the HTTP response in JSON format.
+//
+// Errors:
+//
+//	If an error occurs during the key generation process, a warning is logged, and
+//	an internal server error response is sent to the client with an appropriate message.
+//
+// Example Usage:
+//
+//	curl -X GET http://ks-apiserver.kubesphere-system.svc/iam.kubesphere.io/v1alpha2/users/{username}/totp/authkey
+//
+//	Response:
+//	{
+//	  "AuthKey": "otpauth://totp/Example.com:alice@example.com?algorithm=SHA1&digits=6&issuer=Example.com&period=30&secret=TQ25E4S642T345A6777V53VPGIE6NYRM"  // Example TOTP authentication key
+//	}
+func (h *handler) GenerateTOTPAuthKey(r *restful.Request, response *restful.Response) {
+	username := r.PathParameter("user")
+	key, err := h.totp.GenerateAuthKey(r.Request.Context(), username)
+	if err != nil {
+		klog.Warningf("totp: failed to generate auth key: %s", err)
+		api.HandleInternalError(response, r, fmt.Errorf("totp: failed to generate auth key"))
+		return
+	}
+	response.WriteEntity(&TOTPAuthKey{AuthKey: key})
+}
+
+func (h *handler) BindTOTPAuthKey(r *restful.Request, response *restful.Response) {
+	username := r.PathParameter("user")
+
+	authKeyBind := &TOTOAuthKeyBind{}
+	if err := r.ReadEntity(authKeyBind); err != nil {
+		api.HandleBadRequest(response, r, fmt.Errorf("failed to bind totp auth key: %s", err))
+		return
+	}
+
+	if err := h.totp.Bind(r.Request.Context(), username, authKeyBind.AuthKey, authKeyBind.OTP); err != nil {
+		api.HandleBadRequest(response, r, fmt.Errorf("failed to bind totp auth key: %s", err))
+		return
+	}
+
+	response.WriteEntity(servererr.None)
+}
+
+func (h *handler) UnbindTOTPAuthKey(r *restful.Request, response *restful.Response) {
+	username := r.PathParameter("user")
+	otp := r.QueryParameter("otp")
+
+	if err := h.totp.Unbind(r.Request.Context(), username, otp); err != nil {
+		api.HandleBadRequest(response, r, fmt.Errorf("failed to unbind totp auth key: %s", err))
 		return
 	}
 

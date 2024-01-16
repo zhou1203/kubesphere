@@ -13,7 +13,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -23,66 +22,59 @@ import (
 )
 
 const (
-	controllerName               = "secret"
-	serviceAccountUsernameFormat = corev1alpha1.ServiceAccountGroup + ":%s:%s"
+	serviceAccountSecretController = "serviceaccount-secret"
+	serviceAccountUsernameFormat   = corev1alpha1.ServiceAccountGroup + ":%s:%s"
 )
 
-var _ kscontroller.Controller = &Reconciler{}
-var _ reconcile.Reconciler = &Reconciler{}
+var _ kscontroller.Controller = &ServiceAccountSecretReconciler{}
+var _ reconcile.Reconciler = &ServiceAccountSecretReconciler{}
 
-type Reconciler struct {
+type ServiceAccountSecretReconciler struct {
 	client.Client
 	Logger        logr.Logger
 	EventRecorder record.EventRecorder
 	TokenIssuer   token.Issuer
 }
 
-func (r *Reconciler) Name() string {
-	return controllerName
+func (r *ServiceAccountSecretReconciler) Name() string {
+	return serviceAccountSecretController
 }
 
-func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
+func (r *ServiceAccountSecretReconciler) SetupWithManager(mgr *kscontroller.Manager) error {
 	issuer, err := token.NewIssuer(mgr.AuthenticationOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create token issuer: %v", err)
 	}
 	r.TokenIssuer = issuer
 	r.Client = mgr.GetClient()
-	r.EventRecorder = mgr.GetEventRecorderFor(controllerName)
-	r.Logger = ctrl.Log.WithName("controllers").WithName(controllerName)
+	r.EventRecorder = mgr.GetEventRecorderFor(serviceAccountSecretController)
+	r.Logger = ctrl.Log.WithName("controllers").WithName(serviceAccountSecretController)
 	return builder.
 		ControllerManagedBy(mgr).
-		For(
-			&v1.Secret{},
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-			),
-		).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 2,
-		}).
+		For(&v1.Secret{}).
+		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		Complete(r)
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ServiceAccountSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Logger.WithValues(req.NamespacedName, "Secret")
 	secret := &v1.Secret{}
 	if err := r.Get(ctx, req.NamespacedName, secret); err != nil {
-		if errors.IsNotFound(err) {
-			return ctrl.Result{}, client.IgnoreNotFound(err)
-		}
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-		return ctrl.Result{}, err
+	if secret.Type != corev1alpha1.SecretTypeServiceAccountToken {
+		return ctrl.Result{}, nil
 	}
 
 	saName := secret.Annotations[corev1alpha1.ServiceAccountName]
-	if secret.Type == corev1alpha1.SecretTypeServiceAccountToken && secret.Data[corev1alpha1.ServiceAccountToken] == nil &&
+	if secret.Data[corev1alpha1.ServiceAccountToken] == nil &&
 		saName != "" {
 		sa := &corev1alpha1.ServiceAccount{}
 
 		if err := r.Get(ctx, client.ObjectKey{Namespace: req.Namespace, Name: saName}, sa); err != nil {
 			if errors.IsNotFound(err) {
-				return ctrl.Result{}, client.IgnoreNotFound(err)
+				return ctrl.Result{}, nil
 			}
 			logger.Error(err, "get serviceaccount failed")
 			return ctrl.Result{}, err
@@ -106,7 +98,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) issueTokenTo(sa *corev1alpha1.ServiceAccount) (*oauth.Token, error) {
+func (r *ServiceAccountSecretReconciler) issueTokenTo(sa *corev1alpha1.ServiceAccount) (*oauth.Token, error) {
 	// We verify that the token is valid by checking the validity of SA, so we issue a token with no expiration date
 	accessToken, err := r.TokenIssuer.IssueTo(&token.IssueRequest{
 		User: &user.DefaultInfo{

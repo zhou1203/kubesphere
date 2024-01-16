@@ -100,7 +100,7 @@ func init() {
 	// kubesphere service account
 	runtime.Must(controller.Register(&ksserviceaccount.Reconciler{}))
 	runtime.Must(controller.Register(&ksserviceaccount.Webhook{}))
-	runtime.Must(controller.Register(&secret.Reconciler{}))
+	runtime.Must(controller.Register(&secret.ServiceAccountSecretReconciler{}))
 	// additional capabilities
 	runtime.Must(controller.Register(&serviceaccount.Reconciler{}))
 	runtime.Must(controller.Register(&job.Reconciler{}))
@@ -119,6 +119,8 @@ func init() {
 	runtime.Must(controller.Register(&application.Webhook{}))
 	runtime.Must(controller.Register(&application.RepoReconciler{}))
 	runtime.Must(controller.Register(&application.AppCategoryReconciler{}))
+	// totp
+	runtime.Must(controller.Register(&secret.TOTPAuthKeyController{}))
 }
 
 func NewControllerManagerCommand() *cobra.Command {

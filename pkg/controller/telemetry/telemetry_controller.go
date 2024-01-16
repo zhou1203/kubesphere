@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
-
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
@@ -52,17 +52,17 @@ func (r *Reconciler) Name() string {
 	return ControllerName
 }
 
-type Reconciler struct {
-	*telemetry.Options
-	runtimeclient.Client
+func (r *Reconciler) Enabled(clusterRole string) bool {
+	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
 }
 
 func (r *Reconciler) Hidden() bool {
 	return true
 }
 
-func (r *Reconciler) Enabled(clusterRole string) bool {
-	return strings.EqualFold(clusterRole, string(clusterv1alpha1.ClusterRoleHost))
+type Reconciler struct {
+	*telemetry.Options
+	runtimeclient.Client
 }
 
 func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {

@@ -153,16 +153,13 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			userInfo, provider, err := tt.oauthAuthenticator.Authenticate(tt.args.ctx, tt.args.provider, tt.args.req)
+			userInfo, err := tt.oauthAuthenticator.Authenticate(tt.args.ctx, tt.args.provider, tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Authenticate() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(userInfo, tt.userInfo) {
 				t.Errorf("Authenticate() got = %v, want %v", userInfo, tt.userInfo)
-			}
-			if provider != tt.provider {
-				t.Errorf("Authenticate() got = %v, want %v", provider, tt.provider)
 			}
 		})
 	}

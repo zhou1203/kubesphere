@@ -316,7 +316,7 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := tt.passwordAuthenticator
-			got, _, err := p.Authenticate(tt.args.ctx, tt.args.provider, tt.args.username, tt.args.password)
+			got, err := p.Authenticate(tt.args.ctx, tt.args.provider, tt.args.username, tt.args.password)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("passwordAuthenticator.Authenticate() error = %v, wantErr %v", err, tt.wantErr)
 				return
