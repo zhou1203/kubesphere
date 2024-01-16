@@ -51,7 +51,7 @@ var (
 )
 
 type handler struct {
-	resourceGetterV1alpha3 *resourcev1alpha3.ResourceGetter
+	resourceGetterV1alpha3 *resourcev1alpha3.Getter
 	componentsGetter       components.Getter
 	registryHelper         v2.RegistryHelper
 	counter                overview.Counter

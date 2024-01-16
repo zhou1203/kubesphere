@@ -5,13 +5,13 @@ import (
 	"io"
 	"net/http"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1beta1"
 
 	"github.com/emicklei/go-restful/v3"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"sigs.k8s.io/controller-runtime/pkg/client"

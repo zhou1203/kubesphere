@@ -28,10 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -173,7 +172,7 @@ func (am *amOperator) ListWorkspaceRoleBindings(username, roleName string, group
 	roleBindings := &iamv1beta1.WorkspaceRoleBindingList{}
 	queryParam := query.New()
 	if workspace != "" {
-		if err := queryParam.AppendLabelSelector(map[string]string{tenantv1alpha1.WorkspaceLabel: workspace}); err != nil {
+		if err := queryParam.AppendLabelSelector(map[string]string{tenantv1beta1.WorkspaceLabel: workspace}); err != nil {
 			return nil, err
 		}
 	}
@@ -196,7 +195,7 @@ func (am *amOperator) ListWorkspaceRoleBindings(username, roleName string, group
 
 	result := make([]iamv1beta1.WorkspaceRoleBinding, 0)
 	for i, roleBinding := range roleBindings.Items {
-		inSpecifiedWorkspace := workspace == "" || roleBinding.Labels[tenantv1alpha1.WorkspaceLabel] == workspace
+		inSpecifiedWorkspace := workspace == "" || roleBinding.Labels[tenantv1beta1.WorkspaceLabel] == workspace
 		if contains(roleBinding.Subjects, username, groups) && inSpecifiedWorkspace {
 			result = append(result, roleBindings.Items[i])
 		}
@@ -406,7 +405,7 @@ func (am *amOperator) GetWorkspaceRole(workspace string, name string) (*iamv1bet
 	if err := am.resourceManager.Get(context.Background(), metav1.NamespaceAll, name, role); err != nil {
 		return nil, err
 	}
-	if workspace != "" && role.Labels[tenantv1alpha1.WorkspaceLabel] != workspace {
+	if workspace != "" && role.Labels[tenantv1beta1.WorkspaceLabel] != workspace {
 		return nil, errors.NewNotFound(iamv1beta1.Resource(iamv1beta1.ResourcesSingularWorkspaceRole), name)
 	}
 	return role, nil
@@ -436,12 +435,12 @@ func (am *amOperator) GetNamespaceControlledWorkspace(namespace string) (string,
 		}
 		return "", err
 	}
-	return ns.Labels[tenantv1alpha1.WorkspaceLabel], nil
+	return ns.Labels[tenantv1beta1.WorkspaceLabel], nil
 }
 
 func (am *amOperator) ListGroupWorkspaceRoleBindings(workspace string, query *query.Query) (*api.ListResult, error) {
 	roleList := &iamv1beta1.WorkspaceRoleBindingList{}
-	workspaceRequirement, err := labels.NewRequirement(tenantv1alpha1.WorkspaceLabel, selection.Equals, []string{workspace})
+	workspaceRequirement, err := labels.NewRequirement(tenantv1beta1.WorkspaceLabel, selection.Equals, []string{workspace})
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +453,7 @@ func (am *amOperator) ListGroupWorkspaceRoleBindings(workspace string, query *qu
 
 func (am *amOperator) ListGroupRoleBindings(workspace string, query *query.Query) ([]iamv1beta1.RoleBinding, error) {
 	if workspace != "" {
-		if err := query.AppendLabelSelector(map[string]string{tenantv1alpha1.WorkspaceLabel: workspace}); err != nil {
+		if err := query.AppendLabelSelector(map[string]string{tenantv1beta1.WorkspaceLabel: workspace}); err != nil {
 			return nil, err
 		}
 	}
@@ -548,7 +547,7 @@ func (am *amOperator) CreateOrUpdateUserWorkspaceRoleBinding(username string, wo
 			Name: fmt.Sprintf("%s-%s", username, role),
 			Labels: map[string]string{iamv1beta1.UserReferenceLabel: username,
 				iamv1beta1.RoleReferenceLabel: role,
-				tenantv1alpha1.WorkspaceLabel: workspace},
+				tenantv1beta1.WorkspaceLabel:  workspace},
 		},
 		Subjects: []rbacv1.Subject{
 			{

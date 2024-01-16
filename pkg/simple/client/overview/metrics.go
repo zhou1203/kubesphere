@@ -17,8 +17,7 @@ import (
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	"kubesphere.io/api/tenant/v1alpha2"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 )
 
 type Counter interface {
@@ -108,7 +107,7 @@ func (r *metricsCounter) collect(metricName, prefix, namespace, workspace string
 
 	opts := make([]client.ListOption, 0)
 	if workspace != "" {
-		opt := client.MatchingLabels(map[string]string{tenantv1alpha1.WorkspaceLabel: workspace})
+		opt := client.MatchingLabels(map[string]string{tenantv1beta1.WorkspaceLabel: workspace})
 		opts = append(opts, opt)
 	}
 	if namespace != "" {
@@ -155,7 +154,7 @@ func NewDefaultRegisterOptions() []RegisterOption {
 		},
 		{
 			MetricsName: WorkspaceCount,
-			Type:        &v1alpha2.WorkspaceTemplateList{},
+			Type:        &tenantv1beta1.WorkspaceTemplateList{},
 		},
 		{
 			MetricsName: ClusterCount,

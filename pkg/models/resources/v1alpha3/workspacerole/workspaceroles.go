@@ -20,14 +20,13 @@ import (
 	"context"
 	"encoding/json"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
@@ -101,11 +100,10 @@ func (d *workspaceRolesGetter) filter(object runtime.Object, filter query.Filter
 
 	switch filter.Field {
 	case iamv1beta1.ScopeWorkspace:
-		return role.Labels[tenantv1alpha1.WorkspaceLabel] == string(filter.Value)
+		return role.Labels[tenantv1beta1.WorkspaceLabel] == string(filter.Value)
 	default:
 		return v1alpha3.DefaultObjectMetaFilter(role.ObjectMeta, filter)
 	}
-
 }
 
 func (d *workspaceRolesGetter) fetchAggregationRoles(name string) ([]*iamv1beta1.WorkspaceRole, error) {

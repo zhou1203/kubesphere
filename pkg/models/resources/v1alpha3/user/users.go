@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -139,7 +139,7 @@ func (d *usersGetter) listAllUsersInWorkspace(workspace, role string) ([]*iamv1b
 	var users []*iamv1beta1.User
 	workspaceRoleBindingList := &iamv1beta1.WorkspaceRoleBindingList{}
 	if err := d.cache.List(context.Background(), workspaceRoleBindingList,
-		client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspace}); err != nil {
+		client.MatchingLabels{tenantv1beta1.WorkspaceLabel: workspace}); err != nil {
 		klog.Error(err)
 		return nil, err
 	}

@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -119,8 +119,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				}
 			} else if ws, ok := group.Labels[constants.WorkspaceLabelKey]; ok {
 				// If the Group is owned by a Workspace
-				if !k8sutil.IsControlledBy(group.OwnerReferences, tenantv1alpha2.ResourceKindWorkspaceTemplate, ws) {
-					workspace := &tenantv1alpha2.WorkspaceTemplate{}
+				if !k8sutil.IsControlledBy(group.OwnerReferences, tenantv1beta1.ResourceKindWorkspaceTemplate, ws) {
+					workspace := &tenantv1beta1.WorkspaceTemplate{}
 					if err := r.Get(ctx, client.ObjectKey{Name: ws}, workspace); err != nil {
 						if errors.IsNotFound(err) {
 							utilruntime.HandleError(fmt.Errorf("workspace '%s' no longer exists", ws))

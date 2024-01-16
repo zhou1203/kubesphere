@@ -2077,8 +2077,7 @@ kubesphere.io/api/marketplace/v1alpha1
 kubesphere.io/api/quota/v1alpha2
 kubesphere.io/api/storage/v1alpha1
 kubesphere.io/api/telemetry/v1alpha1
-kubesphere.io/api/tenant/v1alpha1
-kubesphere.io/api/tenant/v1alpha2
+kubesphere.io/api/tenant/v1beta1
 # kubesphere.io/client-go v0.0.0 => ./staging/src/kubesphere.io/client-go
 ## explicit; go 1.20
 kubesphere.io/client-go/kubesphere/scheme

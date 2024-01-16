@@ -46,7 +46,7 @@ type handler struct {
 	registryGetter      registries.RegistryGetter
 	kubeconfigOperator  kubeconfig.Interface
 	kubectlOperator     kubectl.Interface
-	resourceGetter      *resourcev1alpha3.ResourceGetter
+	resourceGetter      *resourcev1alpha3.Getter
 }
 
 func (h *handler) GetSystemHealthStatus(_ *restful.Request, response *restful.Response) {

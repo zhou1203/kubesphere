@@ -22,8 +22,6 @@ import (
 	"context"
 	"time"
 
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
-
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -35,8 +33,10 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	tenantv1alpha1 "kubesphere.io/api/tenant/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -44,14 +44,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-
 	quotav1 "kubesphere.io/kubesphere/kube/pkg/quota/v1"
 	evaluatorcore "kubesphere.io/kubesphere/kube/pkg/quota/v1/evaluator/core"
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/generic"
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/install"
 	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 

@@ -32,7 +32,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"kubesphere.io/api/tenant/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -125,10 +125,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) reconcileWorkspaceOwnerReference(ctx context.Context, namespace *corev1.Namespace) error {
-	workspaceName, hasWorkspaceLabel := namespace.Labels[tenantv1alpha1.WorkspaceLabel]
+	workspaceName, hasWorkspaceLabel := namespace.Labels[v1beta1.WorkspaceLabel]
 
 	if !hasWorkspaceLabel {
-		if k8sutil.IsControlledBy(namespace.OwnerReferences, tenantv1alpha1.ResourceKindWorkspace, workspaceName) {
+		if k8sutil.IsControlledBy(namespace.OwnerReferences, v1beta1.ResourceKindWorkspace, workspaceName) {
 			namespace.OwnerReferences = k8sutil.RemoveWorkspaceOwnerReference(namespace.OwnerReferences)
 			return r.Update(ctx, namespace)
 		}
@@ -136,10 +136,10 @@ func (r *Reconciler) reconcileWorkspaceOwnerReference(ctx context.Context, names
 		return nil
 	}
 
-	workspace := &tenantv1alpha1.Workspace{}
+	workspace := &v1beta1.Workspace{}
 	if err := r.Get(ctx, types.NamespacedName{Name: workspaceName}, workspace); err != nil {
 		owner := metav1.GetControllerOf(namespace)
-		if errors.IsNotFound(err) && owner != nil && owner.Kind == tenantv1alpha1.ResourceKindWorkspace {
+		if errors.IsNotFound(err) && owner != nil && owner.Kind == v1beta1.ResourceKindWorkspace {
 			namespace.OwnerReferences = k8sutil.RemoveWorkspaceOwnerReference(namespace.OwnerReferences)
 			return r.Update(ctx, namespace)
 		}

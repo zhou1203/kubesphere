@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"strings"
 
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
-
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -36,8 +34,7 @@ import (
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 	"kubesphere.io/kubesphere/pkg/controller/cluster/predicate"
 	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate/utils"
@@ -85,7 +83,7 @@ func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
-		For(&tenantv1alpha2.WorkspaceTemplate{}).
+		For(&tenantv1beta1.WorkspaceTemplate{}).
 		Watches(
 			&clusterv1alpha1.Cluster{},
 			handler.EnqueueRequestsFromMapFunc(r.mapper),
@@ -99,7 +97,7 @@ func (r *Reconciler) mapper(ctx context.Context, o client.Object) []reconcile.Re
 	if !clusterutils.IsClusterReady(cluster) {
 		return []reconcile.Request{}
 	}
-	workspaceTemplates := &tenantv1alpha2.WorkspaceTemplateList{}
+	workspaceTemplates := &tenantv1beta1.WorkspaceTemplateList{}
 	if err := r.List(ctx, workspaceTemplates); err != nil {
 		r.logger.Error(err, "failed to list workspace templates")
 		return []reconcile.Request{}
@@ -118,7 +116,7 @@ func (r *Reconciler) mapper(ctx context.Context, o client.Object) []reconcile.Re
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.logger.WithValues("workspacetemplate", req.NamespacedName)
-	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
+	workspaceTemplate := &tenantv1beta1.WorkspaceTemplate{}
 	if err := r.Get(ctx, req.NamespacedName, workspaceTemplate); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -164,7 +162,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceTemplate *tenantv1beta1.WorkspaceTemplate) error {
 	clusters, err := r.clusterClient.ListClusters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %s", err)
@@ -187,13 +185,13 @@ func (r *Reconciler) multiClusterSync(ctx context.Context, workspaceTemplate *te
 	return nil
 }
 
-func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv1alpha1.Cluster, workspaceTemplate *tenantv1beta1.WorkspaceTemplate) error {
 	clusterClient, err := r.clusterClient.GetRuntimeClient(cluster.Name)
 	if err != nil {
 		return err
 	}
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
-		target := &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}
+		target := &tenantv1beta1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}
 		op, err := controllerutil.CreateOrUpdate(ctx, clusterClient, target, func() error {
 			for k, v := range workspaceTemplate.Spec.Template.Labels {
 				if target.Labels == nil {
@@ -216,14 +214,14 @@ func (r *Reconciler) syncWorkspaceTemplate(ctx context.Context, cluster clusterv
 		klog.FromContext(ctx).V(4).Info("workspace successfully synced", "operation", op)
 	} else {
 		orphan := metav1.DeletePropagationBackground
-		err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}},
+		err = clusterClient.Delete(ctx, &tenantv1beta1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}},
 			&client.DeleteOptions{PropagationPolicy: &orphan})
 		return client.IgnoreNotFound(err)
 	}
 	return nil
 }
 
-func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspaceTemplate *tenantv1beta1.WorkspaceTemplate) error {
 	logger := klog.FromContext(ctx)
 	var templates iamv1beta1.BuiltinRoleList
 	// scope.iam.kubesphere.io/workspace: ""
@@ -252,7 +250,7 @@ func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspaceTemplate *
 				if target.Labels == nil {
 					target.Labels = make(map[string]string)
 				}
-				target.Labels[tenantv1alpha1.WorkspaceLabel] = workspaceTemplate.Name
+				target.Labels[tenantv1beta1.WorkspaceLabel] = workspaceTemplate.Name
 				target.Annotations = builtinWorkspaceRole.Annotations
 				target.AggregationRoleTemplates = builtinWorkspaceRole.AggregationRoleTemplates
 				target.Rules = builtinWorkspaceRole.Rules
@@ -269,7 +267,7 @@ func (r *Reconciler) initWorkspaceRoles(ctx context.Context, workspaceTemplate *
 	return nil
 }
 
-func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTemplate *tenantv1beta1.WorkspaceTemplate) error {
 	manager := workspaceTemplate.Spec.Template.Spec.Manager
 	if manager == "" {
 		return nil
@@ -278,7 +276,7 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTempla
 	existWorkspaceRoleBinding := &iamv1beta1.WorkspaceRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: workspaceAdminRoleName}}
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, existWorkspaceRoleBinding, func() error {
 		existWorkspaceRoleBinding.Labels = map[string]string{
-			tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name,
+			tenantv1beta1.WorkspaceLabel:  workspaceTemplate.Name,
 			iamv1beta1.UserReferenceLabel: manager,
 			iamv1beta1.RoleReferenceLabel: workspaceAdminRoleName,
 		}
@@ -302,7 +300,7 @@ func (r *Reconciler) initManagerRoleBinding(ctx context.Context, workspaceTempla
 	return nil
 }
 
-func (r *Reconciler) reconcileDelete(ctx context.Context, workspaceTemplate *tenantv1alpha2.WorkspaceTemplate) error {
+func (r *Reconciler) reconcileDelete(ctx context.Context, workspaceTemplate *tenantv1beta1.WorkspaceTemplate) error {
 	clusters, err := r.clusterClient.ListClusters(ctx)
 	if err != nil {
 		return err
@@ -322,9 +320,9 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workspaceTemplate *ten
 
 		if controllerutil.ContainsFinalizer(workspaceTemplate, orphanFinalizer) {
 			orphan := metav1.DeletePropagationOrphan
-			err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}, &client.DeleteOptions{PropagationPolicy: &orphan})
+			err = clusterClient.Delete(ctx, &tenantv1beta1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}, &client.DeleteOptions{PropagationPolicy: &orphan})
 		} else {
-			err = clusterClient.Delete(ctx, &tenantv1alpha1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}, &client.DeleteOptions{})
+			err = clusterClient.Delete(ctx, &tenantv1beta1.Workspace{ObjectMeta: metav1.ObjectMeta{Name: workspaceTemplate.Name}}, &client.DeleteOptions{})
 		}
 
 		if !errors.IsNotFound(err) {

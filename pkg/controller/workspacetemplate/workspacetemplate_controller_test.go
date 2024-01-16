@@ -33,8 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 )
 
 var reconciler *Reconciler
@@ -72,7 +71,7 @@ var _ = Describe("WorkspaceTemplate", func() {
 				Name: "workspace-template",
 			}
 
-			created := &tenantv1alpha2.WorkspaceTemplate{
+			created := &tenantv1beta1.WorkspaceTemplate{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: key.Name,
 				},
@@ -88,15 +87,15 @@ var _ = Describe("WorkspaceTemplate", func() {
 			Expect(err).To(BeNil())
 
 			By("Expecting to create workspace template successfully")
-			Expect(func() *tenantv1alpha2.WorkspaceTemplate {
-				f := &tenantv1alpha2.WorkspaceTemplate{}
+			Expect(func() *tenantv1beta1.WorkspaceTemplate {
+				f := &tenantv1beta1.WorkspaceTemplate{}
 				reconciler.Get(context.Background(), key, f)
 				return f
 			}()).ShouldNot(BeNil())
 
 			By("Expecting to create workspace successfully")
-			Expect(func() *tenantv1alpha1.Workspace {
-				f := &tenantv1alpha1.Workspace{}
+			Expect(func() *tenantv1beta1.Workspace {
+				f := &tenantv1beta1.Workspace{}
 				reconciler.Get(context.Background(), key, f)
 				return f
 			}()).ShouldNot(BeNil())
@@ -105,12 +104,12 @@ var _ = Describe("WorkspaceTemplate", func() {
 			By("Expecting to create workspace role successfully")
 			Eventually(func() bool {
 				f := &iamv1beta1.WorkspaceRoleList{}
-				reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: key.Name})})
+				reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1beta1.WorkspaceLabel: key.Name})})
 				return len(f.Items) == 1
 			}, timeout, interval).Should(BeTrue())
 
 			// Update
-			updated := &tenantv1alpha2.WorkspaceTemplate{}
+			updated := &tenantv1beta1.WorkspaceTemplate{}
 			Expect(reconciler.Get(context.Background(), key, updated)).Should(Succeed())
 			updated.Spec.Template.Spec.Manager = "admin"
 			Expect(reconciler.Update(context.Background(), updated)).Should(Succeed())
@@ -122,14 +121,14 @@ var _ = Describe("WorkspaceTemplate", func() {
 			By("Expecting to create workspace manager role binding successfully")
 			Eventually(func() bool {
 				f := &iamv1beta1.WorkspaceRoleBindingList{}
-				reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1alpha1.WorkspaceLabel: key.Name})})
+				reconciler.List(context.Background(), f, &client.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{tenantv1beta1.WorkspaceLabel: key.Name})})
 				return len(f.Items) == 1
 			}, timeout, interval).Should(BeTrue())
 
 			// Delete
 			By("Expecting to finalize workspace successfully")
 			Eventually(func() error {
-				f := &tenantv1alpha2.WorkspaceTemplate{}
+				f := &tenantv1beta1.WorkspaceTemplate{}
 				reconciler.Get(context.Background(), key, f)
 				now := metav1.NewTime(time.Now())
 				f.DeletionTimestamp = &now

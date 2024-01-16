@@ -32,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/klog/v2"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"kubesphere.io/api/tenant/v1beta1"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -53,7 +53,7 @@ type GroupOperator interface {
 
 type groupOperator struct {
 	client         runtimeclient.Client
-	resourceGetter *resourcesv1alpha3.ResourceGetter
+	resourceGetter *resourcesv1alpha3.Getter
 }
 
 func New(cacheClient runtimeclient.Client) GroupOperator {
@@ -67,7 +67,7 @@ func (t *groupOperator) ListGroups(workspace string, queryParam *query.Query) (*
 
 	if workspace != "" {
 		// filter by workspace
-		queryParam.Filters[query.FieldLabel] = query.Value(fmt.Sprintf("%s=%s", tenantv1alpha1.WorkspaceLabel, workspace))
+		queryParam.Filters[query.FieldLabel] = query.Value(fmt.Sprintf("%s=%s", v1beta1.WorkspaceLabel, workspace))
 	}
 
 	result, err := t.resourceGetter.List("groups", "", queryParam)
@@ -125,7 +125,7 @@ func (t *groupOperator) DescribeGroup(workspace, group string) (*iamv1beta1.Grou
 		return nil, err
 	}
 	ns := obj.(*iamv1beta1.Group)
-	if ns.Labels[tenantv1alpha1.WorkspaceLabel] != workspace {
+	if ns.Labels[v1beta1.WorkspaceLabel] != workspace {
 		err := errors.NewNotFound(corev1.Resource("group"), group)
 		klog.Error(err)
 		return nil, err
@@ -156,7 +156,7 @@ func (t *groupOperator) PatchGroup(workspace string, group *iamv1beta1.Group) (*
 		return nil, err
 	}
 	if group.Labels != nil {
-		group.Labels[tenantv1alpha1.WorkspaceLabel] = workspace
+		group.Labels[v1beta1.WorkspaceLabel] = workspace
 	}
 	data, err := json.Marshal(group)
 	if err != nil {
@@ -170,7 +170,7 @@ func (t *groupOperator) DeleteGroupBinding(workspace, name string) error {
 	if err := t.client.Get(context.Background(), types.NamespacedName{Name: name}, groupBinding); err != nil {
 		return err
 	}
-	if groupBinding.Labels[tenantv1alpha1.WorkspaceLabel] != workspace {
+	if groupBinding.Labels[v1beta1.WorkspaceLabel] != workspace {
 		err := errors.NewNotFound(corev1.Resource("groupbindings"), name)
 		klog.Error(err)
 		return err
@@ -187,7 +187,7 @@ func (t *groupOperator) CreateGroupBinding(workspace, groupName, userName string
 			Labels: map[string]string{
 				iamv1beta1.UserReferenceLabel:  userName,
 				iamv1beta1.GroupReferenceLabel: groupName,
-				tenantv1alpha1.WorkspaceLabel:  workspace,
+				v1beta1.WorkspaceLabel:         workspace,
 			},
 		},
 		Users: []string{userName},
@@ -209,7 +209,7 @@ func (t *groupOperator) ListGroupBindings(workspace string, query *query.Query) 
 		return nil, err
 	}
 	// workspace resources must be filtered by workspace
-	wsSelector := labels.Set{tenantv1alpha1.WorkspaceLabel: workspace}
+	wsSelector := labels.Set{v1beta1.WorkspaceLabel: workspace}
 	query.LabelSelector = labels.Merge(lableSelector, wsSelector).String()
 
 	result, err := t.resourceGetter.List("groupbindings", "", query)
@@ -227,7 +227,7 @@ func labelGroupWithWorkspaceName(namespace *iamv1beta1.Group, workspaceName stri
 		namespace.Labels = make(map[string]string, 0)
 	}
 
-	namespace.Labels[tenantv1alpha1.WorkspaceLabel] = workspaceName // label namespace with workspace name
+	namespace.Labels[v1beta1.WorkspaceLabel] = workspaceName // label namespace with workspace name
 
 	return namespace
 }

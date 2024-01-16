@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha3
+package v1beta1
 
 import (
 	"encoding/json"
@@ -24,17 +24,23 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
-	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
+	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/models/tenant"
 	servererr "kubesphere.io/kubesphere/pkg/server/errors"
+	"kubesphere.io/kubesphere/pkg/simple/client/overview"
 )
 
 type handler struct {
-	tenant tenant.Interface
+	tenant  tenant.Interface
+	auth    authorizer.Authorizer
+	counter overview.Counter
+	client  runtimeclient.Client
 }
 
 func (h *handler) ListWorkspaces(req *restful.Request, resp *restful.Response) {
@@ -72,7 +78,7 @@ func (h *handler) GetWorkspace(request *restful.Request, response *restful.Respo
 }
 
 func (h *handler) CreateWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
-	var workspace tenantv1alpha2.WorkspaceTemplate
+	var workspace tenantv1beta1.WorkspaceTemplate
 
 	err := req.ReadEntity(&workspace)
 
@@ -134,7 +140,7 @@ func (h *handler) DeleteWorkspaceTemplate(request *restful.Request, response *re
 
 func (h *handler) UpdateWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
 	workspaceName := req.PathParameter("workspace")
-	var workspace tenantv1alpha2.WorkspaceTemplate
+	var workspace tenantv1beta1.WorkspaceTemplate
 
 	err := req.ReadEntity(&workspace)
 

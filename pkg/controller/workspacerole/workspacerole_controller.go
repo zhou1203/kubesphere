@@ -19,6 +19,7 @@ package workspacerole
 import (
 	"context"
 	"fmt"
+
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -31,8 +32,7 @@ import (
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -106,8 +106,8 @@ func (r *Reconciler) mapper(ctx context.Context, o client.Object) []reconcile.Re
 	}
 	var result []reconcile.Request
 	for _, workspaceRole := range workspaceRoles.Items {
-		workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
-		workspaceName := workspaceRole.Labels[tenantv1alpha1.WorkspaceLabel]
+		workspaceTemplate := &tenantv1beta1.WorkspaceTemplate{}
+		workspaceName := workspaceRole.Labels[tenantv1beta1.WorkspaceLabel]
 		if err := r.Get(ctx, types.NamespacedName{Name: workspaceName}, workspaceTemplate); err != nil {
 			klog.Warningf("failed to get workspace template %s: %s", workspaceName, err)
 			continue
@@ -206,7 +206,7 @@ func (r *Reconciler) bindWorkspace(ctx context.Context, logger logr.Logger, work
 	if workspaceName == "" {
 		return nil
 	}
-	var workspace tenantv1alpha2.WorkspaceTemplate
+	var workspace tenantv1beta1.WorkspaceTemplate
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := r.Get(ctx, types.NamespacedName{Name: workspaceName}, &workspace); err != nil {
 			return client.IgnoreNotFound(err)
@@ -257,8 +257,8 @@ func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alp
 	if err != nil {
 		return fmt.Errorf("failed to get cluster client: %s", err)
 	}
-	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
-	if err := r.Get(ctx, types.NamespacedName{Name: workspaceRole.Labels[tenantv1alpha1.WorkspaceLabel]}, workspaceTemplate); err != nil {
+	workspaceTemplate := &tenantv1beta1.WorkspaceTemplate{}
+	if err := r.Get(ctx, types.NamespacedName{Name: workspaceRole.Labels[tenantv1beta1.WorkspaceLabel]}, workspaceTemplate); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 	if utils.WorkspaceTemplateMatchTargetCluster(workspaceTemplate, &cluster) {
@@ -275,7 +275,7 @@ func (r *Reconciler) syncWorkspaceRole(ctx context.Context, cluster clusterv1alp
 		}
 		klog.FromContext(ctx).V(4).Info("workspace role successfully synced", "cluster", cluster.Name, "operation", op, "name", workspaceRole.Name)
 	} else {
-		return client.IgnoreNotFound(clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1alpha1.WorkspaceLabel: workspaceTemplate.Name}))
+		return client.IgnoreNotFound(clusterClient.DeleteAllOf(ctx, &iamv1beta1.WorkspaceRole{}, client.MatchingLabels{tenantv1beta1.WorkspaceLabel: workspaceTemplate.Name}))
 	}
 	return nil
 }

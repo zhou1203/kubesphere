@@ -20,6 +20,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
+	"kubesphere.io/api/tenant/v1beta1"
+
 	"net/http"
 	rt "runtime"
 	"strconv"
@@ -35,7 +38,6 @@ import (
 	"k8s.io/klog/v2"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -71,8 +73,7 @@ import (
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha3"
 	"kubesphere.io/kubesphere/pkg/kapis/static"
-	tenantv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha2"
-	tenantv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha3"
+	tenantv1beta1 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1beta1"
 	terminalv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/terminal/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/version"
 	"kubesphere.io/kubesphere/pkg/models/auth"
@@ -177,8 +178,7 @@ func (s *APIServer) installKubeSphereAPIs() {
 		resourcev1alpha3.NewHandler(s.RuntimeCache, counter),
 		operationsv1alpha2.NewHandler(s.RuntimeClient),
 		resourcesv1alpha2.NewHandler(s.RuntimeClient, s.K8sClient.Master(), s.TerminalOptions),
-		tenantv1alpha2.NewHandler(s.RuntimeClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer, counter),
-		tenantv1alpha3.NewHandler(s.RuntimeClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer),
+		tenantv1beta1.NewHandler(s.RuntimeClient, s.ClusterClient, amOperator, imOperator, rbacAuthorizer, counter),
 		terminalv1alpha2.NewHandler(s.K8sClient, rbacAuthorizer, s.K8sClient.Config(), s.TerminalOptions),
 		clusterkapisv1alpha1.NewHandler(s.RuntimeClient),
 		iamapiv1beta1.NewHandler(imOperator, amOperator, auth.NewTOTPOperator(s.RuntimeClient, s.AuthenticationOptions)),
@@ -243,9 +243,9 @@ func (s *APIServer) buildHandlerChain(stopCh <-chan struct{}) error {
 			iamv1beta1.Resource(iamv1beta1.ResourcesPluralUser),
 			iamv1beta1.Resource(iamv1beta1.ResourcesPluralGlobalRole),
 			iamv1beta1.Resource(iamv1beta1.ResourcesPluralGlobalRoleBinding),
-			tenantv1alpha1.Resource(tenantv1alpha1.ResourcePluralWorkspace),
-			tenantv1alpha2.Resource(tenantv1alpha1.ResourcePluralWorkspace),
-			tenantv1alpha2.Resource(clusterv1alpha1.ResourcesPluralCluster),
+			v1beta1.Resource(v1beta1.ResourcePluralWorkspace),
+			tenantv1beta1.Resource(v1beta1.ResourcePluralWorkspace),
+			tenantv1beta1.Resource(clusterv1alpha1.ResourcesPluralCluster),
 			clusterv1alpha1.Resource(clusterv1alpha1.ResourcesPluralCluster),
 			resourcev1alpha3.Resource(clusterv1alpha1.ResourcesPluralCluster),
 		},

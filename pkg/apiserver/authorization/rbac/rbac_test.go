@@ -26,23 +26,20 @@ import (
 	"sort"
 	"testing"
 
-	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	"kubesphere.io/kubesphere/pkg/scheme"
-
-	"kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
-
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authentication/user"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
+	runtimefakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
+	"kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
+	"kubesphere.io/kubesphere/pkg/scheme"
 )
 
 // StaticRoles is a rule resolver that resolves from lists of role objects.
@@ -163,7 +160,7 @@ func TestRBACAuthorizer(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "system-workspace-workspace-manager",
-					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: "system-workspace"},
+					Labels: map[string]string{tenantv1beta1.WorkspaceLabel: "system-workspace"},
 				},
 				Rules: []rbacv1.PolicyRule{ruleAdmin},
 			},
@@ -191,7 +188,7 @@ func TestRBACAuthorizer(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "system-workspace-workspace-manager-tester",
-					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: "system-workspace"},
+					Labels: map[string]string{tenantv1beta1.WorkspaceLabel: "system-workspace"},
 				},
 				RoleRef: rbacv1.RoleRef{
 					APIGroup: iamv1beta1.SchemeGroupVersion.Group,
@@ -378,7 +375,7 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "system-workspace-admin",
-					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: "system-workspace"},
+					Labels: map[string]string{tenantv1beta1.WorkspaceLabel: "system-workspace"},
 				},
 				Rules: []rbacv1.PolicyRule{
 					{
@@ -391,7 +388,7 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "system-workspace-viewer",
-					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: "system-workspace"},
+					Labels: map[string]string{tenantv1beta1.WorkspaceLabel: "system-workspace"},
 				},
 				Rules: []rbacv1.PolicyRule{
 					{
@@ -459,7 +456,7 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "system-workspace-admin",
-					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: "system-workspace"},
+					Labels: map[string]string{tenantv1beta1.WorkspaceLabel: "system-workspace"},
 				},
 				RoleRef: rbacv1.RoleRef{
 					APIGroup: iamv1beta1.SchemeGroupVersion.Group,
@@ -476,7 +473,7 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "system-workspace-viewer",
-					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: "system-workspace"},
+					Labels: map[string]string{tenantv1beta1.WorkspaceLabel: "system-workspace"},
 				},
 				RoleRef: rbacv1.RoleRef{
 					APIGroup: iamv1beta1.SchemeGroupVersion.Group,
@@ -552,13 +549,13 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "kubesphere-system",
-					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: "system-workspace"},
+					Labels: map[string]string{tenantv1beta1.WorkspaceLabel: "system-workspace"},
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "kube-system",
-					Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: "system-workspace"},
+					Labels: map[string]string{tenantv1beta1.WorkspaceLabel: "system-workspace"},
 				},
 			},
 		},

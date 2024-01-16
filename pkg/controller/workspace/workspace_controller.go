@@ -19,19 +19,18 @@ package workspace
 import (
 	"context"
 
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
-
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
 )
 
 const (
@@ -60,7 +59,7 @@ func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
-		For(&tenantv1alpha1.Workspace{}).
+		For(&tenantv1beta1.Workspace{}).
 		Complete(r)
 }
 
@@ -74,7 +73,7 @@ func (r *Reconciler) SetupWithManager(mgr *kscontroller.Manager) error {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.logger.WithValues("workspace", req.NamespacedName)
 	ctx = klog.NewContext(ctx, logger)
-	workspace := &tenantv1alpha1.Workspace{}
+	workspace := &tenantv1beta1.Workspace{}
 	if err := r.Get(ctx, req.NamespacedName, workspace); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}

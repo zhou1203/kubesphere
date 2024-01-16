@@ -14,17 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v1beta1
 
 import (
 	"net/http"
 
+	corev1 "k8s.io/api/core/v1"
+	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
+	"kubesphere.io/api/tenant/v1beta1"
+
+	"kubesphere.io/kubesphere/pkg/simple/client/overview"
+
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
-	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
@@ -36,7 +40,6 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
 	"kubesphere.io/kubesphere/pkg/models/tenant"
 	"kubesphere.io/kubesphere/pkg/server/errors"
-	"kubesphere.io/kubesphere/pkg/simple/client/overview"
 	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 )
 
@@ -44,9 +47,7 @@ const (
 	GroupName = "tenant.kubesphere.io"
 )
 
-var mimePatch = []string{restful.MIME_JSON, runtime.MimeMergePatchJson, runtime.MimeJsonPatchJson}
-
-var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
+var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1beta1"}
 
 func Resource(resource string) schema.GroupResource {
 	return GroupVersion.WithResource(resource).GroupResource()
@@ -55,10 +56,10 @@ func Resource(resource string) schema.GroupResource {
 func NewHandler(client runtimeclient.Client, clusterClient clusterclient.Interface, am am.AccessManagementInterface,
 	im im.IdentityManagementInterface, authorizer authorizer.Authorizer, counter overview.Counter) rest.Handler {
 	return &handler{
-		tenant:  tenant.New(client, clusterClient, am, im, authorizer),
-		client:  client,
 		auth:    authorizer,
+		client:  client,
 		counter: counter,
+		tenant:  tenant.New(client, clusterClient, am, im, authorizer),
 	}
 }
 
@@ -67,7 +68,71 @@ func NewFakeHandler() rest.Handler {
 }
 
 func (h *handler) AddToContainer(c *restful.Container) error {
+	mimePatch := []string{restful.MIME_JSON, runtime.MimeMergePatchJson, runtime.MimeJsonPatchJson}
 	ws := runtime.NewWebService(GroupVersion)
+
+	ws.Route(ws.POST("/workspacetemplates").
+		To(h.CreateWorkspaceTemplate).
+		Doc("Create workspace template").
+		Operation("create-workspace-template").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Reads(tenantv1beta1.WorkspaceTemplate{}).
+		Returns(http.StatusOK, api.StatusOK, tenantv1beta1.WorkspaceTemplate{}))
+
+	ws.Route(ws.DELETE("/workspacetemplates/{workspace}").
+		To(h.DeleteWorkspaceTemplate).
+		Doc("Delete workspace template").
+		Operation("delete-workspace-template").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Param(ws.PathParameter("workspace", "The specified workspace.")).
+		Returns(http.StatusOK, api.StatusOK, errors.None))
+
+	ws.Route(ws.PUT("/workspacetemplates/{workspace}").
+		To(h.UpdateWorkspaceTemplate).
+		Doc("Update workspace template").
+		Operation("update-workspace-template").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Param(ws.PathParameter("workspace", "The specified workspace.")).
+		Reads(tenantv1beta1.WorkspaceTemplate{}).
+		Returns(http.StatusOK, api.StatusOK, tenantv1beta1.WorkspaceTemplate{}))
+
+	ws.Route(ws.PATCH("/workspacetemplates/{workspace}").
+		To(h.PatchWorkspaceTemplate).
+		Consumes(mimePatch...).
+		Doc("Patch workspace template").
+		Operation("patch-workspace-template").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Param(ws.PathParameter("workspace", "The specified workspace.")).
+		Reads(tenantv1beta1.WorkspaceTemplate{}).
+		Returns(http.StatusOK, api.StatusOK, tenantv1beta1.WorkspaceTemplate{}))
+
+	ws.Route(ws.GET("/workspacetemplates").
+		To(h.ListWorkspaceTemplates).
+		Doc("List all workspace templates").
+		Operation("list-workspace-templates").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}))
+
+	ws.Route(ws.GET("/workspacetemplates/{workspace}").
+		To(h.DescribeWorkspaceTemplate).
+		Doc("Get workspace template").
+		Operation("get-workspace-template").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Param(ws.PathParameter("workspace", "The specified workspace.")).
+		Returns(http.StatusOK, api.StatusOK, tenantv1beta1.WorkspaceTemplate{}))
+
+	ws.Route(ws.GET("/workspaces").
+		To(h.ListWorkspaces).
+		Doc("List all workspaces").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Returns(http.StatusOK, api.StatusOK, models.PageableResponse{}))
+
+	ws.Route(ws.GET("/workspaces/{workspace}").
+		To(h.GetWorkspace).
+		Doc("Get workspace").
+		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
+		Param(ws.PathParameter("workspace", "The specified workspace.")).
+		Returns(http.StatusOK, api.StatusOK, v1beta1.Workspace{}))
 
 	ws.Route(ws.GET("/clusters").
 		To(h.ListClusters).
@@ -81,8 +146,8 @@ func (h *handler) AddToContainer(c *restful.Container) error {
 		Doc("Create workspace").
 		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
 		Operation("create-workspace").
-		Reads(tenantv1alpha2.WorkspaceTemplate{}).
-		Returns(http.StatusOK, api.StatusOK, tenantv1alpha2.WorkspaceTemplate{}))
+		Reads(tenantv1beta1.WorkspaceTemplate{}).
+		Returns(http.StatusOK, api.StatusOK, tenantv1beta1.WorkspaceTemplate{}))
 
 	ws.Route(ws.DELETE("/workspaces/{workspace}").
 		To(h.DeleteWorkspaceTemplate).
@@ -98,18 +163,18 @@ func (h *handler) AddToContainer(c *restful.Container) error {
 		Operation("update-workspace").
 		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
 		Param(ws.PathParameter("workspace", "The specified workspace.")).
-		Reads(tenantv1alpha2.WorkspaceTemplate{}).
-		Returns(http.StatusOK, api.StatusOK, tenantv1alpha2.WorkspaceTemplate{}))
+		Reads(tenantv1beta1.WorkspaceTemplate{}).
+		Returns(http.StatusOK, api.StatusOK, tenantv1beta1.WorkspaceTemplate{}))
 
 	ws.Route(ws.PATCH("/workspaces/{workspace}").
 		To(h.PatchWorkspaceTemplate).
 		Consumes(mimePatch...).
-		Reads(tenantv1alpha2.WorkspaceTemplate{}).
+		Reads(tenantv1beta1.WorkspaceTemplate{}).
 		Doc("Update workspace").
 		Operation("patch-workspace").
 		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
 		Param(ws.PathParameter("workspace", "The specified workspace.")).
-		Returns(http.StatusOK, api.StatusOK, tenantv1alpha2.WorkspaceTemplate{}))
+		Returns(http.StatusOK, api.StatusOK, tenantv1beta1.WorkspaceTemplate{}))
 
 	ws.Route(ws.GET("/workspaces").
 		To(h.ListWorkspaceTemplates).
@@ -124,7 +189,7 @@ func (h *handler) AddToContainer(c *restful.Container) error {
 		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagUserRelatedResources}).
 		Operation("get-workspace").
 		Param(ws.PathParameter("workspace", "The specified workspace.")).
-		Returns(http.StatusOK, api.StatusOK, tenantv1alpha2.WorkspaceTemplate{}))
+		Returns(http.StatusOK, api.StatusOK, tenantv1beta1.WorkspaceTemplate{}))
 
 	ws.Route(ws.GET("/workspaces/{workspace}/clusters").
 		To(h.ListWorkspaceClusters).

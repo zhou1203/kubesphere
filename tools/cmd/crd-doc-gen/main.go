@@ -23,20 +23,17 @@ import (
 	"path/filepath"
 
 	"k8s.io/apimachinery/pkg/api/meta"
-	urlruntime "k8s.io/apimachinery/pkg/util/runtime"
-
-	kubespec "k8s.io/kube-openapi/pkg/validation/spec"
-	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-
-	"kubesphere.io/kubesphere/pkg/version"
-	"kubesphere.io/kubesphere/tools/lib"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	urlruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/kube-openapi/pkg/common"
+	kubespec "k8s.io/kube-openapi/pkg/validation/spec"
+	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"kubesphere.io/kubesphere/pkg/version"
+	"kubesphere.io/kubesphere/tools/lib"
 )
 
 var output string
@@ -57,9 +54,9 @@ func main() {
 
 	mapper := meta.NewDefaultRESTMapper(nil)
 
-	mapper.AddSpecific(tenantv1alpha1.SchemeGroupVersion.WithKind(tenantv1alpha1.ResourceKindWorkspace),
-		tenantv1alpha1.SchemeGroupVersion.WithResource(tenantv1alpha1.ResourcePluralWorkspace),
-		tenantv1alpha1.SchemeGroupVersion.WithResource(tenantv1alpha1.ResourceSingularWorkspace), meta.RESTScopeRoot)
+	mapper.AddSpecific(tenantv1beta1.SchemeGroupVersion.WithKind(tenantv1beta1.ResourceKindWorkspace),
+		tenantv1beta1.SchemeGroupVersion.WithResource(tenantv1beta1.ResourcePluralWorkspace),
+		tenantv1beta1.SchemeGroupVersion.WithResource(tenantv1beta1.ResourceSingularWorkspace), meta.RESTScopeRoot)
 
 	mapper.AddSpecific(clusterv1alpha1.SchemeGroupVersion.WithKind(clusterv1alpha1.ResourceKindCluster),
 		clusterv1alpha1.SchemeGroupVersion.WithResource(clusterv1alpha1.ResourcesPluralCluster),
@@ -86,14 +83,14 @@ func main() {
 			},
 		},
 		OpenAPIDefinitions: []common.GetOpenAPIDefinitions{
-			tenantv1alpha1.GetOpenAPIDefinitions,
+			tenantv1beta1.GetOpenAPIDefinitions,
 			clusterv1alpha1.GetOpenAPIDefinitions,
 		},
 		Resources: []schema.GroupVersionResource{
 			//TODO（runzexia） At present, the document generation requires the openapi structure of the go language,
 			// but there is no +k8s:openapi-gen=true in the repository of https://github.com/knative/pkg,
 			// and the api document cannot be generated temporarily.
-			tenantv1alpha1.SchemeGroupVersion.WithResource(tenantv1alpha1.ResourcePluralWorkspace),
+			tenantv1beta1.SchemeGroupVersion.WithResource(tenantv1beta1.ResourcePluralWorkspace),
 			clusterv1alpha1.SchemeGroupVersion.WithResource(clusterv1alpha1.ResourcesPluralCluster),
 		},
 		Mapper: mapper,

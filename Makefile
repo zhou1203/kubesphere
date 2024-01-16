@@ -5,7 +5,7 @@
 
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:allowDangerousTypes=true"
-MANIFESTS="cluster/v1alpha1 iam/... quota/v1alpha2 storage/v1alpha1 tenant/... extensions/v1alpha1 core/v1alpha1 marketplace/v1alpha1 gateway/v1alpha2 telemetry/v1alpha1 application/v2"
+MANIFESTS="cluster/v1alpha1 iam/... quota/v1alpha2 storage/v1alpha1 tenant/v1beta1 extensions/v1alpha1 core/v1alpha1 marketplace/v1alpha1 gateway/v1alpha2 telemetry/v1alpha1 application/v2"
 
 # App Version
 APP_VERSION = v3.2.0

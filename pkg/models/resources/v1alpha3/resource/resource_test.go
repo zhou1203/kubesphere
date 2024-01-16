@@ -100,7 +100,7 @@ var (
 	namespaces = []runtime.Object{foo1, foo2, bar1}
 )
 
-func prepare() *ResourceGetter {
+func prepare() *Getter {
 	client := runtimefakeclient.NewClientBuilder().
 		WithScheme(scheme.Scheme).
 		WithRuntimeObjects(namespaces...).Build()

@@ -24,6 +24,8 @@ import (
 	"os"
 	"os/exec"
 
+	tenantv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1beta1"
+
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/go-openapi/loads"
 	"github.com/go-openapi/spec"
@@ -47,8 +49,7 @@ import (
 	resourcesv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha2"
 	resourcesv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/resources/v1alpha3"
 	"kubesphere.io/kubesphere/pkg/kapis/static"
-	tenantv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha2"
-	tenantv1alpha3 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1alpha3"
+	tenantv1beta1 "kubesphere.io/kubesphere/pkg/kapis/tenant/v1beta1"
 	terminalv1alpha2 "kubesphere.io/kubesphere/pkg/kapis/terminal/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/kapis/version"
 )
@@ -112,7 +113,7 @@ func generateSwaggerJson() []byte {
 		terminalv1alpha2.NewFakeHandler(),
 		resourcesv1alpha2.NewFakeHandler(),
 		resourcesv1alpha3.NewFakeHandler(),
-		tenantv1alpha2.NewFakeHandler(),
+		tenantv1beta1.NewFakeHandler(),
 		tenantv1alpha3.NewFakeHandler(),
 		appv2.NewFakeHandler(),
 		static.NewFakeHandler(),

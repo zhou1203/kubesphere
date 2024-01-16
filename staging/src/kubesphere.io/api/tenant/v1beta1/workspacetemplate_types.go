@@ -14,12 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
 )
 
 const (
@@ -29,9 +27,8 @@ const (
 )
 
 type WorkspaceTemplateSpec struct {
-	Template  Template          `json:"template"`
-	Placement GenericPlacement  `json:"placement"`
-	Overrides []GenericOverride `json:"overrides,omitempty"`
+	Template  Template         `json:"template"`
+	Placement GenericPlacement `json:"placement"`
 }
 
 type ObjectMeta struct {
@@ -43,7 +40,7 @@ type ObjectMeta struct {
 
 type Template struct {
 	ObjectMeta `json:"metadata,omitempty"`
-	Spec       tenantv1alpha1.WorkspaceSpec `json:"spec,omitempty"`
+	Spec       WorkspaceSpec `json:"spec,omitempty"`
 }
 
 type GenericClusterReference struct {
@@ -53,18 +50,6 @@ type GenericClusterReference struct {
 type GenericPlacement struct {
 	Clusters        []GenericClusterReference `json:"clusters,omitempty"`
 	ClusterSelector *metav1.LabelSelector     `json:"clusterSelector,omitempty"`
-}
-
-type ClusterOverride struct {
-	Op   string `json:"op,omitempty"`
-	Path string `json:"path"`
-	// +kubebuilder:pruning:PreserveUnknownFields
-	Value runtime.RawExtension `json:"value,omitempty"`
-}
-
-type GenericOverride struct {
-	ClusterName      string            `json:"clusterName"`
-	ClusterOverrides []ClusterOverride `json:"clusterOverrides,omitempty"`
 }
 
 // +kubebuilder:object:root=true

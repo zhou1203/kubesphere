@@ -36,8 +36,7 @@ import (
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
@@ -56,13 +55,13 @@ const orphanFinalizer = "orphan.finalizers.kubesphere.io"
 
 type Interface interface {
 	ListWorkspaces(user user.Info, queryParam *query.Query) (*api.ListResult, error)
-	GetWorkspace(workspace string) (*tenantv1alpha1.Workspace, error)
+	GetWorkspace(workspace string) (*tenantv1beta1.Workspace, error)
 	ListWorkspaceTemplates(user user.Info, query *query.Query) (*api.ListResult, error)
-	CreateWorkspaceTemplate(user user.Info, workspace *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha2.WorkspaceTemplate, error)
+	CreateWorkspaceTemplate(user user.Info, workspace *tenantv1beta1.WorkspaceTemplate) (*tenantv1beta1.WorkspaceTemplate, error)
 	DeleteWorkspaceTemplate(workspace string, opts metav1.DeleteOptions) error
-	UpdateWorkspaceTemplate(user user.Info, workspace *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha2.WorkspaceTemplate, error)
-	PatchWorkspaceTemplate(user user.Info, workspace string, data json.RawMessage) (*tenantv1alpha2.WorkspaceTemplate, error)
-	DescribeWorkspaceTemplate(workspace string) (*tenantv1alpha2.WorkspaceTemplate, error)
+	UpdateWorkspaceTemplate(user user.Info, workspace *tenantv1beta1.WorkspaceTemplate) (*tenantv1beta1.WorkspaceTemplate, error)
+	PatchWorkspaceTemplate(user user.Info, workspace string, data json.RawMessage) (*tenantv1beta1.WorkspaceTemplate, error)
+	DescribeWorkspaceTemplate(workspace string) (*tenantv1beta1.WorkspaceTemplate, error)
 	ListNamespaces(user user.Info, workspace string, query *query.Query) (*api.ListResult, error)
 	CreateNamespace(workspace string, namespace *corev1.Namespace) (*corev1.Namespace, error)
 	ListWorkspaceClusters(workspace string) (*api.ListResult, error)
@@ -81,7 +80,7 @@ type tenantOperator struct {
 	am             am.AccessManagementInterface
 	im             im.IdentityManagementInterface
 	authorizer     authorizer.Authorizer
-	resourceGetter *resourcesv1alpha3.ResourceGetter
+	resourceGetter *resourcesv1alpha3.Getter
 	clusterClient  clusterclient.Interface
 	client         runtimeclient.Client
 }
@@ -116,7 +115,7 @@ func (t *tenantOperator) ListWorkspaces(user user.Info, queryParam *query.Query)
 
 	// allowed to list all workspaces
 	if decision == authorizer.DecisionAllow {
-		result, err := t.resourceGetter.List(tenantv1alpha1.ResourcePluralWorkspace, "", queryParam)
+		result, err := t.resourceGetter.List(tenantv1beta1.ResourcePluralWorkspace, "", queryParam)
 		if err != nil {
 			klog.Error(err)
 			return nil, err
@@ -133,8 +132,8 @@ func (t *tenantOperator) ListWorkspaces(user user.Info, queryParam *query.Query)
 
 	workspaces := make([]runtime.Object, 0)
 	for _, roleBinding := range workspaceRoleBindings {
-		workspaceName := roleBinding.Labels[tenantv1alpha1.WorkspaceLabel]
-		obj, err := t.resourceGetter.Get(tenantv1alpha1.ResourcePluralWorkspace, "", workspaceName)
+		workspaceName := roleBinding.Labels[tenantv1beta1.WorkspaceLabel]
+		obj, err := t.resourceGetter.Get(tenantv1beta1.ResourcePluralWorkspace, "", workspaceName)
 		if errors.IsNotFound(err) {
 			klog.Warningf("workspace role binding: %+v found but workspace not exist", roleBinding.Name)
 			continue
@@ -143,7 +142,7 @@ func (t *tenantOperator) ListWorkspaces(user user.Info, queryParam *query.Query)
 			klog.Error(err)
 			return nil, err
 		}
-		workspace := obj.(*tenantv1alpha1.Workspace)
+		workspace := obj.(*tenantv1beta1.Workspace)
 		// label matching selector, remove duplicate entity
 		if queryParam.Selector().Matches(labels.Set(workspace.Labels)) &&
 			!contains(workspaces, workspace) {
@@ -153,20 +152,20 @@ func (t *tenantOperator) ListWorkspaces(user user.Info, queryParam *query.Query)
 
 	// use default pagination search logic
 	result := resources.DefaultList(workspaces, queryParam, func(left runtime.Object, right runtime.Object, field query.Field) bool {
-		return resources.DefaultObjectMetaCompare(left.(*tenantv1alpha1.Workspace).ObjectMeta, right.(*tenantv1alpha1.Workspace).ObjectMeta, field)
+		return resources.DefaultObjectMetaCompare(left.(*tenantv1beta1.Workspace).ObjectMeta, right.(*tenantv1beta1.Workspace).ObjectMeta, field)
 	}, func(workspace runtime.Object, filter query.Filter) bool {
-		return resources.DefaultObjectMetaFilter(workspace.(*tenantv1alpha1.Workspace).ObjectMeta, filter)
+		return resources.DefaultObjectMetaFilter(workspace.(*tenantv1beta1.Workspace).ObjectMeta, filter)
 	})
 
 	return result, nil
 }
 
-func (t *tenantOperator) GetWorkspace(workspace string) (*tenantv1alpha1.Workspace, error) {
-	obj, err := t.resourceGetter.Get(tenantv1alpha1.ResourcePluralWorkspace, "", workspace)
+func (t *tenantOperator) GetWorkspace(workspace string) (*tenantv1beta1.Workspace, error) {
+	obj, err := t.resourceGetter.Get(tenantv1beta1.ResourcePluralWorkspace, "", workspace)
 	if err != nil {
 		return nil, err
 	}
-	return obj.(*tenantv1alpha1.Workspace), nil
+	return obj.(*tenantv1beta1.Workspace), nil
 }
 
 func (t *tenantOperator) ListWorkspaceTemplates(user user.Info, queryParam *query.Query) (*api.ListResult, error) {
@@ -188,7 +187,7 @@ func (t *tenantOperator) ListWorkspaceTemplates(user user.Info, queryParam *quer
 
 	// allowed to list all workspaces
 	if decision == authorizer.DecisionAllow {
-		result, err := t.resourceGetter.List(tenantv1alpha2.ResourcePluralWorkspaceTemplate, "", queryParam)
+		result, err := t.resourceGetter.List(tenantv1beta1.ResourcePluralWorkspaceTemplate, "", queryParam)
 		if err != nil {
 			klog.Error(err)
 			return nil, err
@@ -205,8 +204,8 @@ func (t *tenantOperator) ListWorkspaceTemplates(user user.Info, queryParam *quer
 
 	workspaces := make([]runtime.Object, 0)
 	for _, roleBinding := range workspaceRoleBindings {
-		workspaceName := roleBinding.Labels[tenantv1alpha1.WorkspaceLabel]
-		obj, err := t.resourceGetter.Get(tenantv1alpha2.ResourcePluralWorkspaceTemplate, "", workspaceName)
+		workspaceName := roleBinding.Labels[tenantv1beta1.WorkspaceLabel]
+		obj, err := t.resourceGetter.Get(tenantv1beta1.ResourcePluralWorkspaceTemplate, "", workspaceName)
 		if errors.IsNotFound(err) {
 			klog.Warningf("workspace role binding: %+v found but workspace not exist", roleBinding.Name)
 			continue
@@ -215,7 +214,7 @@ func (t *tenantOperator) ListWorkspaceTemplates(user user.Info, queryParam *quer
 			klog.Error(err)
 			return nil, err
 		}
-		workspace := obj.(*tenantv1alpha2.WorkspaceTemplate)
+		workspace := obj.(*tenantv1beta1.WorkspaceTemplate)
 		// label matching selector, remove duplicate entity
 		if queryParam.Selector().Matches(labels.Set(workspace.Labels)) &&
 			!contains(workspaces, workspace) {
@@ -225,9 +224,9 @@ func (t *tenantOperator) ListWorkspaceTemplates(user user.Info, queryParam *quer
 
 	// use default pagination search logic
 	result := resources.DefaultList(workspaces, queryParam, func(left runtime.Object, right runtime.Object, field query.Field) bool {
-		return resources.DefaultObjectMetaCompare(left.(*tenantv1alpha2.WorkspaceTemplate).ObjectMeta, right.(*tenantv1alpha2.WorkspaceTemplate).ObjectMeta, field)
+		return resources.DefaultObjectMetaCompare(left.(*tenantv1beta1.WorkspaceTemplate).ObjectMeta, right.(*tenantv1beta1.WorkspaceTemplate).ObjectMeta, field)
 	}, func(workspace runtime.Object, filter query.Filter) bool {
-		return resources.DefaultObjectMetaFilter(workspace.(*tenantv1alpha2.WorkspaceTemplate).ObjectMeta, filter)
+		return resources.DefaultObjectMetaFilter(workspace.(*tenantv1beta1.WorkspaceTemplate).ObjectMeta, filter)
 	})
 
 	return result, nil
@@ -238,7 +237,7 @@ func (t *tenantOperator) ListNamespaces(user user.Info, workspace string, queryP
 	if workspace != "" {
 		nsScope = request.WorkspaceScope
 		// filter by workspace
-		queryParam.Filters[query.FieldLabel] = query.Value(fmt.Sprintf("%s=%s", tenantv1alpha1.WorkspaceLabel, workspace))
+		queryParam.Filters[query.FieldLabel] = query.Value(fmt.Sprintf("%s=%s", tenantv1beta1.WorkspaceLabel, workspace))
 	}
 
 	listNS := authorizer.AttributesRecord{
@@ -313,7 +312,7 @@ func labelNamespaceWithWorkspaceName(namespace *corev1.Namespace, workspaceName 
 		namespace.Labels = make(map[string]string, 0)
 	}
 
-	namespace.Labels[tenantv1alpha1.WorkspaceLabel] = workspaceName // label namespace with workspace name
+	namespace.Labels[tenantv1beta1.WorkspaceLabel] = workspaceName // label namespace with workspace name
 
 	return namespace
 }
@@ -324,7 +323,7 @@ func (t *tenantOperator) DescribeNamespace(workspace, namespace string) (*corev1
 		return nil, err
 	}
 	ns := obj.(*corev1.Namespace)
-	if ns.Labels[tenantv1alpha1.WorkspaceLabel] != workspace {
+	if ns.Labels[tenantv1beta1.WorkspaceLabel] != workspace {
 		return nil, errors.NewNotFound(corev1.Resource("namespace"), namespace)
 	}
 	return ns, nil
@@ -352,7 +351,7 @@ func (t *tenantOperator) PatchNamespace(workspace string, namespace *corev1.Name
 		return nil, err
 	}
 	if namespace.Labels != nil {
-		namespace.Labels[tenantv1alpha1.WorkspaceLabel] = workspace
+		namespace.Labels[tenantv1beta1.WorkspaceLabel] = workspace
 	}
 	data, err := json.Marshal(namespace)
 	if err != nil {
@@ -361,7 +360,7 @@ func (t *tenantOperator) PatchNamespace(workspace string, namespace *corev1.Name
 	return namespace, t.client.Patch(context.Background(), namespace, runtimeclient.RawPatch(types.MergePatchType, data))
 }
 
-func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string, data json.RawMessage) (*tenantv1alpha2.WorkspaceTemplate, error) {
+func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string, data json.RawMessage) (*tenantv1beta1.WorkspaceTemplate, error) {
 	var manageWorkspaceTemplateRequest bool
 	clusterNames := sets.New[string]()
 
@@ -395,7 +394,7 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 						clusterNames.Insert(cn)
 					}
 				} else if cluster := clusterValue["clusters"]; cluster != nil {
-					var clusterReferences []tenantv1alpha2.GenericClusterReference
+					var clusterReferences []tenantv1beta1.GenericClusterReference
 					if err := mapstructure.Decode(cluster, &clusterReferences); err != nil {
 						return nil, err
 					}
@@ -422,7 +421,7 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 		}
 	}
 
-	workspaceTemplate := &tenantv1alpha2.WorkspaceTemplate{}
+	workspaceTemplate := &tenantv1beta1.WorkspaceTemplate{}
 	if err := t.client.Get(context.Background(), types.NamespacedName{Name: workspace}, workspaceTemplate); err != nil {
 		return nil, err
 	}
@@ -430,7 +429,7 @@ func (t *tenantOperator) PatchWorkspaceTemplate(user user.Info, workspace string
 	return workspaceTemplate, t.client.Patch(context.Background(), workspaceTemplate, runtimeclient.RawPatch(types.JSONPatchType, data))
 }
 
-func (t *tenantOperator) CreateWorkspaceTemplate(user user.Info, workspace *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha2.WorkspaceTemplate, error) {
+func (t *tenantOperator) CreateWorkspaceTemplate(user user.Info, workspace *tenantv1beta1.WorkspaceTemplate) (*tenantv1beta1.WorkspaceTemplate, error) {
 	workspace = workspace.DeepCopy()
 	if len(workspace.Spec.Placement.Clusters) != 0 {
 		clusters := make([]string, 0)
@@ -445,7 +444,7 @@ func (t *tenantOperator) CreateWorkspaceTemplate(user user.Info, workspace *tena
 	return workspace, t.client.Create(context.Background(), workspace)
 }
 
-func (t *tenantOperator) UpdateWorkspaceTemplate(user user.Info, workspace *tenantv1alpha2.WorkspaceTemplate) (*tenantv1alpha2.WorkspaceTemplate, error) {
+func (t *tenantOperator) UpdateWorkspaceTemplate(user user.Info, workspace *tenantv1beta1.WorkspaceTemplate) (*tenantv1beta1.WorkspaceTemplate, error) {
 	workspace = workspace.DeepCopy()
 	if len(workspace.Spec.Placement.Clusters) != 0 {
 		clusters := make([]string, 0)
@@ -459,8 +458,8 @@ func (t *tenantOperator) UpdateWorkspaceTemplate(user user.Info, workspace *tena
 	return workspace, t.client.Update(context.Background(), workspace)
 }
 
-func (t *tenantOperator) DescribeWorkspaceTemplate(workspaceName string) (*tenantv1alpha2.WorkspaceTemplate, error) {
-	workspace := &tenantv1alpha2.WorkspaceTemplate{}
+func (t *tenantOperator) DescribeWorkspaceTemplate(workspaceName string) (*tenantv1beta1.WorkspaceTemplate, error) {
+	workspace := &tenantv1beta1.WorkspaceTemplate{}
 	return workspace, t.client.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspace)
 }
 
@@ -570,7 +569,7 @@ func (t *tenantOperator) ListClusters(user user.Info, queryParam *query.Query) (
 }
 
 func (t *tenantOperator) DeleteWorkspaceTemplate(workspaceName string, opts metav1.DeleteOptions) error {
-	workspace := &tenantv1alpha2.WorkspaceTemplate{}
+	workspace := &tenantv1beta1.WorkspaceTemplate{}
 	if err := t.client.Get(context.Background(), types.NamespacedName{Name: workspaceName}, workspace); err != nil {
 		return err
 	}
@@ -582,90 +581,6 @@ func (t *tenantOperator) DeleteWorkspaceTemplate(workspaceName string, opts meta
 		}
 	}
 	return t.client.Delete(context.Background(), workspace, &runtimeclient.DeleteOptions{Raw: &opts})
-}
-
-// listIntersectedNamespaces returns a list of namespaces that MUST meet ALL the following filters:
-// 1. If `workspaces` is not empty, the namespace SHOULD belong to one of the specified workpsaces.
-// 2. If `workspaceSubstrs` is not empty, the namespace SHOULD belong to a workspace whose name contains one of the specified substrings.
-// 3. If `namespaces` is not empty, the namespace SHOULD be one of the specified namespacs.
-// 4. If `namespaceSubstrs` is not empty, the namespace's name SHOULD contain one of the specified substrings.
-// 5. If All the filters above are empty, returns all namespaces.
-func (t *tenantOperator) listIntersectedNamespaces(workspaces, workspaceSubstrs,
-	namespaces, namespaceSubstrs []string) ([]*corev1.Namespace, error) {
-	var (
-		namespaceSet = stringSet(namespaces)
-		workspaceSet = stringSet(workspaces)
-		iNamespaces  []*corev1.Namespace
-	)
-	includeNsWithoutWs := len(workspaceSet) == 0 && len(workspaceSubstrs) == 0
-
-	result, err := t.resourceGetter.List("namespaces", "", query.New())
-	if err != nil {
-		return nil, err
-	}
-	for _, obj := range result.Items {
-		ns, ok := obj.(*corev1.Namespace)
-		if !ok {
-			continue
-		}
-
-		if len(namespaceSet) > 0 {
-			if _, ok := namespaceSet[ns.Name]; !ok {
-				continue
-			}
-		}
-		if len(namespaceSubstrs) > 0 && !stringContains(ns.Name, namespaceSubstrs) {
-			continue
-		}
-		if ws := ns.Labels[tenantv1alpha1.WorkspaceLabel]; ws != "" {
-			if len(workspaceSet) > 0 {
-				if _, ok := workspaceSet[ws]; !ok {
-					continue
-				}
-			}
-			if len(workspaceSubstrs) > 0 && !stringContains(ws, workspaceSubstrs) {
-				continue
-			}
-		} else if !includeNsWithoutWs {
-			continue
-		}
-		iNamespaces = append(iNamespaces, ns)
-	}
-	return iNamespaces, nil
-}
-
-// listIntersectedWorkspaces returns a list of workspaces that MUST meet ALL the following filters:
-// 1. If `workspaces` is not empty, the workspace SHOULD be one of the specified workpsaces.
-// 2. Else if `workspaceSubstrs` is not empty, the workspace SHOULD be contains one of the specified substrings.
-// 3. Else, return all workspace in the cluster.
-func (t *tenantOperator) listIntersectedWorkspaces(workspaces, workspaceSubstrs []string) ([]*tenantv1alpha1.Workspace, error) {
-	var (
-		workspaceSet = stringSet(workspaces)
-		iWorkspaces  []*tenantv1alpha1.Workspace
-	)
-
-	result, err := t.resourceGetter.List("workspaces", "", query.New())
-	if err != nil {
-		return nil, err
-	}
-	for _, obj := range result.Items {
-		ws, ok := obj.(*tenantv1alpha1.Workspace)
-		if !ok {
-			continue
-		}
-
-		if len(workspaceSet) > 0 {
-			if _, ok := workspaceSet[ws.Name]; !ok {
-				continue
-			}
-		}
-		if len(workspaceSubstrs) > 0 && !stringContains(ws.Name, workspaceSubstrs) {
-			continue
-		}
-
-		iWorkspaces = append(iWorkspaces, ws)
-	}
-	return iWorkspaces, nil
 }
 
 func (t *tenantOperator) getClusterRoleBindingsByUser(clusterName, username string) (*iamv1beta1.ClusterRoleBindingList, error) {
@@ -711,9 +626,9 @@ func (t *tenantOperator) checkWorkspaceTemplatePermission(user user.Info, worksp
 	deleteWST := authorizer.AttributesRecord{
 		User:            user,
 		Verb:            authorizer.VerbDelete,
-		APIGroup:        tenantv1alpha2.SchemeGroupVersion.Group,
-		APIVersion:      tenantv1alpha2.SchemeGroupVersion.Version,
-		Resource:        tenantv1alpha2.ResourcePluralWorkspaceTemplate,
+		APIGroup:        tenantv1beta1.SchemeGroupVersion.Group,
+		APIVersion:      tenantv1beta1.SchemeGroupVersion.Version,
+		Resource:        tenantv1beta1.ResourcePluralWorkspaceTemplate,
 		ResourceRequest: true,
 		ResourceScope:   request.GlobalScope,
 	}
@@ -722,7 +637,7 @@ func (t *tenantOperator) checkWorkspaceTemplatePermission(user user.Info, worksp
 		return err
 	}
 	if authorize != authorizer.DecisionAllow {
-		return errors.NewForbidden(tenantv1alpha2.Resource(tenantv1alpha2.ResourcePluralWorkspaceTemplate), workspace, fmt.Errorf(reason))
+		return errors.NewForbidden(tenantv1beta1.Resource(tenantv1beta1.ResourcePluralWorkspaceTemplate), workspace, fmt.Errorf(reason))
 	}
 	return nil
 }

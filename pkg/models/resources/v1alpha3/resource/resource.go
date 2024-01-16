@@ -19,20 +19,14 @@ package resource
 import (
 	"errors"
 
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/hpa"
-
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/cronjob"
-	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/persistentvolume"
-
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
-	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
+	"kubesphere.io/api/tenant/v1beta1"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -41,6 +35,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/clusterrole"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/clusterrolebinding"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/configmap"
+	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/cronjob"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/customresourcedefinition"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/daemonset"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/deployment"
@@ -48,11 +43,13 @@ import (
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/globalrolebinding"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/group"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/groupbinding"
+	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/hpa"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/ingress"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/job"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/loginrecord"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/namespace"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/node"
+	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/persistentvolume"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/persistentvolumeclaim"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/pod"
 	"kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/role"
@@ -70,12 +67,12 @@ import (
 
 var ErrResourceNotSupported = errors.New("resource is not supported")
 
-type ResourceGetter struct {
+type Getter struct {
 	clusterResourceGetters    map[schema.GroupVersionResource]v1alpha3.Interface
 	namespacedResourceGetters map[schema.GroupVersionResource]v1alpha3.Interface
 }
 
-func NewResourceGetter(cache runtimeclient.Reader) *ResourceGetter {
+func NewResourceGetter(cache runtimeclient.Reader) *Getter {
 	namespacedResourceGetters := make(map[schema.GroupVersionResource]v1alpha3.Interface)
 	clusterResourceGetters := make(map[schema.GroupVersionResource]v1alpha3.Interface)
 
@@ -101,8 +98,8 @@ func NewResourceGetter(cache runtimeclient.Reader) *ResourceGetter {
 	clusterResourceGetters[schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}] = customresourcedefinition.New(cache)
 
 	// kubesphere resources
-	clusterResourceGetters[tenantv1alpha1.SchemeGroupVersion.WithResource(tenantv1alpha1.ResourcePluralWorkspace)] = workspace.New(cache)
-	clusterResourceGetters[tenantv1alpha1.SchemeGroupVersion.WithResource(tenantv1alpha2.ResourcePluralWorkspaceTemplate)] = workspacetemplate.New(cache)
+	clusterResourceGetters[v1beta1.SchemeGroupVersion.WithResource(v1beta1.ResourcePluralWorkspace)] = workspace.New(cache)
+	clusterResourceGetters[v1beta1.SchemeGroupVersion.WithResource(tenantv1beta1.ResourcePluralWorkspaceTemplate)] = workspacetemplate.New(cache)
 	clusterResourceGetters[iamv1beta1.SchemeGroupVersion.WithResource(iamv1beta1.ResourcesPluralGlobalRole)] = globalrole.New(cache)
 	clusterResourceGetters[iamv1beta1.SchemeGroupVersion.WithResource(iamv1beta1.ResourcesPluralWorkspaceRole)] = workspacerole.New(cache)
 	clusterResourceGetters[iamv1beta1.SchemeGroupVersion.WithResource(iamv1beta1.ResourcesPluralUser)] = user.New(cache)
@@ -115,7 +112,7 @@ func NewResourceGetter(cache runtimeclient.Reader) *ResourceGetter {
 	clusterResourceGetters[rbacv1.SchemeGroupVersion.WithResource(iamv1beta1.ResourcesPluralClusterRoleBinding)] = clusterrolebinding.New(cache)
 	clusterResourceGetters[clusterv1alpha1.SchemeGroupVersion.WithResource(clusterv1alpha1.ResourcesPluralCluster)] = cluster.New(cache)
 
-	return &ResourceGetter{
+	return &Getter{
 		namespacedResourceGetters: namespacedResourceGetters,
 		clusterResourceGetters:    clusterResourceGetters,
 	}
@@ -123,7 +120,7 @@ func NewResourceGetter(cache runtimeclient.Reader) *ResourceGetter {
 
 // TryResource will retrieve a getter with resource name, it doesn't guarantee find resource with correct group version
 // need to refactor this use schema.GroupVersionResource
-func (r *ResourceGetter) TryResource(clusterScope bool, resource string) v1alpha3.Interface {
+func (r *Getter) TryResource(clusterScope bool, resource string) v1alpha3.Interface {
 	if clusterScope {
 		for k, v := range r.clusterResourceGetters {
 			if k.Resource == resource {
@@ -139,7 +136,7 @@ func (r *ResourceGetter) TryResource(clusterScope bool, resource string) v1alpha
 	return nil
 }
 
-func (r *ResourceGetter) Get(resource, namespace, name string) (runtime.Object, error) {
+func (r *Getter) Get(resource, namespace, name string) (runtime.Object, error) {
 	clusterScope := namespace == ""
 	getter := r.TryResource(clusterScope, resource)
 	if getter == nil {
@@ -148,7 +145,7 @@ func (r *ResourceGetter) Get(resource, namespace, name string) (runtime.Object, 
 	return getter.Get(namespace, name)
 }
 
-func (r *ResourceGetter) List(resource, namespace string, query *query.Query) (*api.ListResult, error) {
+func (r *Getter) List(resource, namespace string, query *query.Query) (*api.ListResult, error) {
 	clusterScope := namespace == ""
 	getter := r.TryResource(clusterScope, resource)
 	if getter == nil {

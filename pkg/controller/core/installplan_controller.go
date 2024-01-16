@@ -45,7 +45,7 @@ import (
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 	corev1alpha1 "kubesphere.io/api/core/v1alpha1"
 	extensionsv1alpha1 "kubesphere.io/api/extensions/v1alpha1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	tenantv1beta1 "kubesphere.io/api/tenant/v1beta1"
 	"kubesphere.io/utils/helm"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -375,13 +375,13 @@ func (r *InstallPlanReconciler) loadChartData(ctx context.Context, extensionVers
 
 	// load chart data from url
 	if extensionVersion.Spec.ChartURL != "" {
-		options := []getter.Option{
+		getterOptions := []getter.Option{
 			getter.WithTimeout(5 * time.Minute),
 			getter.WithURL(repo.Spec.URL)}
 		if repo.Spec.BasicAuth != nil {
-			options = append(options, getter.WithBasicAuth(repo.Spec.BasicAuth.Username, repo.Spec.BasicAuth.Password))
+			getterOptions = append(getterOptions, getter.WithBasicAuth(repo.Spec.BasicAuth.Username, repo.Spec.BasicAuth.Password))
 		}
-		buf, err := r.helmGetter.Get(extensionVersion.Spec.ChartURL, options...)
+		buf, err := r.helmGetter.Get(extensionVersion.Spec.ChartURL, getterOptions...)
 		if err != nil {
 			return nil, err
 		}
@@ -562,7 +562,7 @@ func createNamespaceIfNotExists(ctx context.Context, client client.Client, names
 		ns = corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   namespace,
-				Labels: map[string]string{tenantv1alpha1.WorkspaceLabel: systemWorkspace},
+				Labels: map[string]string{tenantv1beta1.WorkspaceLabel: systemWorkspace},
 			},
 		}
 		if err := client.Create(ctx, &ns); err != nil {
@@ -913,12 +913,12 @@ func (r *InstallPlanReconciler) syncInstallPlanStatus(
 	logger := klog.FromContext(ctx)
 
 	releaseName := plan.Spec.Extension.Name
-	options := []helm.ExecutorOption{
+	executorOptions := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
 		helm.SetHelmImage(r.HelmExecutorOptions.Image),
 	}
 
-	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, options...)
+	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, executorOptions...)
 	if err != nil {
 		logger.Error(err, "failed to create executor")
 		return err
@@ -1055,12 +1055,12 @@ func (r *InstallPlanReconciler) syncClusterStatus(
 
 	releaseName := fmt.Sprintf(agentReleaseFormat, plan.Spec.Extension.Name)
 
-	options := []helm.ExecutorOption{
+	executorOptions := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
 		helm.SetHelmImage(r.HelmExecutorOptions.Image),
 	}
 
-	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, options...)
+	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, executorOptions...)
 	if err != nil {
 		logger.Error(err, "failed to create executor")
 		return err
@@ -1214,7 +1214,7 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(
 		}
 	}
 
-	options := []helm.HelmOption{
+	helmOptions := []helm.HelmOption{
 		helm.SetInstall(true),
 		helm.SetLabels(map[string]string{corev1alpha1.ExtensionReferenceLabel: plan.Spec.Extension.Name}),
 	}
@@ -1225,10 +1225,10 @@ func (r *InstallPlanReconciler) installOrUpgradeExtension(
 		for _, condition := range agentConditions {
 			overrides = append(overrides, fmt.Sprintf("%s=%s", condition, "false"))
 		}
-		options = append(options, helm.SetOverrides(overrides))
+		helmOptions = append(helmOptions, helm.SetOverrides(overrides))
 	}
 
-	jobName, err := executor.Upgrade(ctx, releaseName, charData, []byte(plan.Spec.Config), options...)
+	jobName, err := executor.Upgrade(ctx, releaseName, charData, []byte(plan.Spec.Config), helmOptions...)
 	if err != nil {
 		logger.Error(err, "failed to create executor job", "namespace", targetNamespace)
 		if upgrade {
@@ -1377,12 +1377,12 @@ func (r *InstallPlanReconciler) uninstallClusterAgent(ctx context.Context, plan 
 		return err
 	}
 
-	options := []helm.ExecutorOption{
+	executorOptions := []helm.ExecutorOption{
 		helm.SetJobLabels(map[string]string{corev1alpha1.InstallPlanReferenceLabel: plan.Name}),
 		helm.SetHelmImage(r.HelmExecutorOptions.Image),
 	}
 
-	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, options...)
+	executor, err := helm.NewExecutor(r.kubeConfigData, targetNamespace, releaseName, executorOptions...)
 	if err != nil {
 		logger.Error(err, "failed to create executor")
 		return err

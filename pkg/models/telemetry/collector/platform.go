@@ -20,7 +20,7 @@ import (
 	"context"
 
 	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
-	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
+	"kubesphere.io/api/tenant/v1beta1"
 )
 
 func init() {
@@ -37,7 +37,7 @@ func (p Project) RecordKey() string {
 }
 
 func (p Project) Collect(opts *CollectorOpts) (interface{}, error) {
-	workspaceList := &tenantv1alpha1.WorkspaceList{}
+	workspaceList := &v1beta1.WorkspaceList{}
 	userList := &iamv1beta1.UserList{}
 
 	// counting the number of workspace
