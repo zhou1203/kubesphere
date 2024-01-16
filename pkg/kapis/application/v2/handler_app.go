@@ -50,6 +50,13 @@ func (h *appHandler) CreateOrUpdateApp(req *restful.Request, resp *restful.Respo
 		return
 	}
 
+	app := &appv2.Application{}
+	app.Name = appRequest.AppName
+	if h.CheckExisted(req, runtimeclient.ObjectKey{Name: app.Name}, app) {
+		api.HandleConflict(resp, req, fmt.Errorf("app %s already exists", app.Name))
+		return
+	}
+
 	v := []application.AppRequest{vRequest}
 	err = application.CreateOrUpdateApp(req.Request.Context(), h.client, appRequest, v)
 	if requestDone(err, resp) {
@@ -165,11 +172,27 @@ func (h *appHandler) DescribeApp(req *restful.Request, resp *restful.Response) {
 
 func (h *appHandler) DeleteApp(req *restful.Request, resp *restful.Response) {
 	appId := req.PathParameter("app")
+	app := &appv2.Application{}
 
-	err := h.client.Delete(req.Request.Context(), &appv2.Application{ObjectMeta: metav1.ObjectMeta{Name: appId}})
-
+	err := h.client.Get(req.Request.Context(), runtimeclient.ObjectKey{Name: appId}, app)
 	if requestDone(err, resp) {
 		return
+	}
+
+	err = h.client.Delete(req.Request.Context(), &appv2.Application{ObjectMeta: metav1.ObjectMeta{Name: appId}})
+	if requestDone(err, resp) {
+		return
+	}
+
+	if h.backingStoreClient == nil {
+		h.DeleteAttachmentsFromCM(req, resp, app.Spec.Attachments)
+		return
+	}
+	for _, id := range app.Spec.Attachments {
+		err = h.backingStoreClient.Delete(id)
+		if err != nil {
+			api.HandleInternalError(resp, nil, err)
+		}
 	}
 
 	resp.WriteEntity(errors.None)
@@ -311,10 +334,23 @@ func (h *appHandler) PatchApp(req *restful.Request, resp *restful.Response) {
 		app.SetAnnotations(ant)
 	}
 
+	if len(appBody.Attachments) != 0 {
+		app.Spec.Attachments = appBody.Attachments
+	}
+
+	if appBody.Abstraction != "" {
+		app.Spec.Abstraction = appBody.Abstraction
+	}
+
+	if appBody.AppHome != "" {
+		app.Spec.AppHome = appBody.AppHome
+	}
+
 	err = h.client.Update(ctx, app)
 	if requestDone(err, resp) {
 		return
 	}
+	klog.V(4).Infof("update app %s successfully", app.Name)
 
 	resp.WriteAsJson(app)
 }

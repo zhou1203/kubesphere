@@ -19,6 +19,8 @@ package config
 import (
 	"fmt"
 
+	"kubesphere.io/utils/s3"
+
 	"kubesphere.io/kubesphere/pkg/controller/options"
 
 	"strings"
@@ -127,6 +129,7 @@ type Config struct {
 	HelmExecutorOptions   *options.HelmExecutorOptions `json:"helmExecutor,omitempty" yaml:"helmExecutor,omitempty" mapstructure:"helmExecutor"`
 	TelemetryOptions      *telemetry.Options           `json:"telemetry,omitempty" yaml:"telemetry,omitempty" mapstructure:"telemetry"`
 	ExtensionOptions      *options.ExtensionOptions    `json:"extension,omitempty" yaml:"extension,omitempty" mapstructure:"extension"`
+	S3Options             *s3.Options                  `json:"s3,omitempty" yaml:"s3,omitempty" mapstructure:"s3"`
 }
 
 // New config creates a default non-empty Config
@@ -142,6 +145,7 @@ func New() *Config {
 		TelemetryOptions:      telemetry.NewTelemetryOptions(),
 		HelmExecutorOptions:   options.NewHelmExecutorOptions(),
 		ExtensionOptions:      options.NewExtensionOptions(),
+		S3Options:             s3.NewS3Options(),
 	}
 }
 

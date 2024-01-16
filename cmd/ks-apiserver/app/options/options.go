@@ -179,4 +179,7 @@ func (s *APIServerOptions) Merge(conf *config.Config) {
 	if conf.TerminalOptions != nil {
 		s.TerminalOptions = conf.TerminalOptions
 	}
+	if conf.S3Options != nil {
+		s.S3Options = conf.S3Options
+	}
 }

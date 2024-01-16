@@ -24,9 +24,11 @@ import (
 
 // ApplicationSpec defines the desired state of Application
 type ApplicationSpec struct {
-	AppHome string `json:"appHome,omitempty"`
-	AppType string `json:"appType,omitempty"`
-	Icon    string `json:"icon,omitempty"`
+	AppHome     string   `json:"appHome,omitempty"`
+	AppType     string   `json:"appType,omitempty"`
+	Icon        string   `json:"icon,omitempty"`
+	Abstraction string   `json:"abstraction,omitempty"`
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application

@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"kubesphere.io/utils/s3"
+
 	"kubesphere.io/kubesphere/pkg/controller/options"
 
 	"kubesphere.io/kubesphere/pkg/models/telemetry"
@@ -83,6 +85,7 @@ func newTestConfig() (*Config, error) {
 		},
 		HelmExecutorOptions: &options.HelmExecutorOptions{Image: "kubesphere/helm:v3.12.1"},
 		ExtensionOptions:    options.NewExtensionOptions(),
+		S3Options:           s3.NewS3Options(),
 	}
 	return conf, nil
 }

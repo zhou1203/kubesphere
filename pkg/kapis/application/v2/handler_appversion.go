@@ -50,6 +50,13 @@ func (h *appHandler) CreateOrUpdateAppVersion(req *restful.Request, resp *restfu
 		return
 	}
 
+	appVersion := &appv2.ApplicationVersion{}
+	appVersion.Name = vRequest.VersionName
+	if h.CheckExisted(req, runtimeclient.ObjectKey{Name: appVersion.Name}, appVersion) {
+		api.HandleConflict(resp, req, fmt.Errorf("appVersion %s already exists", appVersion.Name))
+		return
+	}
+
 	err = application.CreateOrUpdateAppVersion(ctx, h.client, app, vRequest)
 	if requestDone(err, resp) {
 		return

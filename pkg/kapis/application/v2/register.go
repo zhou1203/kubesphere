@@ -16,6 +16,9 @@ package v2
 import (
 	"net/http"
 
+	"k8s.io/klog/v2"
+	"kubesphere.io/utils/s3"
+
 	"github.com/emicklei/go-restful/v3"
 	appv2 "kubesphere.io/api/application/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,15 +32,27 @@ import (
 )
 
 type appHandler struct {
-	client        runtimeclient.Client
-	clusterClient clusterclient.Interface
+	client             runtimeclient.Client
+	clusterClient      clusterclient.Interface
+	backingStoreClient s3.Interface
 }
 
-func NewHandler(cacheClient runtimeclient.Client, clusterClient clusterclient.Interface) rest.Handler {
-	return &appHandler{
+func NewHandler(cacheClient runtimeclient.Client, clusterClient clusterclient.Interface, s3opts *s3.Options) rest.Handler {
+	handler := &appHandler{
 		client:        cacheClient,
 		clusterClient: clusterClient,
 	}
+
+	if s3opts != nil && len(s3opts.Endpoint) != 0 {
+		var err error
+		s3Client, err := s3.NewS3Client(s3opts)
+		if err != nil {
+			klog.Fatal("failed to connect to storage, please check storage service status, error: %v", err)
+		}
+		handler.backingStoreClient = s3Client
+	}
+
+	return handler
 }
 
 func NewFakeHandler() rest.Handler {
@@ -410,6 +425,24 @@ func (h *appHandler) AddToContainer(c *restful.Container) error {
 		To(h.ListReviews).
 		Doc("Get reviews of version-specific app").
 		Returns(http.StatusOK, api.StatusOK, api.ListResult{}))
+
+	webservice.Route(webservice.GET("/attachments/{attachment}").
+		To(h.DescribeAttachment).
+		Doc("Get attachment by attachment id").
+		Param(webservice.PathParameter("attachment", "attachment id")).
+		Returns(http.StatusOK, api.StatusOK, Attachment{}))
+
+	webservice.Route(webservice.POST("/attachments").
+		To(h.CreateAttachment).
+		Consumes(runtime.MimeMultipartFormData).
+		Doc("Create an attachment").
+		Returns(http.StatusOK, api.StatusOK, Attachment{}))
+
+	webservice.Route(webservice.DELETE("/attachments/{attachment}").
+		To(h.DeleteAttachments).
+		Doc("Delete one or multiple attachments, whose ids are separated by comma").
+		Param(webservice.PathParameter("attachment", "attachment id")).
+		Returns(http.StatusOK, api.StatusOK, errors.Error{}))
 
 	c.Add(webservice)
 

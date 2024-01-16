@@ -190,7 +190,12 @@ func helmRepoVersionRequest(cli client.Client, request application.AppRequest, v
 			Description: ver.Description,
 			AppType:     appv2.AppTypeHelm,
 		}
-		buf, err := installer.HelmPull(ver.URLs[0], request.Credential)
+		url := ver.URLs[0]
+		if !(strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "s3://")) {
+			url = request.Url + "/" + url
+		}
+
+		buf, err := installer.HelmPull(url, request.Credential)
 		if err != nil {
 			klog.Errorf("load chart failed, error: %s", err)
 			continue

@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	appv2 "kubesphere.io/api/application/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -47,18 +46,22 @@ type AppRequest struct {
 	Package      []byte               `json:"package,omitempty"`
 	Credential   appv2.RepoCredential `json:"credential,omitempty"`
 	Maintainers  []appv2.Maintainer   `json:"maintainers,omitempty"`
+	Abstraction  string               `json:"abstraction,omitempty"`
+	Attachments  []string             `json:"attachments,omitempty"`
 }
 
-func CreateOrUpdateApp(ctx context.Context, client client.Client, request AppRequest, vRequests []AppRequest) error {
+func CreateOrUpdateApp(ctx context.Context, client runtimeclient.Client, request AppRequest, vRequests []AppRequest) error {
 
 	app := appv2.Application{}
 	app.Name = request.AppName
 
 	operationResult, err := controllerutil.CreateOrUpdate(ctx, client, &app, func() error {
 		app.Spec = appv2.ApplicationSpec{
-			Icon:    request.Icon,
-			AppHome: request.AppHome,
-			AppType: request.AppType,
+			Icon:        request.Icon,
+			AppHome:     request.AppHome,
+			AppType:     request.AppType,
+			Abstraction: request.Abstraction,
+			Attachments: request.Attachments,
 		}
 		labels := app.GetLabels()
 		if labels == nil {
@@ -111,7 +114,7 @@ func CreateOrUpdateApp(ctx context.Context, client client.Client, request AppReq
 	return nil
 }
 
-func CreateOrUpdateAppVersion(ctx context.Context, client client.Client, app appv2.Application, vRequest AppRequest) error {
+func CreateOrUpdateAppVersion(ctx context.Context, client runtimeclient.Client, app appv2.Application, vRequest AppRequest) error {
 
 	//1. create or update app version
 	appVersion := appv2.ApplicationVersion{}

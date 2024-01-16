@@ -1,6 +1,8 @@
 package options
 
 import (
+	"kubesphere.io/utils/s3"
+
 	"kubesphere.io/kubesphere/pkg/apiserver/auditing"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization"
@@ -18,4 +20,5 @@ type Options struct {
 	MultiClusterOptions   *multicluster.Options
 	AuditingOptions       *auditing.Options
 	TerminalOptions       *terminal.Options
+	S3Options             *s3.Options
 }

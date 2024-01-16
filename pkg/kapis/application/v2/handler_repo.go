@@ -14,7 +14,10 @@ limitations under the License.
 package v2
 
 import (
+	"fmt"
 	"net/url"
+
+	"kubesphere.io/kubesphere/pkg/api"
 
 	"github.com/emicklei/go-restful/v3"
 	v1 "k8s.io/api/core/v1"
@@ -45,6 +48,12 @@ func (h *appHandler) CreateOrUpdateRepo(req *restful.Request, resp *restful.Resp
 	}
 	repo := &appv2.Repo{}
 	repo.Name = repoId
+
+	if h.CheckExisted(req, runtimeclient.ObjectKey{Name: repo.Name}, repo) {
+		api.HandleConflict(resp, req, fmt.Errorf("repo %s already exists", repo.Name))
+		return
+	}
+
 	parsedUrl, err := url.Parse(repoRequest.Spec.Url)
 	if requestDone(err, resp) {
 		return

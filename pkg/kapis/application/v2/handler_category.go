@@ -14,11 +14,15 @@ limitations under the License.
 package v2
 
 import (
+	"fmt"
+
 	"github.com/emicklei/go-restful/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	appv2 "kubesphere.io/api/application/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"kubesphere.io/kubesphere/pkg/api"
 
 	"kubesphere.io/kubesphere/pkg/constants"
 
@@ -34,6 +38,12 @@ func (h *appHandler) CreateOrUpdateCategory(req *restful.Request, resp *restful.
 
 	category := &appv2.Category{}
 	category.Name = createCategoryRequest.Name
+
+	if h.CheckExisted(req, runtimeclient.ObjectKey{Name: category.Name}, category) {
+		api.HandleConflict(resp, req, fmt.Errorf("category %s already exists", category.Name))
+		return
+	}
+
 	MutateFn := func() error {
 		if category.GetAnnotations() == nil {
 			category.SetAnnotations(map[string]string{})

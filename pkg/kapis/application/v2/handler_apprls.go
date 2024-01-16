@@ -3,6 +3,7 @@ package v2
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -46,6 +47,11 @@ func (h *appHandler) CreateOrUpdateAppRls(req *restful.Request, resp *restful.Re
 
 	apprls := appv2.ApplicationRelease{}
 	apprls.Name = createRlsRequest.Name
+
+	if h.CheckExisted(req, runtimeclient.ObjectKey{Name: apprls.Name}, &apprls) {
+		api.HandleConflict(resp, req, fmt.Errorf("apprls %s already exists", apprls.Name))
+		return
+	}
 
 	if createRlsRequest.Spec.AppType != appv2.AppTypeHelm {
 		runtimeClient, _, _, err := h.getCluster(&apprls)

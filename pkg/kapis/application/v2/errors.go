@@ -24,11 +24,26 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	resv1beta1 "kubesphere.io/kubesphere/pkg/models/resources/v1beta1"
 )
+
+func (h *appHandler) CheckExisted(req *restful.Request, key client.ObjectKey, obj client.Object) bool {
+	if req.QueryParameter("create") == "" {
+		return false
+	}
+	err := h.client.Get(req.Request.Context(), key, obj)
+	if err != nil && apierrors.IsNotFound(err) {
+		return false
+	}
+	if err != nil {
+		return false
+	}
+	return true
+}
 
 func requestDone(err error, resp *restful.Response) bool {
 

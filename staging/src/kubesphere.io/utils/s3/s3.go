@@ -62,6 +62,20 @@ type Options struct {
 	Bucket          string `json:"bucket,omitempty" yaml:"bucket,omitempty"`
 }
 
+// NewS3Options creates a default disabled Options(empty endpoint)
+func NewS3Options() *Options {
+	return &Options{
+		Endpoint:        "",
+		Region:          "us-east-1",
+		DisableSSL:      true,
+		ForcePathStyle:  true,
+		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		SessionToken:    "",
+		Bucket:          "s2i-binaries",
+	}
+}
+
 const (
 	DefaultPartSize = 5 * bytefmt.MEGABYTE
 	// MinConcurrency is the minimum concurrency when uploading a part to Amazon S3,
