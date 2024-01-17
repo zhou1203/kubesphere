@@ -10,6 +10,7 @@ ITEMS=(
     "globalroles.iam.kubesphere.io/platform-regular"
     "globalroles.iam.kubesphere.io/platform-self-provisioner"
     "globalroles.iam.kubesphere.io/pre-registration"
+    "globalrolebindings.iam.kubesphere.io/admin"
     "globalrolebindings.iam.kubesphere.io/anonymous"
     "globalrolebindings.iam.kubesphere.io/authenticated"
     "globalrolebindings.iam.kubesphere.io/pre-registration"
