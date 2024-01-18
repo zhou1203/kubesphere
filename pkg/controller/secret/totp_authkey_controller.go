@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -128,16 +128,16 @@ func (r *TOTPAuthKeyController) Reconcile(ctx context.Context, req ctrl.Request)
 		logger.Error(err, "failed to get totp auth key from secret")
 		return ctrl.Result{}, nil
 	}
-	username := secret.Labels[iamv1alpha2.UserReferenceLabel]
+	username := secret.Labels[iamv1beta1.UserReferenceLabel]
 	if username != key.AccountName() {
 		secret = secret.DeepCopy()
 		if secret.Labels == nil {
 			secret.Labels = make(map[string]string)
 		}
-		secret.Labels[iamv1alpha2.UserReferenceLabel] = key.AccountName()
+		secret.Labels[iamv1beta1.UserReferenceLabel] = key.AccountName()
 		return ctrl.Result{}, r.Update(ctx, secret)
 	}
-	user := &iamv1alpha2.User{}
+	user := &iamv1beta1.User{}
 	if err := r.Get(ctx, types.NamespacedName{Name: username}, user); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -168,7 +168,7 @@ func (r *TOTPAuthKeyController) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 func (r *TOTPAuthKeyController) unbindTOTPAuthKey(ctx context.Context, logger logr.Logger, secret *corev1.Secret) error {
-	users := &iamv1alpha2.UserList{}
+	users := &iamv1beta1.UserList{}
 	if err := r.List(ctx, users); err != nil {
 		return fmt.Errorf("failed to list users: %s", err)
 	}

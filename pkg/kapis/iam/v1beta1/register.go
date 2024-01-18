@@ -3,10 +3,7 @@ package v1beta1
 import (
 	"net/http"
 
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
-
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
-
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -183,7 +180,7 @@ func (h *handler) AddToContainer(container *restful.Container) error {
 		To(h.GenerateTOTPAuthKey).
 		Doc("Generates a Time-Based One-Time Password (TOTP) authentication key.").
 		Param(ws.PathParameter("user", "Username")).
-		Returns(http.StatusOK, api.StatusOK, iamv1alpha2.User{}).
+		Returns(http.StatusOK, api.StatusOK, iamv1beta1.User{}).
 		Metadata(restfulspec.KeyOpenAPITags, []string{api.TagAuthentication}))
 
 	ws.Route(ws.POST("/users/{user}/authkey").

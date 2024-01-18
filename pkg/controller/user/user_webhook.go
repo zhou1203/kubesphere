@@ -22,19 +22,15 @@ import (
 	"net/mail"
 
 	corev1 "k8s.io/api/core/v1"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
-
-	"kubesphere.io/kubesphere/pkg/constants"
-	"kubesphere.io/kubesphere/pkg/models/auth"
-
-	kscontroller "kubesphere.io/kubesphere/pkg/controller"
-
 	"k8s.io/apimachinery/pkg/runtime"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
+	"kubesphere.io/kubesphere/pkg/constants"
+	kscontroller "kubesphere.io/kubesphere/pkg/controller"
+	"kubesphere.io/kubesphere/pkg/models/auth"
 )
 
 const webhookName = "user-webhook"
@@ -60,12 +56,12 @@ func (v *Webhook) SetupWithManager(mgr *kscontroller.Manager) error {
 }
 
 func (v *Webhook) Default(ctx context.Context, obj runtime.Object) error {
-	user, ok := obj.(*iamv1alpha2.User)
+	user, ok := obj.(*iamv1beta1.User)
 	if !ok {
 		return fmt.Errorf("expected a User but got a %T", obj)
 	}
 	secrets := &corev1.SecretList{}
-	if err := v.List(ctx, secrets, client.MatchingLabels{iamv1alpha2.UserReferenceLabel: user.Name}, client.InNamespace(constants.KubeSphereNamespace)); err != nil {
+	if err := v.List(ctx, secrets, client.MatchingLabels{iamv1beta1.UserReferenceLabel: user.Name}, client.InNamespace(constants.KubeSphereNamespace)); err != nil {
 		return fmt.Errorf("failed to list secrets: %v", err)
 	}
 
