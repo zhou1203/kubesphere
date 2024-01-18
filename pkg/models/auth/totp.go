@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"kubesphere.io/kubesphere/pkg/config"
-
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	corev1 "k8s.io/api/core/v1"
@@ -14,10 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	authuser "k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/klog/v2"
-	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
+	iamv1beta1 "kubesphere.io/api/iam/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
+	"kubesphere.io/kubesphere/pkg/config"
 	"kubesphere.io/kubesphere/pkg/constants"
 )
 
@@ -63,7 +62,7 @@ func (t *totpOperator) GenerateAuthKey(ctx context.Context, username string) (st
 }
 
 func (t *totpOperator) Bind(ctx context.Context, username string, authKey string, passcode string) error {
-	user := &iamv1alpha2.User{}
+	user := &iamv1beta1.User{}
 	if err := t.client.Get(ctx, types.NamespacedName{Name: username}, user); err != nil {
 		return fmt.Errorf("failed to get user %s: %s", username, err)
 	}
@@ -81,8 +80,8 @@ func (t *totpOperator) Bind(ctx context.Context, username string, authKey string
 		ObjectMeta: v1.ObjectMeta{
 			Name: fmt.Sprintf(TOTPAuthKeySecretNameFormat, username),
 			Labels: map[string]string{
-				iamv1alpha2.UserReferenceLabel: username,
-				config.GenericConfigTypeLabel:  ConfigTypeTOTPAuthKey,
+				iamv1beta1.UserReferenceLabel: username,
+				config.GenericConfigTypeLabel: ConfigTypeTOTPAuthKey,
 			},
 			Namespace: constants.KubeSphereNamespace,
 		},
@@ -98,7 +97,7 @@ func (t *totpOperator) Bind(ctx context.Context, username string, authKey string
 }
 
 func (t *totpOperator) Unbind(ctx context.Context, username string, passcode string) error {
-	user := &iamv1alpha2.User{}
+	user := &iamv1beta1.User{}
 	if err := t.client.Get(ctx, types.NamespacedName{Name: username}, user); err != nil {
 		return fmt.Errorf("failed to get user %s: %s", username, err)
 	}
@@ -142,7 +141,7 @@ func TOTPAuthKeyFrom(secret *corev1.Secret) (*otp.Key, error) {
 }
 
 func (o *totpAuthenticator) Authenticate(ctx context.Context, username string, passcode string) (authuser.Info, error) {
-	user := &iamv1alpha2.User{}
+	user := &iamv1beta1.User{}
 	if err := o.reader.Get(ctx, client.ObjectKey{Name: username}, user); err != nil {
 		return nil, err
 	}
