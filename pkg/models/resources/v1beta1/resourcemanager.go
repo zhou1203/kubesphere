@@ -80,7 +80,7 @@ func (h *resourceManager) CreateObjectFromRawData(gvr schema.GroupVersionResourc
 		return nil, err
 	}
 
-	// The object`s GroupVersionKind could be overridden if apiVersion and kind of rawData are different
+	// The object's GroupVersionKind could be overridden if apiVersion and kind of rawData are different
 	// with GroupVersionKind from url, so that we should check GroupVersionKind after Unmarshal rawDate.
 	if obj.GetObjectKind().GroupVersionKind().String() != gvk.String() {
 		return nil, errors.NewBadRequest("wrong resource GroupVersionKind")

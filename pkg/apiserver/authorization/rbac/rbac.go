@@ -100,7 +100,7 @@ func (r *Authorizer) Authorize(requestAttributes authorizer.Attributes) (authori
 	}
 
 	// Build a detailed log of the denial.
-	// Make the whole block conditional so we don't do a lot of string-building we won't use.
+	// Make the whole block conditional, so we don't do a lot of string-building we won't use.
 	if klog.V(4).Enabled() {
 		var operation string
 		if requestAttributes.IsResourceRequest() {
@@ -202,11 +202,9 @@ func (r *Authorizer) rulesFor(requestAttributes authorizer.Attributes) ([]rbacv1
 }
 
 func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visitor func(source fmt.Stringer, regoPolicy string, rule *rbacv1.PolicyRule, err error) bool) {
-
 	if globalRoleBindings, err := r.am.ListGlobalRoleBindings("", ""); err != nil {
-		if !visitor(nil, "", nil, err) {
-			return
-		}
+		visitor(nil, "", nil, err)
+		return
 	} else {
 		sourceDescriber := &globalRoleBindingDescriber{}
 		for _, globalRoleBinding := range globalRoleBindings {
@@ -236,27 +234,25 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 		}
 	}
 
-	if requestAttributes.GetResourceScope() == request.WorkspaceScope ||
-		requestAttributes.GetResourceScope() == request.NamespaceScope {
-
-		var workspace string
-		var err error
-		if requestAttributes.GetResourceScope() == request.NamespaceScope {
-			if workspace, err = r.am.GetNamespaceControlledWorkspace(requestAttributes.GetNamespace()); err != nil {
-				if !visitor(nil, "", nil, err) {
-					return
-				}
-			}
+	var targetWorkspace string
+	if requestAttributes.GetResourceScope() == request.NamespaceScope {
+		if workspace, err := r.am.GetNamespaceControlledWorkspace(requestAttributes.GetNamespace()); err != nil {
+			visitor(nil, "", nil, err)
+			return
+		} else {
+			targetWorkspace = workspace
 		}
+	}
 
-		if workspace == "" {
-			workspace = requestAttributes.GetWorkspace()
-		}
+	if requestAttributes.GetResourceScope() == request.WorkspaceScope {
+		targetWorkspace = requestAttributes.GetWorkspace()
+	}
 
-		if workspaceRoleBindings, err := r.am.ListWorkspaceRoleBindings("", "", nil, workspace); err != nil {
-			if !visitor(nil, "", nil, err) {
-				return
-			}
+	// workspace managed resources
+	if targetWorkspace != "" {
+		if workspaceRoleBindings, err := r.am.ListWorkspaceRoleBindings("", "", nil, targetWorkspace); err != nil {
+			visitor(nil, "", nil, err)
+			return
 		} else {
 			sourceDescriber := &workspaceRoleBindingDescriber{}
 			for _, workspaceRoleBinding := range workspaceRoleBindings {
@@ -267,7 +263,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 				regoPolicy, rules, err := r.am.GetRoleReferenceRules(workspaceRoleBinding.RoleRef, "")
 				if err != nil {
 					visitor(nil, "", nil, err)
-					continue
+					return
 				}
 				sourceDescriber.binding = &workspaceRoleBinding
 				sourceDescriber.subject = &workspaceRoleBinding.Subjects[subjectIndex]
@@ -283,23 +279,26 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 		}
 	}
 
+	var targetNamespace string
 	if requestAttributes.GetResourceScope() == request.NamespaceScope {
-		namespace := requestAttributes.GetNamespace()
-		if roleBindings, err := r.am.ListRoleBindings("", "", nil, namespace); err != nil {
-			if !visitor(nil, "", nil, err) {
-				return
-			}
+		targetNamespace = requestAttributes.GetNamespace()
+	}
+
+	if targetNamespace != "" {
+		if roleBindings, err := r.am.ListRoleBindings("", "", nil, targetNamespace); err != nil {
+			visitor(nil, "", nil, err)
+			return
 		} else {
 			sourceDescriber := &roleBindingDescriber{}
 			for _, roleBinding := range roleBindings {
-				subjectIndex, applies := appliesTo(requestAttributes.GetUser(), roleBinding.Subjects, namespace)
+				subjectIndex, applies := appliesTo(requestAttributes.GetUser(), roleBinding.Subjects, targetNamespace)
 				if !applies {
 					continue
 				}
-				regoPolicy, rules, err := r.am.GetRoleReferenceRules(roleBinding.RoleRef, namespace)
+				regoPolicy, rules, err := r.am.GetRoleReferenceRules(roleBinding.RoleRef, targetNamespace)
 				if err != nil {
 					visitor(nil, "", nil, err)
-					continue
+					return
 				}
 				sourceDescriber.binding = &roleBinding
 				sourceDescriber.subject = &roleBinding.Subjects[subjectIndex]
@@ -316,9 +315,8 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 	}
 
 	if clusterRoleBindings, err := r.am.ListClusterRoleBindings("", ""); err != nil {
-		if !visitor(nil, "", nil, err) {
-			return
-		}
+		visitor(nil, "", nil, err)
+		return
 	} else {
 		sourceDescriber := &clusterRoleBindingDescriber{}
 		for _, clusterRoleBinding := range clusterRoleBindings {
@@ -329,7 +327,7 @@ func (r *Authorizer) visitRulesFor(requestAttributes authorizer.Attributes, visi
 			regoPolicy, rules, err := r.am.GetRoleReferenceRules(clusterRoleBinding.RoleRef, "")
 			if err != nil {
 				visitor(nil, "", nil, err)
-				continue
+				return
 			}
 			sourceDescriber.binding = &clusterRoleBinding
 			sourceDescriber.subject = &clusterRoleBinding.Subjects[subjectIndex]
@@ -365,8 +363,9 @@ func appliesToUser(user user.Info, subject rbacv1.Subject, namespace string) boo
 		return sliceutil.HasString(user.GetGroups(), subject.Name)
 
 	case rbacv1.ServiceAccountKind:
-		// default the namespace to namespace we're working in if its available.  This allows rolebindings that reference
-		// SAs in th local namespace to avoid having to qualify them.
+		// Default the namespace to namespace we're working in if it's available.
+		// This allows role bindings that reference
+		// SAs in the local namespace to avoid having to qualify them.
 		saNamespace := namespace
 		if len(subject.Namespace) > 0 {
 			saNamespace = subject.Namespace

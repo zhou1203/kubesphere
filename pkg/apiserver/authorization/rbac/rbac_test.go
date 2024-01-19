@@ -44,10 +44,10 @@ import (
 
 // StaticRoles is a rule resolver that resolves from lists of role objects.
 type StaticRoles struct {
-	roles                 []*rbacv1.Role
-	roleBindings          []*rbacv1.RoleBinding
-	clusterRoles          []*rbacv1.ClusterRole
-	clusterRoleBindings   []*rbacv1.ClusterRoleBinding
+	roles                 []*iamv1beta1.Role
+	roleBindings          []*iamv1beta1.RoleBinding
+	clusterRoles          []*iamv1beta1.ClusterRole
+	clusterRoleBindings   []*iamv1beta1.ClusterRoleBinding
 	workspaceRoles        []*iamv1beta1.WorkspaceRole
 	workspaceRoleBindings []*iamv1beta1.WorkspaceRoleBinding
 	globalRoles           []*iamv1beta1.GlobalRole
@@ -55,7 +55,7 @@ type StaticRoles struct {
 	namespaces            []*corev1.Namespace
 }
 
-func (r *StaticRoles) GetRole(namespace, name string) (*rbacv1.Role, error) {
+func (r *StaticRoles) GetRole(namespace, name string) (*iamv1beta1.Role, error) {
 	if len(namespace) == 0 {
 		return nil, errors.New("must provide namespace when getting role")
 	}
@@ -67,7 +67,7 @@ func (r *StaticRoles) GetRole(namespace, name string) (*rbacv1.Role, error) {
 	return nil, errors.New("role not found")
 }
 
-func (r *StaticRoles) GetClusterRole(name string) (*rbacv1.ClusterRole, error) {
+func (r *StaticRoles) GetClusterRole(name string) (*iamv1beta1.ClusterRole, error) {
 	for _, clusterRole := range r.clusterRoles {
 		if clusterRole.Name == name {
 			return clusterRole, nil
@@ -76,12 +76,12 @@ func (r *StaticRoles) GetClusterRole(name string) (*rbacv1.ClusterRole, error) {
 	return nil, errors.New("cluster role not found")
 }
 
-func (r *StaticRoles) ListRoleBindings(namespace string) ([]*rbacv1.RoleBinding, error) {
+func (r *StaticRoles) ListRoleBindings(namespace string) ([]*iamv1beta1.RoleBinding, error) {
 	if len(namespace) == 0 {
 		return nil, errors.New("must provide namespace when listing role bindings")
 	}
 
-	var roleBindingList []*rbacv1.RoleBinding
+	var roleBindingList []*iamv1beta1.RoleBinding
 	for _, roleBinding := range r.roleBindings {
 		if roleBinding.Namespace != namespace {
 			continue
@@ -91,17 +91,17 @@ func (r *StaticRoles) ListRoleBindings(namespace string) ([]*rbacv1.RoleBinding,
 	return roleBindingList, nil
 }
 
-func (r *StaticRoles) ListClusterRoleBindings() ([]*rbacv1.ClusterRoleBinding, error) {
+func (r *StaticRoles) ListClusterRoleBindings() ([]*iamv1beta1.ClusterRoleBinding, error) {
 	return r.clusterRoleBindings, nil
 }
 
-// compute a hash of a policy rule so we can sort in a deterministic order
+// compute a hash of a policy rule, so we can sort in a deterministic order
 func hashOf(p rbacv1.PolicyRule) string {
 	hash := fnv.New32()
 	writeStrings := func(slis ...[]string) {
 		for _, sli := range slis {
 			for _, s := range sli {
-				io.WriteString(hash, s)
+				_, _ = io.WriteString(hash, s)
 			}
 		}
 	}
@@ -117,7 +117,6 @@ func (b byHash) Less(i, j int) bool { return hashOf(b[i]) < hashOf(b[j]) }
 func (b byHash) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 
 func TestRBACAuthorizer(t *testing.T) {
-	t.Skipf("TODO: refactor this test case")
 	ruleReadPods := rbacv1.PolicyRule{
 		Verbs:     []string{"GET", "WATCH"},
 		APIGroups: []string{"v1"},
@@ -140,13 +139,13 @@ func TestRBACAuthorizer(t *testing.T) {
 	}
 
 	staticRoles := StaticRoles{
-		roles: []*rbacv1.Role{
+		roles: []*iamv1beta1.Role{
 			{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "namespace1", Name: "readthings"},
 				Rules:      []rbacv1.PolicyRule{ruleReadPods, ruleReadServices},
 			},
 		},
-		clusterRoles: []*rbacv1.ClusterRole{
+		clusterRoles: []*iamv1beta1.ClusterRole{
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "cluster-admin"},
 				Rules:      []rbacv1.PolicyRule{ruleAdmin},
@@ -174,9 +173,12 @@ func TestRBACAuthorizer(t *testing.T) {
 			},
 		},
 
-		roleBindings: []*rbacv1.RoleBinding{
+		roleBindings: []*iamv1beta1.RoleBinding{
 			{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "namespace1"},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "namespace1",
+					Name:      "readthings",
+				},
 				Subjects: []rbacv1.Subject{
 					{Kind: rbacv1.UserKind, Name: "foobar"},
 					{Kind: rbacv1.GroupKind, Name: "group1"},
@@ -206,6 +208,9 @@ func TestRBACAuthorizer(t *testing.T) {
 		},
 		globalRoleBindings: []*iamv1beta1.GlobalRoleBinding{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "admin",
+				},
 				RoleRef: rbacv1.RoleRef{
 					APIGroup: iamv1beta1.SchemeGroupVersion.Group,
 					Kind:     iamv1beta1.ResourceKindGlobalRole,
@@ -248,6 +253,12 @@ func TestRBACAuthorizer(t *testing.T) {
 			user:           &user.DefaultInfo{Name: "tester"},
 			workspace:      "system-workspace",
 			effectiveRules: []rbacv1.PolicyRule{ruleAdmin},
+		},
+		{
+			StaticRoles:    staticRoles,
+			user:           &user.DefaultInfo{Name: "tester"},
+			workspace:      "not-exists-workspace",
+			effectiveRules: nil,
 		},
 		{
 			StaticRoles:    staticRoles,
@@ -317,7 +328,7 @@ func TestRBACAuthorizer(t *testing.T) {
 func TestRBACAuthorizerMakeDecision(t *testing.T) {
 	t.Skipf("TODO: refactor this test case")
 	staticRoles := StaticRoles{
-		roles: []*rbacv1.Role{
+		roles: []*iamv1beta1.Role{
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "kubesphere-system",
@@ -345,7 +356,7 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 				},
 			},
 		},
-		clusterRoles: []*rbacv1.ClusterRole{
+		clusterRoles: []*iamv1beta1.ClusterRole{
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cluster-viewer",
@@ -427,7 +438,7 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 			},
 		},
 
-		roleBindings: []*rbacv1.RoleBinding{
+		roleBindings: []*iamv1beta1.RoleBinding{
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "kubesphere-system",
@@ -488,7 +499,7 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 				},
 			},
 		},
-		clusterRoleBindings: []*rbacv1.ClusterRoleBinding{
+		clusterRoleBindings: []*iamv1beta1.ClusterRoleBinding{
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cluster-admin",
@@ -857,54 +868,53 @@ func TestRBACAuthorizerMakeDecision(t *testing.T) {
 }
 
 func newMockRBACAuthorizer(staticRoles *StaticRoles) (*Authorizer, error) {
-
 	client := runtimefakeclient.NewClientBuilder().
 		WithScheme(scheme.Scheme).Build()
 
 	for _, role := range staticRoles.roles {
-		if err := client.Create(context.Background(), role); err != nil {
+		if err := client.Create(context.Background(), role.DeepCopy()); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, roleBinding := range staticRoles.roleBindings {
-		if err := client.Create(context.Background(), roleBinding); err != nil {
+		if err := client.Create(context.Background(), roleBinding.DeepCopy()); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, clusterRole := range staticRoles.clusterRoles {
-		if err := client.Create(context.Background(), clusterRole); err != nil {
+		if err := client.Create(context.Background(), clusterRole.DeepCopy()); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, clusterRoleBinding := range staticRoles.clusterRoleBindings {
-		if err := client.Create(context.Background(), clusterRoleBinding); err != nil {
+		if err := client.Create(context.Background(), clusterRoleBinding.DeepCopy()); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, workspaceRole := range staticRoles.workspaceRoles {
-		if err := client.Create(context.Background(), workspaceRole); err != nil {
+		if err := client.Create(context.Background(), workspaceRole.DeepCopy()); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, workspaceRoleBinding := range staticRoles.workspaceRoleBindings {
-		if err := client.Create(context.Background(), workspaceRoleBinding); err != nil {
+		if err := client.Create(context.Background(), workspaceRoleBinding.DeepCopy()); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, globalRole := range staticRoles.globalRoles {
-		if err := client.Create(context.Background(), globalRole); err != nil {
+		if err := client.Create(context.Background(), globalRole.DeepCopy()); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, globalRoleBinding := range staticRoles.globalRoleBindings {
-		if err := client.Create(context.Background(), globalRoleBinding); err != nil {
+		if err := client.Create(context.Background(), globalRoleBinding.DeepCopy()); err != nil {
 			return nil, err
 		}
 	}

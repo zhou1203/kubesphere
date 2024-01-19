@@ -87,13 +87,14 @@ func NewReadOnlyOperator(manager resourcev1beta1.ResourceManager) AccessManageme
 	operator := &amOperator{
 		resourceManager: manager,
 	}
-
 	return operator
 }
 
 func NewOperator(manager resourcev1beta1.ResourceManager) AccessManagementInterface {
-	amOperator := NewReadOnlyOperator(manager).(*amOperator)
-	return amOperator
+	operator := &amOperator{
+		resourceManager: manager,
+	}
+	return operator
 }
 
 func (am *amOperator) GetGlobalRoleOfUser(username string) (*iamv1beta1.GlobalRole, error) {
