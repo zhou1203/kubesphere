@@ -353,6 +353,7 @@ func (h *handler) oauthCallback(req *restful.Request, response *restful.Response
 		return
 	}
 
+	// TODO(@hongming) using the really client configuration
 	result, err := h.issueTokenTo(authenticated, nil)
 	if err != nil {
 		klog.Errorf("failed to issue token: %s", err)
@@ -406,7 +407,7 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 	switch grantType {
 	case oauth.GrantTypePassword:
 		if client.Trusted {
-			h.passwordGrant(req, response)
+			h.passwordGrant(req, response, client)
 			return
 		}
 		_ = response.WriteHeaderAndEntity(http.StatusBadRequest, unsupportedGrantType)
@@ -429,7 +430,7 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 // operating system or a highly privileged application. The authorization server should
 // take special care when enabling this grant type and only allow it when other flows
 // are not viable.
-func (h *handler) passwordGrant(req *restful.Request, response *restful.Response) {
+func (h *handler) passwordGrant(req *restful.Request, response *restful.Response, client *oauth.Client) {
 	// Extracting parameters from the request body.
 	username, _ := req.BodyParameter("username")
 	password, _ := req.BodyParameter("password")
@@ -465,7 +466,7 @@ func (h *handler) passwordGrant(req *restful.Request, response *restful.Response
 	}
 
 	// Issue token to the authenticated user.
-	result, err := h.issueTokenTo(authenticated, nil)
+	result, err := h.issueTokenTo(authenticated, client)
 	if err != nil {
 		// Failed to issue token.
 		klog.Errorf("Failed to issue token: %s", err)
@@ -486,9 +487,9 @@ func (h *handler) passwordGrant(req *restful.Request, response *restful.Response
 func (h *handler) issueTokenTo(user user.Info, client *oauth.Client) (*oauth.Token, error) {
 	accessTokenMaxAge := h.options.OAuthOptions.AccessTokenMaxAge
 	accessTokenInactivityTimeout := h.options.OAuthOptions.AccessTokenInactivityTimeout
-	if client != nil {
-		accessTokenMaxAge = time.Duration(client.AccessTokenMaxAge)
-		accessTokenInactivityTimeout = time.Duration(client.AccessTokenInactivityTimeout)
+	if client != nil && client.AccessTokenMaxAgeSeconds > 0 && client.AccessTokenInactivityTimeoutSeconds > 0 {
+		accessTokenMaxAge = time.Duration(client.AccessTokenMaxAgeSeconds) * time.Second
+		accessTokenInactivityTimeout = time.Duration(client.AccessTokenInactivityTimeoutSeconds) * time.Second
 	}
 
 	if !h.options.MultipleLogin {
@@ -518,12 +519,12 @@ func (h *handler) issueTokenTo(user user.Info, client *oauth.Client) (*oauth.Tok
 		// as specified in OAuth 2.0 Bearer Token Usage [RFC6750]
 		TokenType:    "Bearer",
 		RefreshToken: refreshToken,
-		ExpiresIn:    int(accessTokenMaxAge),
+		ExpiresIn:    int(accessTokenMaxAge.Seconds()),
 	}
 	return &result, nil
 }
 
-func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Response, oauthClient *oauth.Client) {
+func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Response, client *oauth.Client) {
 	refreshToken, _ := req.BodyParameter("refresh_token")
 	verified, err := h.tokenOperator.Verify(refreshToken)
 	if err != nil || verified.TokenType != token.RefreshToken {
@@ -559,7 +560,7 @@ func (h *handler) refreshTokenGrant(req *restful.Request, response *restful.Resp
 		authenticated = &user.DefaultInfo{Name: users.Items[0].(*iamv1beta1.User).Name}
 	}
 
-	result, err := h.issueTokenTo(authenticated, oauthClient)
+	result, err := h.issueTokenTo(authenticated, client)
 	if err != nil {
 		klog.Errorf("failed to issue token: %s", err)
 		_ = response.WriteHeaderAndEntity(http.StatusInternalServerError, oauth.NewServerError(internalServerErrorMessage))
@@ -639,6 +640,13 @@ func (h *handler) buildIDTokenIssueRequest(request *idTokenRequest) (*token.Issu
 		return nil, err
 	}
 
+	accessTokenMaxAge := h.options.OAuthOptions.AccessTokenMaxAge
+	accessTokenInactivityTimeout := h.options.OAuthOptions.AccessTokenInactivityTimeout
+	if request.client != nil && request.client.AccessTokenMaxAgeSeconds > 0 && request.client.AccessTokenInactivityTimeoutSeconds > 0 {
+		accessTokenMaxAge = time.Duration(request.client.AccessTokenMaxAgeSeconds) * time.Second
+		accessTokenInactivityTimeout = time.Duration(request.client.AccessTokenInactivityTimeoutSeconds) * time.Second
+	}
+
 	idTokenRequest := &token.IssueRequest{
 		User: request.authenticated,
 		Claims: token.Claims{
@@ -649,7 +657,7 @@ func (h *handler) buildIDTokenIssueRequest(request *idTokenRequest) (*token.Issu
 			TokenType: token.IDToken,
 			Name:      request.authenticated.GetName(),
 		},
-		ExpiresIn: time.Duration(request.client.AccessTokenMaxAge + request.client.AccessTokenInactivityTimeout),
+		ExpiresIn: accessTokenMaxAge + accessTokenInactivityTimeout,
 	}
 
 	if sliceutil.HasString(request.scopes, oauth.ScopeProfile) {

@@ -66,11 +66,11 @@ type Client struct {
 
 	// AccessTokenMaxAge overrides the default maximum age for access tokens granted to this client.
 	// The default value is 7200 seconds, and the minimum allowed value is 600 seconds.
-	AccessTokenMaxAge int64 `yaml:"accessTokenMaxAge,omitempty"`
+	AccessTokenMaxAgeSeconds int64 `yaml:"accessTokenMaxAgeSeconds,omitempty"`
 
 	// AccessTokenInactivityTimeout overrides the default token inactivity timeout
 	// for tokens granted to this client.
-	AccessTokenInactivityTimeout int64 `yaml:"accessTokenInactivityTimeout,omitempty"`
+	AccessTokenInactivityTimeoutSeconds int64 `yaml:"accessTokenInactivityTimeoutSeconds,omitempty"`
 }
 
 type ClientGetter interface {
@@ -125,13 +125,13 @@ func ValidateClient(client Client) error {
 	}
 
 	// Validate access token inactivity timeout.
-	if client.AccessTokenInactivityTimeout != 0 && client.AccessTokenInactivityTimeout < 600 {
-		validationErrors = append(validationErrors, fmt.Errorf("invalid access token inactivity timeout: %d, the minimum value can only be 600", client.AccessTokenInactivityTimeout))
+	if client.AccessTokenInactivityTimeoutSeconds != 0 && client.AccessTokenInactivityTimeoutSeconds < 600 {
+		validationErrors = append(validationErrors, fmt.Errorf("invalid access token inactivity timeout: %d, the minimum value can only be 600", client.AccessTokenInactivityTimeoutSeconds))
 	}
 
 	// Validate access token max age.
-	if client.AccessTokenMaxAge != 0 && client.AccessTokenMaxAge < 600 {
-		validationErrors = append(validationErrors, fmt.Errorf("invalid access token max age: %d, the minimum value can only be 600", client.AccessTokenMaxAge))
+	if client.AccessTokenMaxAgeSeconds != 0 && client.AccessTokenMaxAgeSeconds < 600 {
+		validationErrors = append(validationErrors, fmt.Errorf("invalid access token max age: %d, the minimum value can only be 600", client.AccessTokenMaxAgeSeconds))
 	}
 
 	// Aggregate validation errors and return.

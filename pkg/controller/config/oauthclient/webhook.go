@@ -2,6 +2,7 @@ package oauthclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -33,13 +34,6 @@ func (v *WebhookHandler) Default(_ context.Context, secret *v1.Secret) error {
 	if oc.Secret == "" {
 		oc.Secret = generatePassword(32)
 	}
-	if oc.AccessTokenMaxAge == 0 {
-		oc.AccessTokenMaxAge = 7200
-	}
-	if oc.AccessTokenInactivityTimeout == 0 {
-		oc.AccessTokenInactivityTimeout = 7200
-	}
-
 	if secret.Labels == nil {
 		secret.Labels = make(map[string]string)
 	}
@@ -74,11 +68,9 @@ func (v *WebhookHandler) ValidateUpdate(_ context.Context, old, new *corev1.Secr
 	if err != nil {
 		return nil, err
 	}
-
 	if newOc.Name != oldOc.Name {
 		return nil, fmt.Errorf("cannot change client name")
 	}
-
 	return validate(newOc)
 }
 
@@ -115,7 +107,7 @@ func (v *WebhookHandler) clientExist(ctx context.Context, clientName string) (bo
 	})
 
 	if _, err := v.getter.GetOAuthClient(ctx, clientName); err != nil {
-		if err == oauth.ErrorClientNotFound {
+		if errors.Is(err, oauth.ErrorClientNotFound) {
 			return false, nil
 		}
 		return false, err
