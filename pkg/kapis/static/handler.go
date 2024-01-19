@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -122,7 +123,10 @@ func (h *handler) getImage(req *restful.Request, resp *restful.Response) {
 	}
 
 	contentType := mime.TypeByExtension(filepath.Ext(fileName))
-	resp.Header().Add("Content-Type", contentType)
+	resp.Header().Set("Content-Type", contentType)
+	resp.Header().Set("Cache-Control", "public, max-age=86400")
+	resp.Header().Set("Expires", time.Now().Add(86400*time.Second).Format(time.RFC1123))
+
 	_, err = resp.Write(rawContent)
 	if err != nil {
 		klog.Warningf("failed to write image data: %s, %v", fileName, err)
