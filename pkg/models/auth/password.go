@@ -93,6 +93,11 @@ func (p *passwordAuthenticator) authByKubeSphere(ctx context.Context, username, 
 			klog.Error(err)
 			return nil, err
 		}
+
+		if user.Annotations[TOTPAuthKeyRefAnnotation] != "" {
+			return otpAuthRequiredUser(user)
+		}
+
 		u := &authuser.DefaultInfo{
 			Name:   user.Name,
 			Groups: user.Spec.Groups,
@@ -103,6 +108,7 @@ func (p *passwordAuthenticator) authByKubeSphere(ctx context.Context, username, 
 				iamv1beta1.ExtraUninitialized: {uninitialized},
 			}
 		}
+
 		return u, nil
 	}
 
@@ -135,6 +141,9 @@ func (p *passwordAuthenticator) authByProvider(ctx context.Context, providerName
 		return nil, err
 	}
 	if linkedAccount != nil {
+		if linkedAccount.Annotations[TOTPAuthKeyRefAnnotation] != "" {
+			return otpAuthRequiredUser(linkedAccount)
+		}
 		return &authuser.DefaultInfo{Name: linkedAccount.Name}, nil
 	}
 
