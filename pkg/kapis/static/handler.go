@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	imagePath = "/static/images"
-	mimePNG   = "image/png"
-	mimeJPG   = "image/jpeg"
-	mimeSVG   = "image/svg+xml"
+	imageCacheKeyPrefix = "static:images:"
+	mimePNG             = "image/png"
+	mimeJPG             = "image/jpeg"
+	mimeSVG             = "image/svg+xml"
 	// https://mimesniff.spec.whatwg.org/#matching-an-image-type-pattern
 	mimeICON      = "image/x-icon"
 	maxUploadSize = 2 * 1024 * 1024 // 2M
@@ -90,7 +90,7 @@ func (h *handler) uploadImage(req *restful.Request, resp *restful.Response) {
 
 	md5Hex := hex.EncodeToString(hash)
 	fileName := fmt.Sprintf("%s%s", md5Hex, ext)
-	key := fmt.Sprintf("%s/%s", imagePath, fileName)
+	key := fmt.Sprintf("%s%s", imageCacheKeyPrefix, fileName)
 
 	base64EncodedContent := base64.StdEncoding.EncodeToString(rawContent)
 	if err = h.cache.Set(key, base64EncodedContent, cache.NeverExpire); err != nil {
@@ -105,7 +105,7 @@ func (h *handler) uploadImage(req *restful.Request, resp *restful.Response) {
 func (h *handler) getImage(req *restful.Request, resp *restful.Response) {
 	fileName := req.PathParameter("file")
 
-	base64EncodedData, err := h.cache.Get(fmt.Sprintf("%s/%s", imagePath, fileName))
+	base64EncodedData, err := h.cache.Get(fmt.Sprintf("%s%s", imageCacheKeyPrefix, fileName))
 	if err != nil {
 		if errors.Is(err, cache.ErrNoSuchKey) {
 			ksapi.HandleNotFound(resp, req, fmt.Errorf("image %s not found", fileName))
