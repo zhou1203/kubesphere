@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,22 +27,20 @@ const (
 	WorkspaceLabel            = "kubesphere.io/workspace"
 )
 
-// WorkspaceSpec defines the desired state of Workspace
 type WorkspaceSpec struct {
-	Manager string `json:"manager,omitempty"`
+	Manager          string `json:"manager,omitempty"`
+	NetworkIsolation *bool  `json:"networkIsolation,omitempty"`
 }
 
-// WorkspaceStatus defines the observed state of Workspace
 type WorkspaceStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:storageversion
+// +kubebuilder:deprecatedversion
 // +kubebuilder:resource:categories="tenant",scope="Cluster"
 
-// Workspace is the Schema for the workspaces API
 type Workspace struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -52,7 +50,6 @@ type Workspace struct {
 
 // +kubebuilder:object:root=true
 
-// WorkspaceList contains a list of Workspace
 type WorkspaceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
