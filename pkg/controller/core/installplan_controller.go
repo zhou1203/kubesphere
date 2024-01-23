@@ -1324,7 +1324,7 @@ func (r *InstallPlanReconciler) installOrUpgradeClusterAgent(
 	if r.ExtensionOptions != nil && r.ExtensionOptions.NodeSelector != nil {
 		for k, v := range r.ExtensionOptions.NodeSelector {
 			k = strings.ReplaceAll(k, ".", "\\.")
-			overrides = append(overrides, fmt.Sprintf("nodeSelector.%s=%s", k, v))
+			overrides = append(overrides, fmt.Sprintf("global.nodeSelector.%s=%s", k, v))
 		}
 	}
 
