@@ -94,7 +94,7 @@ func (h *Helper) AggregationRole(ctx context.Context, ruleOwner RuleOwner, recor
 		return err
 	}
 
-	cover, _ := Covers(ruleOwner.GetRules(), newPolicyRules)
+	rulesEqual := RulesEqual(ruleOwner.GetRules(), newPolicyRules)
 
 	aggregationRule := ruleOwner.GetAggregationRule()
 	templateNamesEqual := false
@@ -102,11 +102,11 @@ func (h *Helper) AggregationRole(ctx context.Context, ruleOwner RuleOwner, recor
 		templateNamesEqual = sliceutil.Equal(aggregationRule.TemplateNames, newTemplateNames)
 	}
 
-	if cover && templateNamesEqual {
+	if rulesEqual && templateNamesEqual {
 		return nil
 	}
 
-	if !cover {
+	if !rulesEqual {
 		ruleOwner.SetRules(newPolicyRules)
 	}
 

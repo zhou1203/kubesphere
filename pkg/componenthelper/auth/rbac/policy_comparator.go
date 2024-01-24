@@ -4,9 +4,12 @@
 package rbac
 
 import (
+	"sort"
 	"strings"
 
 	rbacv1 "k8s.io/api/rbac/v1"
+
+	"kubesphere.io/kubesphere/pkg/apiserver/authorization/rbac"
 )
 
 func Covers(ownerRules, servantRules []rbacv1.PolicyRule) (bool, []rbacv1.PolicyRule) {
@@ -155,4 +158,20 @@ func ruleCovers(ownerRule, subRule rbacv1.PolicyRule) bool {
 	}
 
 	return verbMatches && groupMatches && resourceMatches && resourceNameMatches && nonResourceURLMatches
+}
+
+func RulesEqual(a, b []rbacv1.PolicyRule) bool {
+	sort.Sort(rbac.SortableRuleSlice(a))
+	sort.Sort(rbac.SortableRuleSlice(b))
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i, v := range a {
+		if equal := strings.Compare(rbac.String(v), rbac.String(b[i])); equal != 0 {
+			return false
+		}
+	}
+	return true
 }
